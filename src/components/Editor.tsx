@@ -11,11 +11,13 @@ interface EditorProps {
     content: string;
     onChange: (value: string) => void;
     theme: 'light' | 'dark';
+    onSelectionChange?: (text: string, coords: { top: number; left: number } | null) => void;
 }
 
 export interface EditorHandle {
     openSearch: () => void;
     closeSearch: () => void;
+    getSelectedText: () => string;
 }
 
 const lightTheme = EditorView.theme({
@@ -105,7 +107,7 @@ const darkHighlight = HighlightStyle.define([
 ]);
 
 export const Editor = forwardRef<EditorHandle, EditorProps>(
-    function Editor({ content, onChange, theme }, ref) {
+    function Editor({ content, onChange, theme, onSelectionChange }, ref) {
         const cmRef = useRef<ReactCodeMirrorRef>(null);
 
         useImperativeHandle(ref, () => ({
@@ -121,17 +123,50 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                     closeSearchPanel(view);
                 }
             },
+            getSelectedText: () => {
+                const view = cmRef.current?.view;
+                if (!view) return '';
+                const { from, to } = view.state.selection.main;
+                return view.state.sliceDoc(from, to);
+            },
         }));
 
         const handleChange = useCallback((value: string) => {
             onChange(value);
         }, [onChange]);
 
-        const extensions = useMemo(() => [
-            markdown({ base: markdownLanguage, codeLanguages: languages }),
-            EditorView.lineWrapping,
-            ...(theme === 'dark' ? [syntaxHighlighting(darkHighlight)] : []),
-        ], [theme]);
+        const extensions = useMemo(() => {
+            const exts = [
+                markdown({ base: markdownLanguage, codeLanguages: languages }),
+                EditorView.lineWrapping,
+                ...(theme === 'dark' ? [syntaxHighlighting(darkHighlight)] : []),
+            ];
+
+            // Selection change listener
+            if (onSelectionChange) {
+                exts.push(
+                    EditorView.updateListener.of((update) => {
+                        if (update.selectionSet || update.docChanged) {
+                            const { from, to } = update.state.selection.main;
+                            const selectedText = update.state.sliceDoc(from, to);
+                            if (selectedText.length > 0) {
+                                const coords = update.view.coordsAtPos(from);
+                                if (coords) {
+                                    onSelectionChange(selectedText, {
+                                        top: coords.top,
+                                        left: coords.left,
+                                    });
+                                }
+                            } else {
+                                onSelectionChange('', null);
+                            }
+                        }
+                    })
+                );
+            }
+
+            return exts;
+        }, [theme, onSelectionChange]);
 
         return (
             <div className="editor-wrapper">

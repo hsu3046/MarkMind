@@ -1,0 +1,52 @@
+/* ─── Floating AI Bar ────────────────────────────── */
+
+.floating-ai-bar {
+    position: fixed;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
+    animation: fab-in 0.15s ease-out;
+}
+
+@keyframes fab-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fab-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.12s ease;
+}
+
+.fab-btn:hover {
+    background: var(--accent-bg, rgba(59, 130, 246, 0.1));
+    color: var(--accent, #3b82f6);
+}
+
+.fab-btn:active {
+    transform: scale(0.96);
+}

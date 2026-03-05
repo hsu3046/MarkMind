@@ -1,14 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { AIMode } from './types/ai';
 import { Editor, EditorHandle } from './components/Editor';
 import { Preview } from './components/Preview';
 import { Toolbar, ViewMode } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { OutlinePanel } from './components/OutlinePanel';
 import { RecentFilesPanel } from './components/RecentFilesPanel';
+import { AIPanel } from './components/AIPanel';
+import { FloatingAIBar } from './components/FloatingAIBar';
+import { InlineDiffView } from './components/InlineDiffView';
 import { useFileSystem } from './hooks/useFileSystem';
 import { useTheme } from './hooks/useTheme';
 import { useRecentFiles } from './hooks/useRecentFiles';
 import { useScrollSync } from './hooks/useScrollSync';
+import { useAI } from './hooks/useAI';
 import { isTauri } from './services/platform';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
 import { Link, Unlink } from 'lucide-react';
@@ -53,6 +58,48 @@ function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<EditorHandle>(null);
+
+  // AI
+  const ai = useAI();
+  const [selectedText, setSelectedText] = useState('');
+  const [selectionCoords, setSelectionCoords] = useState<{ top: number; left: number } | null>(null);
+  // Track original content & selected text when AI runs on a selection
+  const aiSelectionRef = useRef<{ fullContent: string; selectedText: string } | null>(null);
+
+  const handleToggleAI = useCallback(() => {
+    // Auto-switch to editor mode when opening AI panel
+    if (!ai.panelVisible && viewMode !== 'editor') {
+      setViewMode('editor');
+      setReadingMode(false);
+    }
+    ai.togglePanel();
+  }, [ai, viewMode]);
+
+  const handleSelectionChange = useCallback((text: string, coords: { top: number; left: number } | null) => {
+    setSelectedText(text);
+    setSelectionCoords(coords);
+  }, []);
+
+  const handleFloatingAction = useCallback((mode: AIMode, text: string) => {
+    // Open AI panel, set mode, and run with selected text
+    ai.setMode(mode);
+    if (!ai.panelVisible) {
+      if (viewMode !== 'editor') {
+        setViewMode('editor');
+        setReadingMode(false);
+      }
+      ai.setPanelVisible(true);
+    }
+    // Store context for partial replacement
+    aiSelectionRef.current = { fullContent: content, selectedText: text };
+    // Run AI with the selected text, passing mode directly to avoid stale closure
+    if (ai.apiKeySet) {
+      ai.runAI(text, undefined, mode);
+    }
+    // Clear floating bar
+    setSelectedText('');
+    setSelectionCoords(null);
+  }, [ai, viewMode]);
 
   // Track opened files in recent list
   useEffect(() => {
@@ -270,6 +317,10 @@ function App() {
             e.preventDefault();
             resetFontSize();
             break;
+          case 'i':
+            e.preventDefault();
+            handleToggleAI();
+            break;
         }
       }
     };
@@ -279,7 +330,7 @@ function App() {
   }, [
     saveFile, saveFileAs, openFile, newFile, toggleSearch,
     handleFontSizeChange, resetFontSize, readingMode, recentPanelVisible,
-    searchVisible, viewMode,
+    searchVisible, viewMode, handleToggleAI,
   ]);
 
   // Split pane drag
@@ -378,7 +429,9 @@ function App() {
         onToggleReadingMode={toggleReadingMode}
         onToggleRecentFiles={() => setRecentPanelVisible((v) => !v)}
         onToggleSearch={toggleSearch}
+        onToggleAI={handleToggleAI}
         showRecent={isTauri()}
+        aiPanelVisible={ai.panelVisible}
       />
 
       {/* Search bar */}
@@ -412,7 +465,49 @@ function App() {
                 width: viewMode === 'split' ? `${splitRatio * 100}%` : '100%',
               }}
             >
-              <Editor ref={editorRef} content={content} onChange={updateContent} theme={theme} />
+              {ai.response && !ai.isLoading ? (
+                <InlineDiffView
+                  chunks={ai.response.chunks}
+                  onAcceptChunk={ai.acceptChunk}
+                  onRejectChunk={ai.rejectChunk}
+                  onAcceptAll={() => {
+                    ai.acceptAll();
+                    if (ai.response) {
+                      const modified = ai.response.modifiedText;
+                      if (aiSelectionRef.current) {
+                        const { fullContent, selectedText: sel } = aiSelectionRef.current;
+                        updateContent(fullContent.replace(sel, modified));
+                        aiSelectionRef.current = null;
+                      } else {
+                        updateContent(modified);
+                      }
+                    }
+                    ai.setResponse(null);
+                  }}
+                  onRejectAll={() => {
+                    ai.rejectAll();
+                    ai.setResponse(null);
+                    aiSelectionRef.current = null;
+                  }}
+                  undecidedCount={ai.undecidedCount}
+                  allDecided={ai.allDecided}
+                  onApplyResult={() => {
+                    const finalText = ai.getFinalText();
+                    if (finalText !== null) {
+                      if (aiSelectionRef.current) {
+                        const { fullContent, selectedText: sel } = aiSelectionRef.current;
+                        updateContent(fullContent.replace(sel, finalText));
+                        aiSelectionRef.current = null;
+                      } else {
+                        updateContent(finalText);
+                      }
+                    }
+                    ai.setResponse(null);
+                  }}
+                />
+              ) : (
+                <Editor ref={editorRef} content={content} onChange={updateContent} theme={theme} onSelectionChange={handleSelectionChange} />
+              )}
             </div>
           )}
 
@@ -447,6 +542,35 @@ function App() {
             </div>
           )}
         </div>
+
+        {/* Floating AI Bar */}
+        {viewMode !== 'preview' && (
+          <FloatingAIBar
+            selectedText={selectedText}
+            coords={selectionCoords}
+            onAction={handleFloatingAction}
+          />
+        )}
+
+        <AIPanel
+          visible={ai.panelVisible}
+          mode={ai.mode}
+          language={ai.language}
+          isLoading={ai.isLoading}
+          error={ai.error}
+          streamingText={ai.streamingText}
+          apiKeySet={ai.apiKeySet}
+          content={content}
+          improveQuality={ai.improveQuality}
+          onModeChange={ai.setMode}
+          onLanguageChange={ai.setLanguage}
+          onImproveQualityChange={ai.setImproveQuality}
+          onRun={ai.runAI}
+          onSaveApiKey={ai.saveApiKey}
+          onClearApiKey={ai.clearApiKey}
+          currentApiKey={ai.currentApiKey}
+        />
+
       </div>
 
       <StatusBar content={content} filePath={filePath} fontSize={fontSize} />

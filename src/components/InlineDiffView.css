@@ -1,0 +1,307 @@
+/* ─── Inline Diff View (Editor Area) ────────────── */
+
+.inline-diff {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg-primary);
+    overflow: hidden;
+}
+
+/* ── Toolbar ─────────────────────────────────────── */
+
+.inline-diff-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-primary);
+    flex-shrink: 0;
+}
+
+.inline-diff-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.inline-diff-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.inline-diff-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--accent-bg, rgba(59, 130, 246, 0.1));
+    color: var(--accent, #3b82f6);
+    font-weight: 500;
+}
+
+.inline-diff-toolbar-right {
+    display: flex;
+    gap: 6px;
+}
+
+.inline-diff-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+}
+
+.inline-diff-btn:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
+.inline-diff-btn.accept {
+    background: #dcfce7;
+    border-color: #86efac;
+    color: #166534;
+}
+
+.inline-diff-btn.accept:hover {
+    background: #bbf7d0;
+}
+
+.inline-diff-btn.reject {
+    background: #fee2e2;
+    border-color: #fca5a5;
+    color: #991b1b;
+}
+
+.inline-diff-btn.reject:hover {
+    background: #fecaca;
+}
+
+.inline-diff-btn.apply {
+    background: var(--accent, #3b82f6);
+    border-color: var(--accent, #3b82f6);
+    color: white;
+}
+
+.inline-diff-btn.apply:hover {
+    opacity: 0.9;
+}
+
+/* Dark mode overrides */
+[data-theme="dark"] .inline-diff-btn.accept {
+    background: rgba(34, 197, 94, 0.15);
+    border-color: rgba(34, 197, 94, 0.3);
+    color: #86efac;
+}
+
+[data-theme="dark"] .inline-diff-btn.reject {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+}
+
+/* ── Content ─────────────────────────────────────── */
+
+.inline-diff-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+    font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+/* ── Lines ────────────────────────────────────────── */
+
+.idiff-line {
+    display: flex;
+    padding: 0 16px;
+    min-height: 22px;
+}
+
+.idiff-gutter {
+    flex-shrink: 0;
+    width: 24px;
+    text-align: center;
+    color: var(--text-tertiary, #999);
+    user-select: none;
+    font-weight: 600;
+}
+
+.idiff-text {
+    flex: 1;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.idiff-unchanged {
+    color: var(--text-primary);
+}
+
+.idiff-removed {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--text-primary);
+    text-decoration: line-through;
+    text-decoration-color: rgba(239, 68, 68, 0.5);
+}
+
+.idiff-removed .idiff-gutter {
+    color: #ef4444;
+}
+
+.idiff-added {
+    background: rgba(34, 197, 94, 0.1);
+    color: var(--text-primary);
+}
+
+.idiff-added .idiff-gutter {
+    color: #22c55e;
+}
+
+/* Decided states */
+.idiff-removed.accepted,
+.idiff-added.rejected {
+    opacity: 0.35;
+    text-decoration: line-through;
+    text-decoration-color: rgba(0, 0, 0, 0.3);
+}
+
+.idiff-removed.rejected,
+.idiff-added.accepted {
+    opacity: 1;
+    font-weight: 500;
+}
+
+/* Dark mode lines */
+[data-theme="dark"] .idiff-removed {
+    background: rgba(239, 68, 68, 0.12);
+}
+
+[data-theme="dark"] .idiff-added {
+    background: rgba(34, 197, 94, 0.12);
+}
+
+/* ── Block ────────────────────────────────────────── */
+
+.idiff-block {
+    position: relative;
+    border-left: 3px solid var(--accent, #3b82f6);
+    margin: 4px 0;
+}
+
+.idiff-block.decided {
+    border-left-color: var(--text-tertiary, #999);
+    opacity: 0.7;
+}
+
+.idiff-block-actions {
+    display: flex;
+    gap: 4px;
+    padding: 4px 16px 4px 40px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-secondary, var(--border-primary));
+}
+
+.idiff-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 10px;
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    transition: all 0.1s ease;
+}
+
+.idiff-action-btn.accept {
+    background: #dcfce7;
+    border-color: #86efac;
+    color: #166534;
+}
+
+.idiff-action-btn.accept:hover {
+    background: #bbf7d0;
+}
+
+.idiff-action-btn.reject {
+    background: #fee2e2;
+    border-color: #fca5a5;
+    color: #991b1b;
+}
+
+.idiff-action-btn.reject:hover {
+    background: #fecaca;
+}
+
+[data-theme="dark"] .idiff-action-btn.accept {
+    background: rgba(34, 197, 94, 0.2);
+    border-color: rgba(34, 197, 94, 0.3);
+    color: #86efac;
+}
+
+[data-theme="dark"] .idiff-action-btn.accept:hover {
+    background: rgba(34, 197, 94, 0.35);
+}
+
+[data-theme="dark"] .idiff-action-btn.reject {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+}
+
+[data-theme="dark"] .idiff-action-btn.reject:hover {
+    background: rgba(239, 68, 68, 0.35);
+}
+
+/* ── Word-level diff ─────────────────────────────── */
+
+.idiff-word-diff {
+    padding: 6px 16px 6px 40px;
+    line-height: 1.8;
+    color: var(--text-primary);
+}
+
+.wdiff-same {
+    /* Unchanged words — normal text */
+}
+
+.wdiff-del {
+    background: rgba(239, 68, 68, 0.15);
+    color: #dc2626;
+    text-decoration: line-through;
+    text-decoration-color: rgba(239, 68, 68, 0.6);
+    border-radius: 2px;
+    padding: 1px 2px;
+}
+
+.wdiff-ins {
+    background: rgba(34, 197, 94, 0.15);
+    color: #16a34a;
+    font-weight: 600;
+    border-radius: 2px;
+    padding: 1px 2px;
+}
+
+/* Dark mode word diff */
+[data-theme="dark"] .wdiff-del {
+    background: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+}
+
+[data-theme="dark"] .wdiff-ins {
+    background: rgba(34, 197, 94, 0.2);
+    color: #86efac;
+}

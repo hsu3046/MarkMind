@@ -1,0 +1,543 @@
+/* ─── AI Panel ───────────────────────────────────── */
+
+.ai-panel {
+    width: 320px;
+    min-width: 320px;
+    height: 100%;
+    border-left: 1px solid var(--border-primary);
+    background: var(--bg-secondary);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.ai-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-primary);
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.ai-panel-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.ai-panel-close,
+.ai-settings-btn {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+}
+
+.ai-panel-close:hover,
+.ai-settings-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+/* ─── No API Key ─────────────────────────────────── */
+
+.ai-no-key {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 40px 20px;
+    color: var(--text-tertiary);
+    text-align: center;
+}
+
+.ai-no-key p {
+    font-size: 13px;
+    margin: 0;
+}
+
+/* ─── Mode Selection ─────────────────────────────── */
+
+.ai-modes {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
+    border-bottom: 1px solid var(--border-primary);
+    flex-shrink: 0;
+}
+
+.ai-mode-radio {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.ai-mode-radio input[type="radio"] {
+    display: none;
+}
+
+.ai-mode-radio:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.ai-mode-radio.active {
+    background: var(--accent-bg, rgba(59, 130, 246, 0.1));
+    color: var(--accent, #3b82f6);
+    font-weight: 500;
+}
+
+/* ─── Language Select ────────────────────────────── */
+
+.ai-language-select {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-primary);
+    font-size: 12px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.ai-language-select select {
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 12px;
+    outline: none;
+}
+
+.ai-language-select select:focus {
+    border-color: var(--accent, #3b82f6);
+}
+
+/* ─── Quality Toggle ─────────────────────────────── */
+
+.ai-quality-toggle {
+    display: flex;
+    gap: 4px;
+    padding: 8px;
+    border-bottom: 1px solid var(--border-primary);
+    flex-shrink: 0;
+}
+
+.ai-quality-radio {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: center;
+}
+
+.ai-quality-radio input[type="radio"] {
+    display: none;
+}
+
+.ai-quality-radio:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.ai-quality-radio.active {
+    background: var(--accent-bg, rgba(59, 130, 246, 0.1));
+    color: var(--accent, #3b82f6);
+    font-weight: 500;
+}
+
+/* ─── Prompt Area ────────────────────────────────── */
+
+.ai-prompt-area {
+    padding: 8px;
+    border-bottom: 1px solid var(--border-primary);
+    flex-shrink: 0;
+}
+
+.ai-prompt-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 120px;
+    max-height: 240px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.ai-prompt-input:focus {
+    border-color: var(--accent, #3b82f6);
+}
+
+.ai-prompt-input::placeholder {
+    color: var(--text-tertiary);
+}
+
+.ai-prompt-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+/* ─── Buttons ────────────────────────────────────── */
+
+.ai-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.ai-btn.primary {
+    background: var(--accent, #3b82f6);
+    color: white;
+    flex: 1;
+}
+
+.ai-btn.primary:hover:not(:disabled) {
+    filter: brightness(1.1);
+}
+
+.ai-btn.primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.ai-btn.secondary {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    flex: 1;
+}
+
+.ai-btn.secondary:hover:not(:disabled) {
+    background: var(--border-primary);
+    color: var(--text-primary);
+}
+
+.ai-btn.secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.ai-btn.danger {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+.ai-btn.danger:hover {
+    background: rgba(239, 68, 68, 0.2);
+}
+
+/* ─── Error ──────────────────────────────────────── */
+
+.ai-error {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    margin: 8px;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 6px;
+    color: #ef4444;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+/* ─── Streaming ──────────────────────────────────── */
+
+.ai-streaming {
+    margin: 8px;
+    padding: 10px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+.ai-streaming-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+}
+
+.ai-streaming-text {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+    margin: 0;
+    font-family: inherit;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spinning {
+    animation: spin 1s linear infinite;
+}
+
+/* ─── Result / Diff ──────────────────────────────── */
+
+.ai-result {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+/* ─── Settings ───────────────────────────────────── */
+
+.ai-settings {
+    padding: 16px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.ai-settings-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin: 0;
+}
+
+.ai-settings-desc a {
+    color: var(--accent, #3b82f6);
+    text-decoration: none;
+}
+
+.ai-settings-desc a:hover {
+    text-decoration: underline;
+}
+
+.ai-key-input-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ai-key-input {
+    flex: 1;
+    padding: 8px 10px;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: monospace;
+    outline: none;
+}
+
+.ai-key-input:focus {
+    border-color: var(--accent, #3b82f6);
+}
+
+.ai-key-toggle {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 6px;
+    display: flex;
+}
+
+.ai-settings-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.ai-key-notice {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    line-height: 1.5;
+    margin: 0;
+}
+
+/* ─── Diff View ──────────────────────────────────── */
+
+.diff-view {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.diff-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 0;
+    position: sticky;
+    top: 0;
+    background: var(--bg-secondary);
+    z-index: 1;
+}
+
+.diff-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+}
+
+.diff-accept-all:hover {
+    background: rgba(34, 197, 94, 0.1);
+    border-color: #22c55e;
+    color: #22c55e;
+}
+
+.diff-reject-all:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+.diff-remaining {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-left: auto;
+}
+
+.diff-content {
+    font-size: 12px;
+    font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+    line-height: 1.6;
+}
+
+.diff-line {
+    padding: 1px 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.diff-unchanged {
+    color: var(--text-secondary);
+}
+
+.diff-block {
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    margin: 4px 0;
+    overflow: hidden;
+    position: relative;
+}
+
+.diff-block.decided {
+    opacity: 0.6;
+}
+
+.diff-block-lines {
+    padding: 2px 0;
+}
+
+.diff-line.diff-removed {
+    background: rgba(239, 68, 68, 0.08);
+    color: #ef4444;
+    text-decoration: line-through;
+}
+
+.diff-line.diff-added {
+    background: rgba(34, 197, 94, 0.08);
+    color: #22c55e;
+}
+
+.diff-line.diff-removed.accepted,
+.diff-line.diff-added.rejected {
+    opacity: 0.3;
+}
+
+.diff-marker {
+    display: inline-block;
+    width: 16px;
+    font-weight: 600;
+    user-select: none;
+}
+
+.diff-block-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+    padding: 4px 6px;
+    border-top: 1px solid var(--border-primary);
+    background: var(--bg-primary);
+}
+
+.diff-chunk-btn {
+    display: flex;
+    align-items: center;
+    padding: 2px 6px;
+    border: 1px solid var(--border-primary);
+    border-radius: 3px;
+    background: var(--bg-primary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    color: var(--text-tertiary);
+}
+
+.diff-chunk-btn.accept:hover {
+    background: rgba(34, 197, 94, 0.1);
+    border-color: #22c55e;
+    color: #22c55e;
+}
+
+.diff-chunk-btn.reject:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: #ef4444;
+    color: #ef4444;
+}

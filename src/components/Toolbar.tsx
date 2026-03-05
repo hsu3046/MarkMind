@@ -3,7 +3,7 @@ import {
     Eye, PenLine, Columns2, Sun, Moon, BookOpen,
     FilePlus, FolderOpen, Save, Download,
     ZoomIn, ZoomOut, List, Maximize, Clock,
-    Search, ChevronDown
+    Search, ChevronDown, Sparkles
 } from 'lucide-react';
 
 export type ViewMode = 'split' | 'editor' | 'preview';
@@ -16,6 +16,7 @@ interface ToolbarProps {
     fontSize: number;
     outlineVisible: boolean;
     showRecent: boolean;
+    aiPanelVisible: boolean;
     onViewModeChange: (mode: ViewMode) => void;
     onThemeToggle: () => void;
     onNewFile: () => void;
@@ -29,6 +30,7 @@ interface ToolbarProps {
     onToggleReadingMode: () => void;
     onToggleRecentFiles: () => void;
     onToggleSearch: () => void;
+    onToggleAI: () => void;
 }
 
 export function Toolbar({
@@ -51,7 +53,9 @@ export function Toolbar({
     onToggleReadingMode,
     onToggleRecentFiles,
     onToggleSearch,
+    onToggleAI,
     showRecent,
+    aiPanelVisible,
 }: ToolbarProps) {
     const [fileMenuOpen, setFileMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -118,6 +122,10 @@ export function Toolbar({
                 <button className="toolbar-text-btn" onClick={onShowTutorial} title="Show Tutorial">
                     <BookOpen size={14} strokeWidth={1.5} />
                     <span>Tutorial</span>
+                </button>
+                <button className={`toolbar-text-btn${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI Assistant (⌘I)">
+                    <Sparkles size={14} strokeWidth={1.5} />
+                    <span>AI Mode</span>
                 </button>
                 {showRecent && (
                     <button className="toolbar-text-btn" onClick={onToggleRecentFiles} title="Recent Files">
