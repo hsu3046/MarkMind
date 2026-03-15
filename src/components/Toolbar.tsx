@@ -3,10 +3,80 @@ import {
     Eye, PenLine, Columns2, Sun, Moon, BookOpen,
     FilePlus, FolderOpen, Save, Download,
     ZoomIn, ZoomOut, List, Maximize, Clock,
-    Search, ChevronDown, Sparkles
+    Search, ChevronDown, Sparkles, Check, X
 } from 'lucide-react';
 
 export type ViewMode = 'split' | 'editor' | 'preview';
+
+function EditableFileName({ fileName, isDirty, onRename }: { fileName: string; isDirty: boolean; onRename: (name: string) => void }) {
+    const [editing, setEditing] = useState(false);
+    const [editValue, setEditValue] = useState('');
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const startEditing = () => {
+        // Remove extension for editing
+        const dotIndex = fileName.lastIndexOf('.');
+        setEditValue(dotIndex > 0 ? fileName.substring(0, dotIndex) : fileName);
+        setEditing(true);
+    };
+
+    useEffect(() => {
+        if (editing && inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.select();
+        }
+    }, [editing]);
+
+    const handleConfirm = () => {
+        setEditing(false);
+        const trimmed = editValue.trim();
+        if (trimmed) {
+            onRename(trimmed);
+        }
+    };
+
+    const handleCancel = () => {
+        setEditing(false);
+    };
+
+    if (editing) {
+        return (
+            <div className="toolbar-filename-edit">
+                <input
+                    ref={inputRef}
+                    className={`toolbar-filename-input${isDirty ? ' unsaved' : ''}`}
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleConfirm();
+                        if (e.key === 'Escape') handleCancel();
+                    }}
+                    onBlur={(e) => {
+                        // Don't blur-confirm if clicking the buttons
+                        if (e.relatedTarget?.closest('.toolbar-filename-edit')) return;
+                        handleConfirm();
+                    }}
+                />
+                <button className="toolbar-filename-action confirm" onClick={handleConfirm} title="Confirm">
+                    <Check size={14} strokeWidth={2} />
+                </button>
+                <button className="toolbar-filename-action cancel" onMouseDown={(e) => { e.preventDefault(); handleCancel(); }} title="Cancel">
+                    <X size={14} strokeWidth={2} />
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <div
+            className={`toolbar-filename${isDirty ? ' unsaved' : ''}`}
+            onClick={startEditing}
+            title="Click to rename"
+        >
+            {fileName}
+        </div>
+    );
+}
 
 interface ToolbarProps {
     fileName: string;
@@ -31,6 +101,7 @@ interface ToolbarProps {
     onToggleRecentFiles: () => void;
     onToggleSearch: () => void;
     onToggleAI: () => void;
+    onRename: (newName: string) => void;
 }
 
 export function Toolbar({
@@ -54,6 +125,7 @@ export function Toolbar({
     onToggleRecentFiles,
     onToggleSearch,
     onToggleAI,
+    onRename,
     showRecent,
     aiPanelVisible,
 }: ToolbarProps) {
@@ -119,30 +191,29 @@ export function Toolbar({
 
                 <div className="toolbar-divider" />
 
-                <button className="toolbar-text-btn" onClick={onShowTutorial} title="Show Tutorial">
-                    <BookOpen size={14} strokeWidth={1.5} />
-                    <span>Tutorial</span>
-                </button>
-                <button className={`toolbar-text-btn${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI Assistant (⌘I)">
-                    <Sparkles size={14} strokeWidth={1.5} />
-                    <span>AI Mode</span>
+                <button className="toolbar-btn" onClick={onToggleSearch} title="Search (⌘F)">
+                    <Search size={15} strokeWidth={1.5} />
                 </button>
                 {showRecent && (
-                    <button className="toolbar-text-btn" onClick={onToggleRecentFiles} title="Recent Files">
-                        <Clock size={14} strokeWidth={1.5} />
-                        <span>Recent</span>
+                    <button className="toolbar-btn" onClick={onToggleRecentFiles} title="Recent Files">
+                        <Clock size={15} strokeWidth={1.5} />
                     </button>
                 )}
-                <button className="toolbar-text-btn" onClick={onToggleSearch} title="Search (⌘F)">
-                    <Search size={14} strokeWidth={1.5} />
-                    <span>Search</span>
+                <button className="toolbar-btn" onClick={onShowTutorial} title="Tutorial">
+                    <BookOpen size={15} strokeWidth={1.5} />
+                </button>
+                <button className={`toolbar-text-btn ai-agent${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI Agent (⌘I)">
+                    <Sparkles size={14} strokeWidth={1.5} />
+                    <span>AI Agent</span>
                 </button>
             </div>
 
-            {/* Center: File name */}
-            <div className={`toolbar-filename${isDirty ? ' unsaved' : ''}`}>
-                {fileName}
-            </div>
+            {/* Center: File name (editable) */}
+            <EditableFileName
+                fileName={fileName}
+                isDirty={isDirty}
+                onRename={onRename}
+            />
 
             {/* Right: Font size + View mode + utilities */}
             <div className="toolbar-group">

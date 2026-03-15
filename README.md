@@ -63,6 +63,8 @@ MarkMind は、まさにその瞬間のために作られました。
 - **Improves entire documents** — Speed mode (Gemini Flash) for quick polish or Quality mode (Gemini Pro) for deep rewrites.
 - **Pops up an AI bar on selection** — Highlight any text in the editor and a floating action bar appears instantly — no panels to open.
 - **Streams AI responses live** — Watch the rewrite appear in real time, then review the smart diff when it's done.
+- **Renames files inline** — Click the filename in the toolbar to edit it. Saved files are renamed on disk automatically.
+- **Shows version info** — Current app version displayed in the status bar, auto-managed with build workflows.
 - **Renders beautiful previews** — Side-by-side split view, full-width reading mode, and synchronized scroll with code syntax highlighting.
 - **Navigates with an outline panel** — Auto-extracted H1–H6 headings, click to jump, always in sync.
 - **Opens multiple windows** — Cascade-positioned windows with `⌘N`, recent file access, and Finder file association for `.md` files.
@@ -133,7 +135,7 @@ npm run dev
 | Zoom In | `⌘+` |
 | Zoom Out | `⌘-` |
 | Reset Zoom | `⌘0` |
-| AI Assistant | `⌘I` |
+| AI Agent | `⌘I` |
 
 ---
 
@@ -178,7 +180,7 @@ markmind/
 - [x] **Phase 1**: Viewing — Font size, outline panel, reading mode
 - [x] **Phase 2**: Editing — Search & replace, recent files, multi-window
 - [x] **Phase 3**: AI Editing — Grammar fix, translate, document improvement, inline diff
-- [ ] **Phase 3.5**: UX polish — Start mode branching, icon-only toolbar
+- [x] **Phase 3.5**: UX polish — Icon-only toolbar, inline file rename, version display, build automation
 - [ ] **Phase 3.6**: AI prompt templates — CRUD, mode filtering, file-based sharing
 - [ ] **Phase 3.7**: Internationalization — EN/KO/JA UI switching
 - [ ] **Phase 4**: Export — PDF, Google Docs, PPTX conversion

@@ -1,14 +1,17 @@
 {
   "name": "markmind",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "build:web": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "version:patch": "npm version patch --no-git-tag-version && node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json'));const t=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json'));t.version=p.version;fs.writeFileSync('src-tauri/tauri.conf.json',JSON.stringify(t,null,2)+'\\n');console.log('→ v'+p.version)\"",
+    "version:minor": "npm version minor --no-git-tag-version && node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json'));const t=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json'));t.version=p.version;fs.writeFileSync('src-tauri/tauri.conf.json',JSON.stringify(t,null,2)+'\\n');console.log('→ v'+p.version)\"",
+    "version:major": "npm version major --no-git-tag-version && node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json'));const t=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json'));t.version=p.version;fs.writeFileSync('src-tauri/tauri.conf.json',JSON.stringify(t,null,2)+'\\n');console.log('→ v'+p.version)\""
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.0",

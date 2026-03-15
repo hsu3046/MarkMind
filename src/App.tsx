@@ -36,12 +36,13 @@ function App() {
     saveFileAs,
     newFile,
     openFromRecent,
+    renameFile,
   } = useFileSystem();
 
   const { recentFiles, addRecentFile, removeRecentFile, clearRecentFiles } =
     useRecentFiles();
 
-  const [viewMode, setViewMode] = useState<ViewMode>('preview');
+  const [viewMode, setViewMode] = useState<ViewMode>('editor');
   const [splitRatio, setSplitRatio] = useState(0.5);
   const { syncEnabled, toggleSync, reattach } = useScrollSync(false);
   const [fontSize, setFontSize] = useState(() => {
@@ -338,6 +339,7 @@ function App() {
     isDragging.current = true;
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
+    document.body.classList.add('is-resizing');
   }, []);
 
   useEffect(() => {
@@ -353,6 +355,7 @@ function App() {
         isDragging.current = false;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+        document.body.classList.remove('is-resizing');
       }
     };
 
@@ -432,6 +435,7 @@ function App() {
         onToggleAI={handleToggleAI}
         showRecent={isTauri()}
         aiPanelVisible={ai.panelVisible}
+        onRename={renameFile}
       />
 
       {/* Search bar */}

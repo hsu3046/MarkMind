@@ -23,6 +23,7 @@ export function StatusBar({ content, filePath, fontSize }: StatusBarProps) {
                 <span className="statusbar-item">
                     {filePath || 'Not saved'}
                 </span>
+                <span className="statusbar-item statusbar-version">v{__APP_VERSION__}</span>
             </div>
         </div>
     );

@@ -280,6 +280,34 @@ export function useFileSystem() {
     setFileState({ content, filePath: path, fileName: name, isDirty: false });
   }, []);
 
+  // Rename file (inline editing in toolbar)
+  const renameFile = useCallback(async (newName: string) => {
+    if (!newName.trim() || newName === fileNameRef.current) return;
+
+    // Ensure .md extension
+    const finalName = newName.endsWith('.md') || newName.endsWith('.mdx') || newName.endsWith('.txt') || newName.endsWith('.markdown')
+      ? newName
+      : newName + '.md';
+
+    if (isTauri() && filePathRef.current) {
+      try {
+        const { rename } = await import('@tauri-apps/plugin-fs');
+        const oldPath = filePathRef.current;
+        const dir = oldPath.substring(0, oldPath.lastIndexOf('/'));
+        const newPath = `${dir}/${finalName}`;
+        await rename(oldPath, newPath);
+        setFileState(prev => ({ ...prev, fileName: finalName, filePath: newPath }));
+      } catch (err) {
+        console.error('Failed to rename file:', err);
+        // Fallback: just update the display name
+        setFileState(prev => ({ ...prev, fileName: finalName }));
+      }
+    } else {
+      // Not saved yet or web mode: just update the display name
+      setFileState(prev => ({ ...prev, fileName: finalName }));
+    }
+  }, []);
+
   return {
     ...fileState,
     updateContent,
@@ -288,5 +316,6 @@ export function useFileSystem() {
     saveFileAs,
     newFile,
     openFromRecent,
+    renameFile,
   };
 }

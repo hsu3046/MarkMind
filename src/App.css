@@ -206,11 +206,76 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+
+.toolbar-filename:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .toolbar-filename.unsaved::after {
   content: ' •';
   color: var(--accent);
+}
+
+.toolbar-filename-input {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  max-width: 300px;
+  text-align: center;
+  outline: none;
+}
+
+.toolbar-filename-input.unsaved {
+  border-color: var(--accent);
+}
+
+.toolbar-filename-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-filename-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.toolbar-filename-action.confirm {
+  background: transparent;
+  color: #22c55e;
+}
+
+.toolbar-filename-action.confirm:hover {
+  background: var(--bg-hover);
+}
+
+.toolbar-filename-action.cancel {
+  background: transparent;
+  color: #ef4444;
+}
+
+.toolbar-filename-action.cancel:hover {
+  background: var(--bg-hover);
 }
 
 .toolbar-btn {
@@ -277,6 +342,15 @@ body {
 
 .toolbar-text-btn:active {
   background: var(--bg-active);
+}
+
+.toolbar-text-btn.active {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.toolbar-text-btn.ai-agent {
+  color: var(--accent);
 }
 
 .toolbar-divider {
@@ -430,6 +504,15 @@ body {
   border-right: 1px solid var(--border-primary);
 }
 
+/* Disable pointer events on panes while dragging split handle */
+body.is-resizing .split-pane > .pane {
+  pointer-events: none;
+}
+
+body.is-resizing .split-pane {
+  cursor: col-resize;
+}
+
 .split-handle-area {
   display: flex;
   flex-direction: column;
@@ -437,6 +520,9 @@ body {
   justify-content: center;
   flex-shrink: 0;
   position: relative;
+  width: 1px;
+  overflow: visible;
+  z-index: 20;
 }
 
 .split-handle {
@@ -447,16 +533,16 @@ body {
   flex-shrink: 0;
   position: relative;
   z-index: 10;
-  transition: background var(--transition-fast);
 }
 
 .split-handle::after {
   content: '';
   position: absolute;
   top: 0;
-  left: -3px;
-  right: -3px;
+  left: -8px;
+  right: -8px;
   bottom: 0;
+  cursor: col-resize;
 }
 
 .split-handle:hover,
@@ -899,6 +985,11 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.statusbar-version {
+  opacity: 0.5;
+  font-family: var(--font-mono);
 }
 
 /* ---------- Empty State ---------- */

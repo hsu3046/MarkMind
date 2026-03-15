@@ -143,7 +143,7 @@ export function AIPanel({
             {/* Header */}
             <div className="ai-panel-header">
                 <span className="ai-panel-title">
-                    <Sparkles size={14} /> AI 어시스턴트
+                    <Sparkles size={14} /> AI Agent
                 </span>
                 <button
                     className="ai-settings-btn"
