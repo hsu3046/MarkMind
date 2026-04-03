@@ -9,12 +9,15 @@ import { RecentFilesPanel } from './components/RecentFilesPanel';
 import { AIPanel } from './components/AIPanel';
 import { FloatingAIBar } from './components/FloatingAIBar';
 import { InlineDiffView } from './components/InlineDiffView';
+import { AuthCallback } from './components/AuthCallback';
 import { useFileSystem } from './hooks/useFileSystem';
 import { useTheme } from './hooks/useTheme';
 import { useRecentFiles } from './hooks/useRecentFiles';
 import { useScrollSync } from './hooks/useScrollSync';
 import { useAI } from './hooks/useAI';
+import { useAuth } from './hooks/useAuth';
 import { isTauri } from './services/platform';
+import { getCallbackPath } from './services/knowaiAuth';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
 import { Link, Unlink } from 'lucide-react';
 import './App.css';
@@ -25,6 +28,13 @@ const FONT_SIZE_DEFAULT = 14;
 
 function App() {
   const { theme, toggleTheme } = useTheme();
+  const auth = useAuth();
+  const [isAuthCallback, setIsAuthCallback] = useState(
+    () => window.location.pathname === getCallbackPath()
+  );
+  // Callback ref: switch to preview when a real file is opened
+  // Using a ref avoids initialization order issues (viewMode state declared below)
+  const onFileOpenedRef = useRef<(() => void) | undefined>(undefined);
   const {
     content,
     filePath,
@@ -37,13 +47,19 @@ function App() {
     newFile,
     openFromRecent,
     renameFile,
-  } = useFileSystem();
+  } = useFileSystem(() => onFileOpenedRef.current?.());
 
   const { recentFiles, addRecentFile, removeRecentFile, clearRecentFiles } =
     useRecentFiles();
 
   const [viewMode, setViewMode] = useState<ViewMode>('editor');
   const [splitRatio, setSplitRatio] = useState(0.5);
+
+  // Wire up the file-opened callback now that viewMode/setViewMode exist
+  onFileOpenedRef.current = () => {
+    setViewMode('preview');
+    setReadingMode(false);
+  };
   const { syncEnabled, toggleSync, reattach } = useScrollSync(false);
   const [fontSize, setFontSize] = useState(() => {
     const saved = localStorage.getItem('md-editor-font-size');
@@ -55,6 +71,10 @@ function App() {
   const [recentPanelVisible, setRecentPanelVisible] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchMatchCount, setSearchMatchCount] = useState(0);
+  const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
+  const searchMatchesRef = useRef<HTMLElement[]>([]);
+  const searchCurrentIndexRef = useRef(-1);
   const isDragging = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -80,6 +100,33 @@ function App() {
     setSelectedText(text);
     setSelectionCoords(coords);
   }, []);
+
+  // Outline panel: jump to heading in editor or preview depending on current mode
+  const handleOutlineClick = useCallback((id: string, line: number) => {
+    if (viewMode !== 'preview') {
+      // Editor / split mode: move cursor to the heading line in CodeMirror
+      editorRef.current?.scrollToLine(line);
+    } else {
+      // Preview mode: scroll the rendered heading into view
+      const previewEl = document.querySelector('.preview-wrapper');
+      if (!previewEl) return;
+      const headingEls = previewEl.querySelectorAll('h1, h2, h3');
+      for (const h of headingEls) {
+        const hId = (h.textContent || '')
+          .toLowerCase()
+          .replace(/[^\w\s가-힣ぁ-んァ-ヶ一-龠-]/g, '')
+          .replace(/\s+/g, '-');
+        if (hId === id) {
+          const wrapper = previewEl as HTMLElement;
+          const wrapperRect = wrapper.getBoundingClientRect();
+          const elRect = (h as HTMLElement).getBoundingClientRect();
+          const relativeTop = elRect.top - wrapperRect.top + wrapper.scrollTop;
+          wrapper.scrollTo({ top: Math.max(0, relativeTop - 32), behavior: 'smooth' });
+          break;
+        }
+      }
+    }
+  }, [viewMode]);
 
   const handleFloatingAction = useCallback((mode: AIMode, text: string) => {
     // Open AI panel, set mode, and run with selected text
@@ -109,7 +156,7 @@ function App() {
     }
   }, [filePath, addRecentFile]);
 
-  // Load file from URL query parameter (for multi-window)
+  // Load file from URL query parameter (for multi-window — new window opened with a file path)
   useEffect(() => {
     if (!isTauri()) return;
     const params = new URLSearchParams(window.location.search);
@@ -120,11 +167,14 @@ function App() {
           const { readTextFile } = await import('@tauri-apps/plugin-fs');
           const content = await readTextFile(fileParam);
           const name = fileParam.split('/').pop() || 'Untitled.md';
+          // openFromRecent will call onFileOpened → setViewMode('preview')
           openFromRecent(fileParam, content, name);
         } catch (err) {
           console.error('Failed to load file from query:', err);
         }
       })();
+    } else {
+      // New empty window — stay in editor mode (default)
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -187,16 +237,64 @@ function App() {
     });
   }, [viewMode]);
 
-  // Preview search highlight
+  // Preview search: scroll a match element into view precisely
+  const scrollToMatch = useCallback((el: HTMLElement) => {
+    const wrapper = document.querySelector('.preview-wrapper') as HTMLElement | null;
+    if (!wrapper) return;
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const relativeTop = elRect.top - wrapperRect.top + wrapper.scrollTop;
+    const targetScrollTop = relativeTop - wrapperRect.height / 2 + elRect.height / 2;
+    wrapper.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+  }, []);
+
+  // Navigate to a specific match index and update active highlight
+  const goToMatchIndex = useCallback((index: number, matches: HTMLElement[]) => {
+    if (matches.length === 0) return;
+    // Remove active from previous
+    const prevEl = matches[searchCurrentIndexRef.current];
+    if (prevEl) prevEl.classList.remove('search-highlight-active');
+    // Apply active to new
+    const nextEl = matches[index];
+    if (nextEl) {
+      nextEl.classList.add('search-highlight-active');
+      scrollToMatch(nextEl);
+    }
+    searchCurrentIndexRef.current = index;
+    setSearchCurrentIndex(index);
+  }, [scrollToMatch]);
+
+  // Navigate by delta (+1 forward, -1 backward), wrapping around
+  const navigateMatch = useCallback((delta: number) => {
+    const matches = searchMatchesRef.current;
+    if (matches.length === 0) return;
+    const next = (searchCurrentIndexRef.current + delta + matches.length) % matches.length;
+    goToMatchIndex(next, matches);
+  }, [goToMatchIndex]);
+
+  // Highlight all matches in the preview DOM
   const highlightMatches = useCallback((query: string) => {
-    clearHighlights();
+    // Clear previous
+    const oldMarks = document.querySelectorAll('.search-highlight');
+    oldMarks.forEach((mark) => {
+      const parent = mark.parentNode;
+      if (parent) {
+        parent.replaceChild(document.createTextNode(mark.textContent || ''), mark);
+        parent.normalize();
+      }
+    });
+    searchMatchesRef.current = [];
+    searchCurrentIndexRef.current = -1;
+    setSearchMatchCount(0);
+    setSearchCurrentIndex(-1);
+
     if (!query.trim()) return;
 
     const previewEl = document.querySelector('.preview-wrapper .markdown-body');
     if (!previewEl) return;
 
     const walker = document.createTreeWalker(previewEl, NodeFilter.SHOW_TEXT);
-    const matches: { node: Text; index: number }[] = [];
+    const found: { node: Text; index: number }[] = [];
     const lowerQuery = query.toLowerCase();
 
     let node;
@@ -204,29 +302,35 @@ function App() {
       const text = (node as Text).textContent || '';
       let idx = text.toLowerCase().indexOf(lowerQuery);
       while (idx !== -1) {
-        matches.push({ node: node as Text, index: idx });
+        found.push({ node: node as Text, index: idx });
         idx = text.toLowerCase().indexOf(lowerQuery, idx + 1);
       }
     }
 
-    // Highlight in reverse order to preserve indices
-    for (let i = matches.length - 1; i >= 0; i--) {
-      const { node: textNode, index } = matches[i];
-      const range = document.createRange();
-      range.setStart(textNode, index);
-      range.setEnd(textNode, index + query.length);
-
-      const mark = document.createElement('mark');
-      mark.className = 'search-highlight';
-      range.surroundContents(mark);
+    // Build marks in reverse order to preserve text node indices
+    const marks: HTMLElement[] = [];
+    for (let i = found.length - 1; i >= 0; i--) {
+      const { node: textNode, index } = found[i];
+      try {
+        const range = document.createRange();
+        range.setStart(textNode, index);
+        range.setEnd(textNode, index + query.length);
+        const mark = document.createElement('mark');
+        mark.className = 'search-highlight';
+        range.surroundContents(mark);
+        marks.unshift(mark);
+      } catch {
+        // Skip if range operation fails (e.g., across element boundaries)
+      }
     }
 
-    // Scroll to first match
-    const first = previewEl.querySelector('.search-highlight');
-    if (first) {
-      first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    searchMatchesRef.current = marks;
+    setSearchMatchCount(marks.length);
+
+    if (marks.length > 0) {
+      goToMatchIndex(0, marks);
     }
-  }, []);
+  }, [goToMatchIndex]);
 
   const clearHighlights = useCallback(() => {
     const marks = document.querySelectorAll('.search-highlight');
@@ -237,6 +341,10 @@ function App() {
         parent.normalize();
       }
     });
+    searchMatchesRef.current = [];
+    searchCurrentIndexRef.current = -1;
+    setSearchMatchCount(0);
+    setSearchCurrentIndex(-1);
   }, []);
 
   useEffect(() => {
@@ -396,6 +504,22 @@ function App() {
     );
   }
 
+  // Auth callback route — show only the callback handler
+  if (isAuthCallback) {
+    return (
+      <div className="app">
+        <AuthCallback
+          processCallback={auth.processCallback}
+          onSuccess={() => setIsAuthCallback(false)}
+          onError={(err) => {
+            console.error('Auth callback error:', err);
+            setIsAuthCallback(false);
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <div
@@ -436,6 +560,10 @@ function App() {
         showRecent={isTauri()}
         aiPanelVisible={ai.panelVisible}
         onRename={renameFile}
+        authUser={auth.user}
+        authIsLoading={auth.isLoading}
+        onAuthLogin={auth.login}
+        onAuthLogout={auth.logout}
       />
 
       {/* Search bar */}
@@ -449,17 +577,38 @@ function App() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Escape') toggleSearch();
+              if (e.key === 'Escape') { toggleSearch(); return; }
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.shiftKey) navigateMatch(-1);
+                else navigateMatch(1);
+              }
             }}
           />
-          <span className="search-count">
-            {searchQuery ? document.querySelectorAll('.search-highlight').length + ' found' : ''}
-          </span>
+          {searchMatchCount > 0 ? (
+            <>
+              <span className="search-count">
+                {searchCurrentIndex + 1} / {searchMatchCount}
+              </span>
+              <button
+                className="search-nav-btn"
+                onClick={() => navigateMatch(-1)}
+                title="Previous match (Shift+Enter)"
+              >▲</button>
+              <button
+                className="search-nav-btn"
+                onClick={() => navigateMatch(1)}
+                title="Next match (Enter)"
+              >▼</button>
+            </>
+          ) : searchQuery ? (
+            <span className="search-count search-count-empty">No results</span>
+          ) : null}
         </div>
       )}
 
       <div className="main-content" ref={containerRef}>
-        <OutlinePanel content={content} visible={outlineVisible} />
+        <OutlinePanel content={content} visible={outlineVisible} onHeadingClick={handleOutlineClick} />
 
         <div className="split-pane">
           {viewMode !== 'preview' && (

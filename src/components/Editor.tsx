@@ -18,6 +18,7 @@ export interface EditorHandle {
     openSearch: () => void;
     closeSearch: () => void;
     getSelectedText: () => string;
+    scrollToLine: (line: number) => void;
 }
 
 const lightTheme = EditorView.theme({
@@ -128,6 +129,17 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                 if (!view) return '';
                 const { from, to } = view.state.selection.main;
                 return view.state.sliceDoc(from, to);
+            },
+            scrollToLine: (line: number) => {
+                const view = cmRef.current?.view;
+                if (!view) return;
+                // line is 1-indexed
+                const lineObj = view.state.doc.line(Math.max(1, Math.min(line, view.state.doc.lines)));
+                view.dispatch({
+                    selection: { anchor: lineObj.from },
+                    effects: EditorView.scrollIntoView(lineObj.from, { y: 'center' }),
+                });
+                view.focus();
             },
         }));
 

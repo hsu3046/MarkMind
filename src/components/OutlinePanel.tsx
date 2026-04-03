@@ -4,20 +4,28 @@ interface OutlineItem {
     level: number;
     text: string;
     id: string;
+    /** 1-indexed line number in the source markdown */
+    line: number;
 }
 
 interface OutlinePanelProps {
     content: string;
     visible: boolean;
+    /**
+     * Called when a heading is clicked.
+     * Provides both the heading id (for preview DOM scroll) and the
+     * 1-indexed source line number (for editor scroll).
+     */
+    onHeadingClick?: (id: string, line: number) => void;
 }
 
-export function OutlinePanel({ content, visible }: OutlinePanelProps) {
+export function OutlinePanel({ content, visible, onHeadingClick }: OutlinePanelProps) {
     const headings = useMemo<OutlineItem[]>(() => {
         if (!content) return [];
         const lines = content.split('\n');
         const items: OutlineItem[] = [];
 
-        for (const line of lines) {
+        lines.forEach((line, index) => {
             const match = line.match(/^(#{1,3})\s+(.+)/);
             if (match) {
                 const level = match[1].length;
@@ -26,26 +34,31 @@ export function OutlinePanel({ content, visible }: OutlinePanelProps) {
                     .toLowerCase()
                     .replace(/[^\w\s가-힣ぁ-んァ-ヶ一-龠-]/g, '')
                     .replace(/\s+/g, '-');
-                items.push({ level, text, id });
+                items.push({ level, text, id, line: index + 1 });
             }
-        }
+        });
         return items;
     }, [content]);
 
     if (!visible) return null;
 
-    const scrollToHeading = (id: string) => {
+    const handleClick = (item: OutlineItem) => {
+        if (onHeadingClick) {
+            // Delegate to parent — parent decides scroll target based on view mode
+            onHeadingClick(item.id, item.line);
+            return;
+        }
+
+        // Fallback: scroll preview DOM directly (legacy behavior)
         const previewEl = document.querySelector('.preview-wrapper');
         if (!previewEl) return;
-
-        // Find heading by text content match
-        const headings = previewEl.querySelectorAll('h1, h2, h3');
-        for (const h of headings) {
+        const headingEls = previewEl.querySelectorAll('h1, h2, h3');
+        for (const h of headingEls) {
             const hId = (h.textContent || '')
                 .toLowerCase()
                 .replace(/[^\w\s가-힣ぁ-んァ-ヶ一-龠-]/g, '')
                 .replace(/\s+/g, '-');
-            if (hId === id) {
+            if (hId === item.id) {
                 h.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 break;
             }
@@ -63,7 +76,7 @@ export function OutlinePanel({ content, visible }: OutlinePanelProps) {
                         <button
                             key={`${item.id}-${i}`}
                             className={`outline-item outline-level-${item.level}`}
-                            onClick={() => scrollToHeading(item.id)}
+                            onClick={() => handleClick(item)}
                             title={item.text}
                         >
                             {item.text}

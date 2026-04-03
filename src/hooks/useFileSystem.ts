@@ -33,7 +33,7 @@ async function tauriWriteTextFile() {
   return writeTextFile;
 }
 
-export function useFileSystem() {
+export function useFileSystem(onFileOpened?: () => void) {
   const [fileState, setFileState] = useState<FileState>({
     content: '',
     filePath: null,
@@ -77,6 +77,7 @@ export function useFileSystem() {
           const name = path.split('/').pop() || 'Untitled.md';
           if (!cancelled) {
             setFileState({ content, filePath: path, fileName: name, isDirty: false });
+            onFileOpened?.();
           }
         } catch (err) {
           console.error('Failed to open file:', err);
@@ -161,6 +162,7 @@ export function useFileSystem() {
             fileName: file.name,
             isDirty: false,
           });
+          onFileOpened?.();
         }
         return;
       }
@@ -186,6 +188,7 @@ export function useFileSystem() {
           const content = await readTextFile(path);
           const name = path.split('/').pop() || 'Untitled.md';
           setFileState({ content, filePath: path, fileName: name, isDirty: false });
+          onFileOpened?.();
         }
       }
     } catch (err) {
@@ -278,7 +281,8 @@ export function useFileSystem() {
   // Open file directly from path and content (for recent files — Tauri only)
   const openFromRecent = useCallback((path: string, content: string, name: string) => {
     setFileState({ content, filePath: path, fileName: name, isDirty: false });
-  }, []);
+    onFileOpened?.();
+  }, [onFileOpened]);
 
   // Rename file (inline editing in toolbar)
   const renameFile = useCallback(async (newName: string) => {

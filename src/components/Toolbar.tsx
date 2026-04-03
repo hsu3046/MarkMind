@@ -5,6 +5,8 @@ import {
     ZoomIn, ZoomOut, List, Maximize, Clock,
     Search, ChevronDown, Sparkles, Check, X
 } from 'lucide-react';
+import { LoginButton } from './LoginButton';
+import type { AuthUser } from '../types/auth';
 
 export type ViewMode = 'split' | 'editor' | 'preview';
 
@@ -102,6 +104,10 @@ interface ToolbarProps {
     onToggleSearch: () => void;
     onToggleAI: () => void;
     onRename: (newName: string) => void;
+    authUser: AuthUser | null;
+    authIsLoading: boolean;
+    onAuthLogin: () => void;
+    onAuthLogout: () => void;
 }
 
 export function Toolbar({
@@ -128,6 +134,10 @@ export function Toolbar({
     onRename,
     showRecent,
     aiPanelVisible,
+    authUser,
+    authIsLoading,
+    onAuthLogin,
+    onAuthLogout,
 }: ToolbarProps) {
     const [fileMenuOpen, setFileMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -268,6 +278,15 @@ export function Toolbar({
                 <button className="toolbar-btn" onClick={onThemeToggle} title="Toggle Theme">
                     {theme === 'dark' ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
                 </button>
+
+                <div className="toolbar-divider" />
+
+                <LoginButton
+                    user={authUser}
+                    isLoading={authIsLoading}
+                    onLogin={onAuthLogin}
+                    onLogout={onAuthLogout}
+                />
             </div>
         </div>
     );

@@ -2,6 +2,9 @@
    MD Editor — Design System
    =========================================== */
 
+/* Highlight.js syntax theme — light mode base */
+@import 'highlight.js/styles/github.css';
+
 /* ---------- Reset & Base ---------- */
 *,
 *::before,
@@ -472,6 +475,40 @@ body {
   padding: 1px 0;
 }
 
+.search-highlight-active {
+  background: rgba(255, 140, 0, 0.7);
+  border-radius: 2px;
+  padding: 1px 0;
+  outline: 1.5px solid rgba(255, 140, 0, 0.9);
+}
+
+.search-count-empty {
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+.search-nav-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.search-nav-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
 /* ---------- Main Content ---------- */
 .main-content {
   flex: 1;
@@ -821,15 +858,11 @@ body.is-resizing .split-pane {
 .markdown-body h1 {
   font-size: var(--text-3xl);
   letter-spacing: -0.02em;
-  padding-bottom: 0.3em;
-  border-bottom: 1px solid var(--border-primary);
 }
 
 .markdown-body h2 {
   font-size: var(--text-2xl);
   letter-spacing: -0.01em;
-  padding-bottom: 0.2em;
-  border-bottom: 1px solid var(--border-secondary);
 }
 
 .markdown-body h3 {
@@ -1041,6 +1074,49 @@ body.is-resizing .split-pane {
   background: transparent !important;
   padding: 0 !important;
 }
+
+/* Dark mode: override highlight.js token colors (github-dark palette) */
+[data-theme='dark'] .hljs-comment,
+[data-theme='dark'] .hljs-punctuation { color: #8b949e; }
+
+[data-theme='dark'] .hljs-attr,
+[data-theme='dark'] .hljs-attribute { color: #79c0ff; }
+
+[data-theme='dark'] .hljs-meta,
+[data-theme='dark'] .hljs-selector-attr,
+[data-theme='dark'] .hljs-selector-class,
+[data-theme='dark'] .hljs-selector-id,
+[data-theme='dark'] .hljs-variable,
+[data-theme='dark'] .hljs-literal { color: #ffa657; }
+
+[data-theme='dark'] .hljs-keyword,
+[data-theme='dark'] .hljs-selector-tag,
+[data-theme='dark'] .hljs-tag { color: #ff7b72; }
+
+[data-theme='dark'] .hljs-deletion,
+[data-theme='dark'] .hljs-number,
+[data-theme='dark'] .hljs-quote,
+[data-theme='dark'] .hljs-selector-class,
+[data-theme='dark'] .hljs-template-tag,
+[data-theme='dark'] .hljs-type { color: #f0883e; }
+
+[data-theme='dark'] .hljs-doctag,
+[data-theme='dark'] .hljs-string,
+[data-theme='dark'] .hljs-regexp { color: #a5d6ff; }
+
+[data-theme='dark'] .hljs-built_in,
+[data-theme='dark'] .hljs-symbol { color: #ffa657; }
+
+[data-theme='dark'] .hljs-addition,
+[data-theme='dark'] .hljs-bullet,
+[data-theme='dark'] .hljs-code,
+[data-theme='dark'] .hljs-section,
+[data-theme='dark'] .hljs-title,
+[data-theme='dark'] .hljs-name { color: #7ee787; }
+
+[data-theme='dark'] .hljs-emphasis { color: #e6edf3; font-style: italic; }
+[data-theme='dark'] .hljs-strong { color: #e6edf3; font-weight: bold; }
+[data-theme='dark'] .hljs { color: #e6edf3; }
 
 /* ---------- Toolbar Font Size Indicator ---------- */
 .toolbar-font-size {
@@ -1409,4 +1485,161 @@ body.is-resizing .split-pane {
   text-align: center;
   font-size: var(--text-sm);
   color: var(--text-tertiary);
+}
+
+/* ---------- Auth / Login Button ---------- */
+.login-btn-wrapper {
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+}
+
+.login-btn-loading {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-primary);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 600ms linear infinite;
+}
+
+.login-btn {
+  color: var(--accent);
+}
+
+.login-user-wrapper {
+  position: relative;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.login-user-btn {
+  gap: 6px;
+}
+
+.login-user-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.login-user-avatar-fallback {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.login-user-name {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.login-user-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 180px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md), 0 8px 32px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  z-index: 1000;
+  animation: fadeIn 100ms ease-out;
+}
+
+.login-user-menu-info {
+  padding: 8px 12px;
+}
+
+.login-user-menu-balance {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* ---------- Auth Callback Overlay ---------- */
+.auth-callback-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  z-index: 9999;
+}
+
+.auth-callback-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 40px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.auth-callback-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-primary);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 600ms linear infinite;
+}
+
+.auth-callback-text {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.auth-callback-error-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.auth-callback-retry {
+  padding: 6px 16px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.auth-callback-retry:hover {
+  background: var(--bg-hover);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
