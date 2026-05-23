@@ -106,19 +106,30 @@ export function DriveBrowser({
         setBusy(true);
         setError(null);
         try {
-            // 같은 이름의 기존 파일이 있으면 사용자에게 overwrite 여부 확인
-            const existing = files.find((f) => f.name === finalName);
+            // 같은 이름 파일이 여러 개면 (다른 폴더 등) 어느 것을 덮어쓸지
+            // 안전하게 특정할 수 없음 → 새 파일로만 저장 (data-loss 방지).
+            // 1개일 때만 사용자에게 덮어쓰기 옵션 제공.
+            const matching = files.filter((f) => f.name === finalName);
             let file: DriveFile;
-            if (existing) {
+            if (matching.length === 1) {
+                const existing = matching[0];
                 const ok = await confirmAction(
                     `Drive 에 같은 이름의 파일 "${finalName}" 이 이미 있습니다.\n` +
                     `덮어쓰시겠습니까? (취소 시 같은 이름으로 새 파일이 생성됩니다)`,
                 );
-                if (ok) {
-                    file = await gdrive.updateFile(existing.id, saveContent);
-                } else {
-                    file = await gdrive.uploadFile(finalName, saveContent);
+                file = ok
+                    ? await gdrive.updateFile(existing.id, saveContent)
+                    : await gdrive.uploadFile(finalName, saveContent);
+            } else if (matching.length > 1) {
+                const proceed = await confirmAction(
+                    `Drive 에 "${finalName}" 이름의 파일이 ${matching.length}개 있습니다 (서로 다른 폴더 등).\n` +
+                    `어느 파일을 덮어쓸지 안전하게 특정할 수 없어 새 파일로 저장됩니다. 진행할까요?`,
+                );
+                if (!proceed) {
+                    setBusy(false);
+                    return;
                 }
+                file = await gdrive.uploadFile(finalName, saveContent);
             } else {
                 file = await gdrive.uploadFile(finalName, saveContent);
             }

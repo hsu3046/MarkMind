@@ -42,16 +42,20 @@ export function useConverter() {
     // 한 번에 1개 작업만 추적. 이미 running 인데 새 wrap() 호출 시 거부.
     // (Toolbar mutex 로 4-panel 동시 활성 X 이지만, 코드 차원에서도 보장)
     const runningRef = useRef(false);
+    // 활성 job 의 id — listener 가 jobId 매칭으로 다른 윈도우/job 의 progress 분리.
+    // null 이면 어떤 progress 도 수용 안 함.
+    const currentJobIdRef = useRef<string | null>(null);
 
-    // 진행 이벤트 전역 구독 (이 윈도우 안 모든 job 공통)
+    // 진행 이벤트 전역 구독 (이 윈도우 안 모든 job 공통). jobId 로 필터.
     useEffect(() => {
         let mounted = true;
         (async () => {
             try {
                 const unlisten = await tauriListen<ProgressStep>('converter-progress', (step) => {
                     if (!mounted) return;
-                    // 활성 job 이 없으면 무시 (이전 작업 끝났는데 늦게 도착한 event)
                     if (!runningRef.current) return;
+                    // 다른 윈도우의 동시 진행 job 또는 stale event 무시
+                    if (!currentJobIdRef.current || step.jobId !== currentJobIdRef.current) return;
                     setJobState((prev) => ({
                         ...prev,
                         steps: [...prev.steps, step],
@@ -68,20 +72,31 @@ export function useConverter() {
         };
     }, []);
 
+    /** UUID 기반 jobId 생성. crypto.randomUUID 가 없으면 폴백. */
+    const newJobId = (): string => {
+        const uuid =
+            typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                ? crypto.randomUUID().replace(/-/g, '')
+                : Math.random().toString(36).slice(2) + Date.now().toString(36);
+        return `job-${uuid}`;
+    };
+
     const resetJob = useCallback(() => {
         setJobState({ phase: 'idle', steps: [] });
     }, []);
 
     const wrap = useCallback(
-        async <T>(fn: () => Promise<T>): Promise<T | null> => {
+        async <T>(fn: (jobId: string) => Promise<T>): Promise<T | null> => {
             if (runningRef.current) {
                 console.warn('[useConverter] 이미 다른 작업 진행 중 — 거부');
                 return null;
             }
+            const jobId = newJobId();
             runningRef.current = true;
+            currentJobIdRef.current = jobId;
             setJobState({ phase: 'running', steps: [] });
             try {
-                const result = await fn();
+                const result = await fn(jobId);
                 setJobState((prev) => ({ ...prev, phase: 'done' }));
                 return result;
             } catch (err) {
@@ -91,6 +106,7 @@ export function useConverter() {
                 return null;
             } finally {
                 runningRef.current = false;
+                currentJobIdRef.current = null;
             }
         },
         [],
@@ -98,25 +114,26 @@ export function useConverter() {
 
     const runAudio = useCallback(
         (options: AudioJobOptions): Promise<AudioJobResult | null> =>
-            wrap(() => tauriInvoke<AudioJobResult>('run_audio_job', { options })),
+            wrap((jobId) => tauriInvoke<AudioJobResult>('run_audio_job', { options, jobId })),
         [wrap],
     );
 
     const runOcr = useCallback(
         (options: OcrJobOptions): Promise<OcrJobResult | null> =>
-            wrap(() => tauriInvoke<OcrJobResult>('run_ocr_job', { options })),
+            wrap((jobId) => tauriInvoke<OcrJobResult>('run_ocr_job', { options, jobId })),
         [wrap],
     );
 
     const runNotes = useCallback(
         (options: NotesJobOptions): Promise<NotesJobResult | null> =>
-            wrap(() => tauriInvoke<NotesJobResult>('run_notes_job', { options })),
+            wrap((jobId) => tauriInvoke<NotesJobResult>('run_notes_job', { options, jobId })),
         [wrap],
     );
 
     const runOcrInline = useCallback(
         async (imagePath: string): Promise<string | null> => {
             try {
+                // 인라인 OCR 는 jobState UI 추적 안 함 (StatusBar mini progress 만) — jobId 생략 OK
                 return await tauriInvoke<string>('run_ocr_inline', { imagePath });
             } catch (err) {
                 console.error('[useConverter] 인라인 OCR 실패:', err);

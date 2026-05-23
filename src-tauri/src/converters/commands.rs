@@ -17,8 +17,12 @@ pub struct JobError {
     pub job_id: String,
 }
 
-fn new_emitter(app: AppHandle) -> ProgressEmitter {
-    let id = format!("job-{}", uuid::Uuid::new_v4().simple());
+/// Frontend 가 jobId 전달하면 그걸 사용 — listener 필터링으로 다른 윈도우의 동시
+/// 진행 event 와 분리. 없으면 자체 생성 (backward compat).
+fn new_emitter(app: AppHandle, requested: Option<String>) -> ProgressEmitter {
+    let id = requested
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| format!("job-{}", uuid::Uuid::new_v4().simple()));
     ProgressEmitter::new(app, id)
 }
 
@@ -30,8 +34,9 @@ fn err_to_string(e: ConverterError) -> String {
 pub async fn run_audio_job(
     app: AppHandle,
     options: AudioJobOptions,
+    job_id: Option<String>,
 ) -> Result<AudioJobResult, String> {
-    let emitter = new_emitter(app.clone());
+    let emitter = new_emitter(app.clone(), job_id);
     audio_pipeline::run(&emitter, options, &app)
         .await
         .map_err(err_to_string)
@@ -41,8 +46,9 @@ pub async fn run_audio_job(
 pub async fn run_ocr_job(
     app: AppHandle,
     options: OcrJobOptions,
+    job_id: Option<String>,
 ) -> Result<OcrJobResult, String> {
-    let emitter = new_emitter(app);
+    let emitter = new_emitter(app, job_id);
     ocr_pipeline::run(&emitter, options)
         .await
         .map_err(err_to_string)
@@ -52,8 +58,9 @@ pub async fn run_ocr_job(
 pub async fn run_notes_job(
     app: AppHandle,
     options: NotesJobOptions,
+    job_id: Option<String>,
 ) -> Result<NotesJobResult, String> {
-    let emitter = new_emitter(app.clone());
+    let emitter = new_emitter(app.clone(), job_id);
     notes_pipeline::run(&emitter, options, &app)
         .await
         .map_err(err_to_string)
@@ -65,8 +72,9 @@ pub async fn run_notes_job(
 pub async fn run_ocr_inline(
     app: AppHandle,
     image_path: String,
+    job_id: Option<String>,
 ) -> Result<String, String> {
-    let emitter = new_emitter(app);
+    let emitter = new_emitter(app, job_id);
     ocr_pipeline::run_inline(&emitter, &image_path)
         .await
         .map_err(err_to_string)
