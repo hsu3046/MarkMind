@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { isTauri } from '../services/platform';
 
-interface RecentFile {
+export interface RecentFile {
     path: string;
     name: string;
     lastOpened: number; // timestamp

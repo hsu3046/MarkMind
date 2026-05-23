@@ -1,8 +1,8 @@
 /* ─── AI Panel ───────────────────────────────────── */
 
 .ai-panel {
-    width: 320px;
-    min-width: 320px;
+    width: 340px;
+    min-width: 340px;
     height: 100%;
     border-left: 1px solid var(--border-primary);
     background: var(--bg-secondary);
@@ -16,7 +16,6 @@
     align-items: center;
     justify-content: space-between;
     padding: 10px 12px;
-    border-bottom: 1px solid var(--border-primary);
     gap: 8px;
     flex-shrink: 0;
 }
@@ -73,7 +72,6 @@
     flex-direction: column;
     gap: 2px;
     padding: 8px;
-    border-bottom: 1px solid var(--border-primary);
     flex-shrink: 0;
 }
 
@@ -111,7 +109,6 @@
     align-items: center;
     gap: 8px;
     padding: 8px 12px;
-    border-bottom: 1px solid var(--border-primary);
     font-size: 12px;
     color: var(--text-secondary);
     flex-shrink: 0;
@@ -138,7 +135,6 @@
     display: flex;
     gap: 4px;
     padding: 8px;
-    border-bottom: 1px solid var(--border-primary);
     flex-shrink: 0;
 }
 
@@ -176,7 +172,6 @@
 
 .ai-prompt-area {
     padding: 8px;
-    border-bottom: 1px solid var(--border-primary);
     flex-shrink: 0;
 }
 
@@ -207,7 +202,17 @@
 .ai-prompt-actions {
     display: flex;
     gap: 6px;
-    margin-top: 6px;
+    margin-top: 0;
+    padding: 0 8px 8px;
+    flex-shrink: 0;
+}
+.ai-prompt-actions .ai-btn.primary {
+    width: 100%;
+    flex: 1;
+    justify-content: center;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 600;
 }
 
 /* ─── Buttons ────────────────────────────────────── */
@@ -541,3 +546,128 @@
     border-color: #ef4444;
     color: #ef4444;
 }
+/* 공통 LLM 모델 선택 (상단) */
+.ai-llm-select {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+.ai-llm-select label {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+.ai-llm-select select {
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 12px;
+    outline: none;
+}
+.ai-llm-select select option:disabled {
+    color: var(--text-tertiary, var(--text-secondary));
+}
+
+.ai-template-add-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--bg-primary);
+    border: 1px dashed var(--border-primary);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+}
+.ai-template-add-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ─── Meeting Notes (mode='meeting-notes') ─── */
+.ai-notes-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 8px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+}
+.ai-notes-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.ai-notes-field > label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+.ai-notes-field select {
+    padding: 6px 8px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 12px;
+}
+.ai-notes-provider {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.ai-notes-hint {
+    font-size: 11px;
+    color: var(--text-tertiary, var(--text-secondary));
+    padding-top: 4px;
+}
+
+.ai-notes-result {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    margin-top: 8px;
+}
+.ai-notes-result-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent);
+    font-weight: 500;
+    font-size: 13px;
+}
+.ai-notes-result-template {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.ai-notes-result-path {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    word-break: break-all;
+    padding: 6px 8px;
+    background: var(--bg-primary);
+    border-radius: 4px;
+    max-height: 60px;
+    overflow-y: auto;
+}
+.ai-notes-result-cost {
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding-top: 4px;
+    border-top: 1px solid var(--border-primary);
+}
+

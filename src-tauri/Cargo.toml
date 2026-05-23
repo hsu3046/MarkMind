@@ -18,11 +18,60 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# devtools: release 빌드에서도 우클릭 → Inspect Element 활성화 (production 디버깅)
+tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 urlencoding = "2"
+
+# === doc-converter integration deps ===
+# HTTP client for Gemini / Claude API calls (with retry + streaming)
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "multipart", "rustls-tls"] }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+futures-util = "0.3"
+async-trait = "0.1"
+
+# Audio: ffmpeg sidecar (auto-downloads ffmpeg binary on first run)
+ffmpeg-sidecar = "2"
+
+# Audio: Silero VAD via onnxruntime (Rust binding)
+# 주의: prerelease caret(^) 룰 때문에 정확한 버전 고정 — rc.12 의 VitisAI provider 컴파일 버그 회피
+ort = { version = "=2.0.0-rc.10", features = ["ndarray"] }
+ndarray = "0.16"
+
+# Audio decoding (PCM extraction for VAD)
+hound = "3"
+
+# PDF rasterization fallback
+pdfium-render = { version = "0.8", features = ["thread_safe"] }
+
+# Image processing
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+base64 = "0.22"
+
+# macOS Keychain for API key storage
+keyring = { version = "3", features = ["apple-native"] }
+
+# Utility
+uuid = { version = "1", features = ["v4"] }
+thiserror = "2"
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1"
+dirs = "5"
+tempfile = "3"
+walkdir = "2"
+mime_guess = "2"
+log = "0.4"
+env_logger = "0.11"
+
+# Google Drive 연동 (OAuth 2.0 PKCE + Drive v3 REST — reqwest 직접 사용)
+url = "2"
+tiny_http = "0.12"  # OAuth redirect callback loopback server
+rand = "0.8"        # PKCE verifier / CSRF state 난수
+sha2 = "0.10"       # PKCE S256 challenge
 

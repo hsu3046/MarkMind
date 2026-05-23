@@ -1,25 +1,25 @@
 import { GoogleGenAI } from '@google/genai';
 import { AIRequest, AIResponse, DiffChunk, getModelForMode } from '../types/ai';
-
-const API_KEY_STORAGE = 'markmind-gemini-api-key';
+import { getKey, hasKey, setKey, removeKey } from './secureStorage';
 
 // ─── API Key Management ───────────────────────────────────
+// 저장소: Tauri 환경 → macOS Keychain (Rust keyring), 웹 → localStorage.
+// 첫 호출 전에 main.tsx 의 initSecureStorage() 가 완료되어야 한다.
 
 export function getApiKey(): string | null {
-    return localStorage.getItem(API_KEY_STORAGE);
+    return getKey('gemini');
 }
 
-export function setApiKey(key: string): void {
-    localStorage.setItem(API_KEY_STORAGE, key);
+export async function setApiKey(key: string): Promise<void> {
+    await setKey('gemini', key);
 }
 
-export function removeApiKey(): void {
-    localStorage.removeItem(API_KEY_STORAGE);
+export async function removeApiKey(): Promise<void> {
+    await removeKey('gemini');
 }
 
 export function hasApiKey(): boolean {
-    const key = getApiKey();
-    return !!key && key.trim().length > 0;
+    return hasKey('gemini');
 }
 
 // ─── System Prompts ───────────────────────────────────────

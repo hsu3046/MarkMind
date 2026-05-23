@@ -3,10 +3,11 @@ import {
     Eye, PenLine, Columns2, Sun, Moon, BookOpen,
     FilePlus, FolderOpen, Save, Download,
     ZoomIn, ZoomOut, List, Maximize, Clock,
-    Search, ChevronDown, Sparkles, Check, X
+    Search, ChevronRight, Sparkles, Check, X,
+    Mic, ScanText, Settings, Menu as MenuIcon,
 } from 'lucide-react';
-import { LoginButton } from './LoginButton';
-import type { AuthUser } from '../types/auth';
+import * as gdriveService from '../services/gdriveService';
+import type { RecentFile } from '../hooks/useRecentFiles';
 
 export type ViewMode = 'split' | 'editor' | 'preview';
 
@@ -101,13 +102,18 @@ interface ToolbarProps {
     onToggleOutline: () => void;
     onToggleReadingMode: () => void;
     onToggleRecentFiles: () => void;
+    recentFiles: RecentFile[];
+    onOpenRecent: (path: string) => void;
+    onShowSettings: () => void;
+    onOpenFromDrive: () => void;
+    onSaveToDrive: () => void;
     onToggleSearch: () => void;
     onToggleAI: () => void;
+    onToggleAudio: () => void;
+    onToggleOcr: () => void;
+    audioPanelVisible: boolean;
+    ocrPanelVisible: boolean;
     onRename: (newName: string) => void;
-    authUser: AuthUser | null;
-    authIsLoading: boolean;
-    onAuthLogin: () => void;
-    onAuthLogout: () => void;
 }
 
 export function Toolbar({
@@ -129,18 +135,41 @@ export function Toolbar({
     onToggleOutline,
     onToggleReadingMode,
     onToggleRecentFiles,
+    recentFiles,
+    onOpenRecent,
+    onShowSettings,
+    onOpenFromDrive,
+    onSaveToDrive,
     onToggleSearch,
     onToggleAI,
+    onToggleAudio,
+    onToggleOcr,
+    audioPanelVisible,
+    ocrPanelVisible,
     onRename,
     showRecent,
     aiPanelVisible,
-    authUser,
-    authIsLoading,
-    onAuthLogin,
-    onAuthLogout,
 }: ToolbarProps) {
     const [fileMenuOpen, setFileMenuOpen] = useState(false);
+    const [driveAvailable, setDriveAvailable] = useState(false);
+    const [driveConnected, setDriveConnected] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
+
+    // Drive 가용성 (OAuth credentials 빌드 주입 + 연결 상태)
+    useEffect(() => {
+        if (!fileMenuOpen) return;
+        let cancelled = false;
+        (async () => {
+            const configured = await gdriveService.isConfigured();
+            if (cancelled) return;
+            setDriveAvailable(configured);
+            if (configured) {
+                const email = await gdriveService.getStatus();
+                if (!cancelled) setDriveConnected(!!email);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [fileMenuOpen]);
 
     // Close menu on outside click
     useEffect(() => {
@@ -169,8 +198,8 @@ export function Toolbar({
                         className={`toolbar-text-btn${fileMenuOpen ? ' active' : ''}`}
                         onClick={() => setFileMenuOpen((v) => !v)}
                     >
-                        <span>File</span>
-                        <ChevronDown size={12} strokeWidth={1.5} />
+                        <MenuIcon size={14} strokeWidth={1.5} />
+                        <span>Menu</span>
                     </button>
                     {fileMenuOpen && (
                         <div className="toolbar-dropdown-menu">
@@ -184,7 +213,6 @@ export function Toolbar({
                                 <span>Open</span>
                                 <span className="dropdown-shortcut">⌘O</span>
                             </button>
-                            <div className="dropdown-divider" />
                             <button className="dropdown-item" onClick={() => handleMenuItem(onSaveFile)}>
                                 <Save size={14} strokeWidth={1.5} />
                                 <span>Save</span>
@@ -195,54 +223,78 @@ export function Toolbar({
                                 <span>Save As…</span>
                                 <span className="dropdown-shortcut">⌘⇧S</span>
                             </button>
+                            {driveAvailable && (
+                                <>
+                                    <div className="dropdown-divider" />
+                                    <button
+                                        className="dropdown-item"
+                                        onClick={() => handleMenuItem(onOpenFromDrive)}
+                                        disabled={!driveConnected}
+                                        title={!driveConnected ? 'Settings 에서 Google Drive 연결 필요' : ''}
+                                    >
+                                        <img src="/googledrive.png" alt="" className="dropdown-icon-img" />
+                                        <span>Open from Drive…</span>
+                                    </button>
+                                    <button
+                                        className="dropdown-item"
+                                        onClick={() => handleMenuItem(onSaveToDrive)}
+                                        disabled={!driveConnected}
+                                        title={!driveConnected ? 'Settings 에서 Google Drive 연결 필요' : ''}
+                                    >
+                                        <img src="/googledrive.png" alt="" className="dropdown-icon-img" />
+                                        <span>Save to Drive…</span>
+                                    </button>
+                                </>
+                            )}
+                            {showRecent && (
+                                <div className="dropdown-item dropdown-submenu-trigger">
+                                    <Clock size={14} strokeWidth={1.5} />
+                                    <span>Recent Files</span>
+                                    <ChevronRight size={14} strokeWidth={1.5} className="dropdown-submenu-arrow" />
+                                    <div className="dropdown-submenu">
+                                        {recentFiles.length === 0 ? (
+                                            <div className="dropdown-submenu-empty">최근 파일 없음</div>
+                                        ) : (
+                                            <>
+                                                {recentFiles.slice(0, 10).map((f) => (
+                                                    <button
+                                                        key={f.path}
+                                                        className="dropdown-item dropdown-submenu-item"
+                                                        onClick={() => handleMenuItem(() => onOpenRecent(f.path))}
+                                                        title={f.path}
+                                                    >
+                                                        <span className="dropdown-submenu-name">{f.name}</span>
+                                                        <span className="dropdown-submenu-path">{f.path}</span>
+                                                    </button>
+                                                ))}
+                                                {recentFiles.length > 5 && (
+                                                    <button
+                                                        className="dropdown-item"
+                                                        onClick={() => handleMenuItem(onToggleRecentFiles)}
+                                                    >
+                                                        <span>최근 파일 모두 보기…</span>
+                                                    </button>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                            <button className="dropdown-item" onClick={() => handleMenuItem(onShowTutorial)}>
+                                <BookOpen size={14} strokeWidth={1.5} />
+                                <span>Tutorial</span>
+                            </button>
+                            <button className="dropdown-item" onClick={() => handleMenuItem(onShowSettings)}>
+                                <Settings size={14} strokeWidth={1.5} />
+                                <span>Settings</span>
+                            </button>
                         </div>
                     )}
                 </div>
 
-                <div className="toolbar-divider" />
-
+                {/* Search + Outline (순서 교체) */}
                 <button className="toolbar-btn" onClick={onToggleSearch} title="Search (⌘F)">
                     <Search size={15} strokeWidth={1.5} />
-                </button>
-                {showRecent && (
-                    <button className="toolbar-btn" onClick={onToggleRecentFiles} title="Recent Files">
-                        <Clock size={15} strokeWidth={1.5} />
-                    </button>
-                )}
-                <button className="toolbar-btn" onClick={onShowTutorial} title="Tutorial">
-                    <BookOpen size={15} strokeWidth={1.5} />
-                </button>
-                <button className={`toolbar-text-btn ai-agent${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI Agent (⌘I)">
-                    <Sparkles size={14} strokeWidth={1.5} />
-                    <span>AI Agent</span>
-                </button>
-            </div>
-
-            {/* Center: File name (editable) */}
-            <EditableFileName
-                fileName={fileName}
-                isDirty={isDirty}
-                onRename={onRename}
-            />
-
-            {/* Right: Font size + View mode + utilities */}
-            <div className="toolbar-group">
-                {/* Font size controls */}
-                <button className="toolbar-btn" onClick={() => onFontSizeChange(-1)} title="Zoom Out (⌘-)" disabled={viewMode === 'editor'}>
-                    <ZoomOut size={15} strokeWidth={1.5} />
-                </button>
-                <button className="toolbar-btn toolbar-font-reset" onClick={onFontSizeReset} title="Reset (⌘0)" disabled={viewMode === 'editor'}>
-                    <span className="toolbar-font-size">{fontSize}</span>
-                </button>
-                <button className="toolbar-btn" onClick={() => onFontSizeChange(1)} title="Zoom In (⌘+)" disabled={viewMode === 'editor'}>
-                    <ZoomIn size={15} strokeWidth={1.5} />
-                </button>
-
-                <div className="toolbar-divider" />
-
-                {/* Reading mode + Outline */}
-                <button className="toolbar-btn" onClick={onToggleReadingMode} title="Reading Mode">
-                    <Maximize size={16} strokeWidth={1.5} />
                 </button>
                 <button className={`toolbar-btn${outlineVisible ? ' active' : ''}`} onClick={onToggleOutline} title="Outline">
                     <List size={16} strokeWidth={1.5} />
@@ -250,20 +302,20 @@ export function Toolbar({
 
                 <div className="toolbar-divider" />
 
-                {/* View modes */}
-                <button
-                    className={`toolbar-btn${viewMode === 'preview' ? ' active' : ''}`}
-                    onClick={() => onViewModeChange('preview')}
-                    title="Preview (⌘3)"
-                >
-                    <Eye size={16} strokeWidth={1.5} />
-                </button>
+                {/* View modes (Editor + Preview 순서 교체, Split 마지막) */}
                 <button
                     className={`toolbar-btn${viewMode === 'editor' ? ' active' : ''}`}
                     onClick={() => onViewModeChange('editor')}
                     title="Editor (⌘1)"
                 >
                     <PenLine size={16} strokeWidth={1.5} />
+                </button>
+                <button
+                    className={`toolbar-btn${viewMode === 'preview' ? ' active' : ''}`}
+                    onClick={() => onViewModeChange('preview')}
+                    title="Preview (⌘3)"
+                >
+                    <Eye size={16} strokeWidth={1.5} />
                 </button>
                 <button
                     className={`toolbar-btn${viewMode === 'split' ? ' active' : ''}`}
@@ -275,18 +327,51 @@ export function Toolbar({
 
                 <div className="toolbar-divider" />
 
-                <button className="toolbar-btn" onClick={onThemeToggle} title="Toggle Theme">
-                    {theme === 'dark' ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
-                </button>
+                {/* Font size controls (압축 그룹 — 간격 좁힘) */}
+                <div className="toolbar-fontsize-group">
+                    <button className="toolbar-btn" onClick={() => onFontSizeChange(-1)} title="Zoom Out (⌘-)" disabled={viewMode === 'editor'}>
+                        <ZoomOut size={15} strokeWidth={1.5} />
+                    </button>
+                    <button className="toolbar-btn toolbar-font-reset" onClick={onFontSizeReset} title="Reset (⌘0)" disabled={viewMode === 'editor'}>
+                        <span className="toolbar-font-size">{fontSize}</span>
+                    </button>
+                    <button className="toolbar-btn" onClick={() => onFontSizeChange(1)} title="Zoom In (⌘+)" disabled={viewMode === 'editor'}>
+                        <ZoomIn size={15} strokeWidth={1.5} />
+                    </button>
+                </div>
 
                 <div className="toolbar-divider" />
 
-                <LoginButton
-                    user={authUser}
-                    isLoading={authIsLoading}
-                    onLogin={onAuthLogin}
-                    onLogout={onAuthLogout}
-                />
+                {/* Theme + Reading mode (순서 교체) */}
+                <button className="toolbar-btn" onClick={onThemeToggle} title="Toggle Theme">
+                    {theme === 'dark' ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
+                </button>
+                <button className="toolbar-btn" onClick={onToggleReadingMode} title="Reading Mode">
+                    <Maximize size={16} strokeWidth={1.5} />
+                </button>
+            </div>
+
+            {/* Center: File name (editable) */}
+            <EditableFileName
+                fileName={fileName}
+                isDirty={isDirty}
+                onRename={onRename}
+            />
+
+            {/* Right: AI/Convert panels + Login */}
+            <div className="toolbar-group">
+                <button className={`toolbar-text-btn ai-agent${audioPanelVisible ? ' active' : ''}`} onClick={onToggleAudio} title="음성 → 텍스트 변환 (STT)">
+                    <Mic size={14} strokeWidth={1.5} />
+                    <span>음성 인식</span>
+                </button>
+                <button className={`toolbar-text-btn ai-agent${ocrPanelVisible ? ' active' : ''}`} onClick={onToggleOcr} title="이미지 → 텍스트 변환 (OCR)">
+                    <ScanText size={14} strokeWidth={1.5} />
+                    <span>이미지 인식</span>
+                </button>
+                <button className={`toolbar-text-btn ai-agent${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI 에이전트 (⌘I)">
+                    <Sparkles size={14} strokeWidth={1.5} />
+                    <span>AI 에이전트</span>
+                </button>
             </div>
         </div>
     );

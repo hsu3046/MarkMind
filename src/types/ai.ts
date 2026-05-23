@@ -1,5 +1,8 @@
-/** AI 모드 선택 */
-export type AIMode = 'grammar' | 'translate' | 'improve';
+/** AI 모드 선택
+ *  - grammar/translate/improve: 현재 문서를 변형 → InlineDiff
+ *  - meeting-notes: 현재 문서를 transcript 로 보고 회의록 .md 새 파일 생성 → ResultCard
+ */
+export type AIMode = 'grammar' | 'translate' | 'improve' | 'meeting-notes';
 
 /** 번역 대상 언어 */
 export type TranslateLanguage = 'ko' | 'en' | 'ja';

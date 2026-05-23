@@ -1,6 +1,8 @@
 import { useState, useCallback, useMemo } from 'react';
-import { AIMode, AIResponse, TranslateLanguage, ImproveQuality } from '../types/ai';
+import { AIMode, AIResponse, TranslateLanguage } from '../types/ai';
 import { callAI, hasApiKey, getApiKey, setApiKey, removeApiKey, applyDiff } from '../services/aiService';
+import type { NotesJobResult } from '../types/converter';
+import type { Provider } from '../services/secureStorage';
 
 export function useAI() {
     const [mode, setMode] = useState<AIMode>('grammar');
@@ -11,21 +13,25 @@ export function useAI() {
     const [streamingText, setStreamingText] = useState<string>('');
     const [apiKeySet, setApiKeySet] = useState(hasApiKey());
     const [panelVisible, setPanelVisible] = useState(false);
-    const [improveQuality, setImproveQuality] = useState<ImproveQuality>('quality');
+    // 공통 LLM 모델 선택 — 회의록 모드에서 실제 사용. 그 외 모드는 항상 Gemini.
+    const [selectedModel, setSelectedModel] = useState<Provider>('gemini');
+    // 회의록 작성 (mode === 'meeting-notes') 전용 옵션/결과
+    const [notesTemplate, setNotesTemplate] = useState<string>('general');
+    const [notesResult, setNotesResult] = useState<NotesJobResult | null>(null);
 
     // Toggle AI panel
     const togglePanel = useCallback(() => {
         setPanelVisible(v => !v);
     }, []);
 
-    // API Key management
-    const saveApiKey = useCallback((key: string) => {
-        setApiKey(key);
+    // API Key management — Tauri Keychain (async) or localStorage fallback
+    const saveApiKey = useCallback(async (key: string) => {
+        await setApiKey(key);
         setApiKeySet(true);
     }, []);
 
-    const clearApiKey = useCallback(() => {
-        removeApiKey();
+    const clearApiKey = useCallback(async () => {
+        await removeApiKey();
         setApiKeySet(false);
     }, []);
 
@@ -33,7 +39,7 @@ export function useAI() {
         return getApiKey() || '';
     }, []);
 
-    // Run AI
+    // Run AI — 항상 quality (improve mode 도 quality 모델 사용)
     const runAI = useCallback(async (
         content: string,
         prompt?: string,
@@ -52,9 +58,8 @@ export function useAI() {
                     content,
                     prompt,
                     language: activeMode === 'translate' ? language : undefined,
-                    improveQuality: activeMode === 'improve' ? improveQuality : undefined,
+                    improveQuality: activeMode === 'improve' ? 'quality' : undefined,
                 },
-                // Stream callback
                 (text) => setStreamingText(text),
             );
             setResponse(result);
@@ -66,7 +71,7 @@ export function useAI() {
         } finally {
             setIsLoading(false);
         }
-    }, [mode, language, improveQuality]);
+    }, [mode, language]);
 
     // Accept/Reject individual chunk
     const acceptChunk = useCallback((chunkId: number) => {
@@ -139,7 +144,9 @@ export function useAI() {
         panelVisible,
         allDecided,
         undecidedCount,
-        improveQuality,
+        selectedModel,
+        notesTemplate,
+        notesResult,
 
         // Actions
         setMode,
@@ -157,6 +164,9 @@ export function useAI() {
         getFinalText,
         setResponse,
         setError,
-        setImproveQuality,
+        setSelectedModel,
+        setNotesTemplate,
+        setNotesResult,
+        setIsLoading,
     };
 }

@@ -6,71 +6,69 @@
 
 ## Tagline-en
 
-Markdown is the format AI understands best.
-But for most of us, it's not exactly easy on the eyes. That's why MarkMind was built.
-An editor designed for people — to read and edit AI-generated text, effortlessly.
+While Markdown is the document format that AI understands best, it’s not always the most comfortable for humans to read raw.
+MarkMind renders AI-generated Markdown documents into a beautifully structured, highly readable format. Integrate all your various AI document workflows into a single place with MarkMind, and manage everything from translation and summarization to editing easily and smartly with the power of AI.
 
 ## Tagline-ko
 
-마크다운은 AI가 가장 잘 이해하는 문서 형식입니다.
-그런데 막상 읽으려면 눈에 잘 안 들어오죠. 그래서 MarkMind가 탄생했습니다.
-AI가 만들어준 텍스트를, 사람이 가장 편하게 읽고 수정할 수 있는 에디터입니다.
+마크다운은 AI가 가장 잘 이해하는 문서 형식이지만, 인간이 그대로 읽기엔 조금 불편하죠.
+MarkMind는 AI가 생성한 마크다운 문서를 사람이 읽기 가장 편하고 아름다운 형태로 표시합니다.
+다양한 형태의 AI 문서 작업을 MarkMind 한 곳에 통합하고, AI를 활용해 번역, 요약, 수정까지 한 번에 쉽고 똑똑하게 관리해 보세요.
+
 
 ## Tagline-ja
 
-マークダウンは、AIが最も得意とする文書形式です。
-でも、いざ読もうとすると、なんだか読みづらい。そこで生まれたのが MarkMind です。
-AIが生成したテキストを、人が一番快適に読んで編集できるエディターです。
+マークダウンはAIが最も理解しやすい文書形式ですが、人間がそのまま読むには少し読みづらいですよね。
+MarkMindは、AIが生成したマークダウン文書を、人間にとって最も読みやすく美しい形で表示します。さまざまな形のAI文書作業をMarkMindに統合し、AIを活用した翻訳、要約、修正まで、すべてを一度に簡単かつスマートに管理してみましょう。
 
 ---
 
 ## Summary-en
 
-Reading long AI-generated documents is frustrating, isn't it?
-Too awkward in a browser, too disruptive to open in another app.
-MarkMind was built for exactly that moment.
-Just select the text and press one button.
-Grammar fixes, translations, and improvements appear with every change clearly highlighted — and you choose what to keep.
-Need to focus? Switch to reading mode. Want to compare? Open a split view.
-Beautiful dark and light themes, available on both Mac and the web.
+MarkMind consolidates scattered, unstructured data—such as handwritten notes, voice recordings, and scanned PDFs—into a highly readable document environment. It instantly transforms large media assets, including audio recordings up to 4 hours long, into editable text data. Through seamless inline AI editing, tasks like translation, summarization, and proofreading are handled in real time within the same editor, ensuring an uninterrupted workflow. In addition to providing a macOS-optimized experience, all user-specific security credentials for AI integration are encrypted and stored inside the native macOS Keychain, ensuring absolute peace of mind in security-critical business and professional environments.
 
 ## Summary-ko
 
-AI가 만든 긴 문서, 제대로 읽기가 불편하셨죠?
-웹에서 열자니 어색하고, 다른 앱으로 옮기자니 흐름이 끊기고.
-MarkMind는 바로 그 순간을 위해 만들어졌습니다.
-텍스트를 선택하고 버튼 하나만 누르세요.
-문법 교정, 번역, 문서 개선이 어디가 바뀌었는지 한눈에 보이고, 마음에 드는 부분만 골라서 반영할 수 있습니다.
-집중해서 읽고 싶을 땐 읽기 모드로, 나란히 비교하고 싶을 땐 분할 화면으로.
-아름다운 다크/라이트 테마와 함께, Mac 앱과 웹 모두에서 똑같이 쓸 수 있습니다.
+MarkMind는 손글씨 메모, 음성 녹음, 스캔된 PDF 등 파편화된 비정형 자료를 가독성 높은 문서 환경으로 통합 변환합니다. 최대 4시간 분량의 대용량 오디오와 미디어 자산을 즉각 편집 가능한 텍스트 데이터로 자산화하며, 작업 흐름의 단절이 없는 인라인 AI 편집을 통해 동일 에디터 내에서 번역·요약·교정 작업을 실시간으로 처리합니다. Mac 환경에 최적화된 워크플로우를 제공함은 물론, AI 연동을 위한 사용자 고유의 보안 정보는 macOS 자체 안전 시스템(Keychain)에 암호화되어 보관되므로 보안이 중요한 비즈니스 및 전문 작업 환경에서도 안심하고 사용할 수 있습니다.
 
 ## Summary-ja
 
-AIが生成した長い文書、ちゃんと読むのが意外と不便ですよね。
-ブラウザで開くと使いにくいし、別のアプリに移すと集中力が途切れてしまう。
-MarkMind は、まさにその瞬間のために作られました。
-テキストを選択して、ボタンを一つ押すだけ。
-文法の修正、翻訳、文章の改善が、どこが変わったか一目でわかる形で表示され、気に入った部分だけを反映できます。
-じっくり読みたいときは読書モードに、見比べたいときは分割画面に。
-ダーク／ライトテーマの美しいインターフェースで、Mac アプリとウェブ、どちらでも同じように使えます。
+MarkMindは、手書きのメモ、音声録音、スキャンされたPDFなど、散在する非構造化データを視認性の高い文書環境へと統合・変換します。最大4時間に及ぶ大容量の音声やメディア資産を即座に編集可能なテキストデータへと変換。ワークフローを中断させることのないインラインAI編集により、同一エディタ内で翻訳・要約・校正作業をリアルタイムに処理します。Mac環境に最適化されたワークフローを提供するだけでなく、AI連携のためのユーザー固有のセキュリティ情報はmacOS標準のセキュリティシステム（Keychain）に暗号化されて保管されるため、機密性が重視されるビジネスやプロフェッショナルな作業環境でも安心してお使いいただけます。
 
 ---
 
 ## ✨ What It Does
 
-- **Fixes grammar in-place** — Select text, tap "Grammar Fix," and see word-level highlights of every correction — accept or reject one by one.
-- **Translates seamlessly** — Korean ↔ English ↔ Japanese with paragraph-by-paragraph before/after diffs so nothing gets lost.
-- **Improves entire documents** — Speed mode (Gemini Flash) for quick polish or Quality mode (Gemini Pro) for deep rewrites.
-- **Pops up an AI bar on selection** — Highlight any text in the editor and a floating action bar appears instantly — no panels to open.
-- **Streams AI responses live** — Watch the rewrite appear in real time, then review the smart diff when it's done.
-- **Renames files inline** — Click the filename in the toolbar to edit it. Saved files are renamed on disk automatically.
-- **Shows version info** — Current app version displayed in the status bar, auto-managed with build workflows.
-- **Renders beautiful previews** — Side-by-side split view, full-width reading mode, and synchronized scroll with code syntax highlighting.
-- **Navigates with an outline panel** — Auto-extracted H1–H6 headings, click to jump, always in sync.
-- **Opens multiple windows** — Cascade-positioned windows with `⌘N`, recent file access, and Finder file association for `.md` files.
-- **Searches everywhere** — CodeMirror search in the editor (`⌘F`) plus DOM-based highlight search in preview mode.
-- **Switches themes instantly** — Dark and light mode with Pretendard CJK-optimized typography.
-- **Runs as a web app too** — Same React codebase deploys to the web with zero Tauri dependency.
+### AI Editing (selected text or full document)
+
+- **Fixes grammar in-place** — Select text, pick "문법 교정," and see word-level highlights of every correction — accept or reject one by one.
+- **Translates seamlessly** — Korean ↔ English ↔ Japanese with paragraph-by-paragraph before/after diffs.
+- **Improves entire documents** — Free-form prompt with Gemini 3.1 Pro for deep rewrites.
+- **Generates meeting notes** — Full document as transcript → structured Markdown notes via Claude Sonnet 4.6 or Gemini 3.1 Pro. Built-in templates (general / detailed / team-sync) + user-defined templates.
+- **Pops up an AI bar on selection** — Highlight any text in the editor and a floating action bar appears instantly.
+- **Streams AI responses live** — Watch the rewrite appear in real time, then review the smart diff.
+
+### Multimodal Input (doc-converter integration)
+
+- **Speech → Text (음성 인식)** — Drop an audio file (up to 4h / 1GB). Auto-chunked, speaker-labeled transcription with **Silero VAD** silence trimming (saves ~30–40% Gemini cost). Original recording timestamps preserved across chunks.
+- **Image → Text (이미지 인식)** — 2-pass OCR (Gemini Flash extraction → Gemini Pro refinement) for handwriting, screenshots, and PDFs up to 250MB. Auto-fallback to pdfium rasterization for stubborn PDFs.
+- **Inline OCR drag-drop** — Drop an image directly into the editor (when no sidebar active) → OCR result inserted at cursor.
+- **Sidebar drag-drop** — Drop audio/PDF/image files into the active sidebar → file auto-attached by extension.
+
+### Editor Experience
+
+- **Renames files inline** — Click the filename in the toolbar to edit. Saved files renamed on disk automatically.
+- **Renders beautiful previews** — Side-by-side split, full-width reading mode, synchronized scroll, code syntax highlighting, frontmatter rendered as metadata box.
+- **Navigates with outline** — Auto-extracted H1–H6 headings, click to jump.
+- **Opens multiple windows** — Cascade-positioned, `⌘N` shortcut, recent files in File menu, Finder file association for `.md`.
+- **Searches everywhere** — CodeMirror search in the editor (Korean UI, `⌘F`) plus DOM-based highlight in preview mode.
+- **Switches themes instantly** — Dark and light with Pretendard CJK-optimized typography.
+
+### Security & Settings
+
+- **Unified Settings modal** — One place for Gemini, Claude, OpenAI keys (File → Settings).
+- **macOS Keychain storage** — All API keys live in the OS Keychain (`space.knowai.markmind`), never in localStorage on the desktop app.
+- **Legacy migration** — First launch auto-migrates any old `localStorage` keys to Keychain.
 
 ---
 
@@ -79,13 +77,16 @@ MarkMind は、まさにその瞬間のために作られました。
 | Layer | Technology |
 |-------|------------|
 | Framework | [Tauri v2](https://v2.tauri.app) |
-| Frontend | React 19 + TypeScript (Strict) |
-| Editor | CodeMirror 6 |
-| Markdown | react-markdown + remark-gfm + rehype-highlight |
-| AI | Google Gemini SDK (@google/genai) |
+| Frontend | React 19 + TypeScript 5.8 (strict) |
+| Editor | CodeMirror 6 (Korean i18n phrases) |
+| Markdown | react-markdown + remark-gfm + remark-frontmatter + rehype-highlight |
+| AI (LLM) | Google Gemini SDK · Anthropic Claude REST · OpenAI |
+| AI (Audio) | **Silero VAD v5** ([ort](https://crates.io/crates/ort) 2.0) + **ffmpeg-sidecar** auto-download |
+| AI (PDF fallback) | [pdfium-render](https://crates.io/crates/pdfium-render) |
+| Secrets | macOS Keychain via [keyring](https://crates.io/crates/keyring) crate |
 | Icons | Lucide React |
-| Build | Vite 7 |
-| Backend | Rust |
+| Build | Vite 7 + Tauri CLI |
+| Backend | Rust (tokio async + reqwest + ort + ffmpeg-sidecar) |
 
 ---
 
@@ -95,10 +96,18 @@ MarkMind は、まさにその瞬間のために作られました。
 
 Download the latest `.dmg` from [Releases](https://github.com/yuhitomi/markmind/releases).
 
+First launch:
+1. Open **File → Settings** to enter at least one API key:
+   - **Gemini** (required for speech/OCR/grammar/translate/improve): [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+   - **Claude** (optional, default for meeting notes): [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
+   - **OpenAI** (optional): [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+2. macOS Keychain may prompt — choose **"Always Allow"** to avoid future prompts for the same build.
+3. (Audio first run only) ffmpeg auto-downloads to user cache — takes ~30s on first transcription.
+
 ### Build from Source
 
 ```bash
-# Prerequisites: Node.js 18+, Rust, Xcode CLI Tools
+# Prerequisites: Node.js 18+, Rust 1.75+, Xcode CLI Tools
 
 git clone https://github.com/yuhitomi/markmind.git
 cd markmind
@@ -107,15 +116,18 @@ npm install
 # Development (HMR enabled)
 npm run tauri dev
 
-# Production build
+# Production build (.app + .dmg in src-tauri/target/release/bundle/)
 npm run tauri build
+
+# Run Rust unit tests (VAD post-process, timestamp mapping, etc.)
+cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 
-### Web Only
+### Web Only (no AI sidebars)
 
 ```bash
 npm run dev
-# Open http://localhost:5173
+# Open http://localhost:1420
 ```
 
 ---
@@ -129,9 +141,9 @@ npm run dev
 | Save | `⌘S` |
 | Save As | `⌘⇧S` |
 | Find | `⌘F` |
-| Preview Mode | `⌘3` |
 | Editor Mode | `⌘1` |
 | Split View | `⌘2` |
+| Preview Mode | `⌘3` |
 | Zoom In | `⌘+` |
 | Zoom Out | `⌘-` |
 | Reset Zoom | `⌘0` |
@@ -143,56 +155,107 @@ npm run dev
 
 ```
 markmind/
-├── src/                        # React frontend
-│   ├── components/             # UI components
-│   │   ├── AIPanel.tsx         # AI side panel (mode, prompt, streaming)
-│   │   ├── Editor.tsx          # CodeMirror 6 editor
-│   │   ├── Preview.tsx         # Markdown preview renderer
-│   │   ├── Toolbar.tsx         # Top toolbar with actions
-│   │   ├── InlineDiffView.tsx  # Block-level accept/reject diff
-│   │   ├── FloatingAIBar.tsx   # Selection popup for AI actions
-│   │   ├── DiffView.tsx        # Diff comparison renderer
-│   │   ├── OutlinePanel.tsx    # H1–H6 heading navigator
-│   │   ├── RecentFilesPanel.tsx # Recent file list
-│   │   └── StatusBar.tsx       # Bottom status bar
-│   ├── hooks/                  # Custom React hooks
-│   │   └── useAI.ts            # AI service integration hook
-│   ├── services/               # Platform detection, AI client, web FS
-│   ├── types/                  # TypeScript types (AI modes, diff chunks)
-│   ├── constants/              # Tutorial content
-│   └── App.tsx                 # Root component
-├── src-tauri/                  # Rust backend
-│   ├── src/lib.rs              # Window management, file association
-│   └── capabilities/           # Tauri v2 permissions
-├── docs/                       # Internal documentation
-│   ├── MEMORY.md               # Persistent AI/dev context
-│   └── TODO.md                 # Feature roadmap
-├── public/                     # Static assets
-└── package.json                # Dependencies & scripts
+├── src/                                    # React frontend
+│   ├── components/
+│   │   ├── AIPanel.tsx                     # AI side panel (mode + LLM selector)
+│   │   ├── ai/                             # AIPanel sub-components
+│   │   │   ├── ModeSelector.tsx            # Mode radio (grammar/translate/improve/notes)
+│   │   │   ├── LlmSelector.tsx             # Gemini/Claude/OpenAI dropdown
+│   │   │   ├── NotesOptions.tsx            # Template select + user template folder
+│   │   │   └── NotesResultCard.tsx         # Meeting notes result card
+│   │   ├── convert/                        # Multimodal input panels
+│   │   │   ├── AudioTab.tsx                # Speech → text (음성 인식)
+│   │   │   ├── OcrTab.tsx                  # Image/PDF → text (이미지 인식)
+│   │   │   ├── NotesTab.tsx                # (kept for fallback)
+│   │   │   ├── SettingsView.tsx            # Unified key management UI
+│   │   │   ├── ProgressPanel.tsx           # Step log with lucide icons
+│   │   │   ├── ResultCard.tsx              # Output .md file links
+│   │   │   └── pickFile.ts                 # Tauri file dialog wrappers
+│   │   ├── sidebar/ConvertSidebar.tsx      # Sidebar wrapper (340px)
+│   │   ├── SettingsModal.tsx               # Settings overlay (File → Settings)
+│   │   ├── Editor.tsx                      # CodeMirror 6 (KO phrases)
+│   │   ├── Preview.tsx                     # Markdown + frontmatter renderer
+│   │   ├── Toolbar.tsx                     # File ▾ · Outline · Search · 음성 인식 · 이미지 인식 · AI 에이전트
+│   │   ├── InlineDiffView.tsx              # Block-level accept/reject diff
+│   │   ├── FloatingAIBar.tsx               # Selection popup for AI actions
+│   │   ├── OutlinePanel.tsx                # H1–H6 navigator
+│   │   ├── RecentFilesPanel.tsx            # Recent file list (also in File menu submenu)
+│   │   └── StatusBar.tsx                   # Bottom status bar
+│   ├── hooks/
+│   │   ├── useAI.ts                        # AI state + selected LLM + notes state
+│   │   ├── useConverter.ts                 # Tauri invoke wrappers + progress events
+│   │   ├── useFileSystem.ts                # Tauri fs + web FS Access fallback
+│   │   ├── useTheme.ts                     # Light/dark
+│   │   └── useRecentFiles.ts               # Persisted recent files
+│   ├── services/
+│   │   ├── aiService.ts                    # Gemini SDK calls
+│   │   ├── secureStorage.ts                # Keychain wrapper + localStorage fallback
+│   │   ├── platform.ts                     # isTauri() detection
+│   │   └── knowaiAuth.ts                   # KnowAI SSO (login button)
+│   └── types/                              # AI modes, converter types
+├── src-tauri/                              # Rust backend
+│   ├── src/
+│   │   ├── lib.rs                          # Window mgmt + invoke handlers
+│   │   └── converters/                     # doc-converter integration (Rust port)
+│   │       ├── mod.rs                      # Model IDs, pricing, common types
+│   │       ├── error.rs                    # ConverterError enum
+│   │       ├── keychain.rs                 # macOS Keychain wrapper (3 providers)
+│   │       ├── progress.rs                 # Tauri event emitter
+│   │       ├── templates.rs                # Meeting note template loader
+│   │       ├── commands.rs                 # Tauri command registrations
+│   │       ├── audio_pipeline.rs           # Speech → text (chunking + context)
+│   │       ├── audio_splitter.rs           # ffmpeg chunk splitter
+│   │       ├── vad.rs                      # Silero VAD ONNX + ffmpeg concat demuxer
+│   │       ├── ocr_pipeline.rs             # 2-pass OCR + pdfium fallback
+│   │       ├── notes_pipeline.rs           # Meeting notes generation
+│   │       ├── pdf_extractor.rs            # PDF → PNG via pdfium-render
+│   │       └── llm/
+│   │           ├── gemini.rs               # inline + File API + exponential backoff
+│   │           └── anthropic.rs            # Claude messages API + retry
+│   ├── resources/
+│   │   ├── silero_vad.onnx                 # VAD model (2.2 MB, bundled)
+│   │   └── meeting-templates/              # Built-in templates (general/detailed/team-sync)
+│   ├── capabilities/default.json           # Tauri v2 ACL (windows + event + fs scope)
+│   └── tauri.conf.json                     # Bundle config
+├── docs/                                   # Internal documentation
+└── package.json
 ```
 
 ---
 
 ## 🗺 Roadmap
 
-> **Core Vision**: *Read beautifully → Edit quickly → Export to final format*
+> **Core Vision**: *Read beautifully → Edit quickly → Convert anything → Export to final format*
 
-- [x] **Phase 1**: Viewing — Font size, outline panel, reading mode
-- [x] **Phase 2**: Editing — Search & replace, recent files, multi-window
-- [x] **Phase 3**: AI Editing — Grammar fix, translate, document improvement, inline diff
-- [x] **Phase 3.5**: UX polish — Icon-only toolbar, inline file rename, version display, build automation
-- [ ] **Phase 3.6**: AI prompt templates — CRUD, mode filtering, file-based sharing
-- [ ] **Phase 3.7**: Internationalization — EN/KO/JA UI switching
-- [ ] **Phase 4**: Export — PDF, Google Docs, PPTX conversion
-- [ ] **Phase 5**: Cloud — Google Drive sync, share links
+- [x] **Phase 1**: Viewing — Font size, outline panel, reading mode, frontmatter box
+- [x] **Phase 2**: Editing — Search & replace (Korean UI), recent files, multi-window
+- [x] **Phase 3**: AI Editing — Grammar fix, translate, document improvement, inline diff, streaming
+- [x] **Phase 3.5**: UX polish — Lucide icons, inline file rename, version display
+- [x] **Phase 4**: Multimodal — Speech-to-text with VAD, image/PDF OCR, meeting notes (Claude/Gemini)
+- [x] **Phase 4.5**: Integration — Unified settings, Keychain storage, multi-LLM selector (Gemini/Claude/OpenAI)
+- [ ] **Phase 5**: Speaker management UI (rename/merge speakers post-transcription)
+- [ ] **Phase 6**: Export — PDF, Google Docs, PPTX conversion
+- [ ] **Phase 7**: Cloud sync — Google Drive, share links
 
-See [TODO.md](docs/TODO.md) for the detailed feature roadmap.
+See [docs/TODO.md](docs/TODO.md) for the detailed roadmap.
+
+---
+
+## 🧪 Testing
+
+```bash
+# Rust unit tests (14 tests covering VAD post-process, timestamp mapping, regex extraction)
+cargo test --manifest-path src-tauri/Cargo.toml --lib
+
+# TypeScript type check
+npx tsc --noEmit
+```
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please follow these steps:
+Contributions welcome:
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feat/amazing-feature`)
@@ -205,6 +268,8 @@ Contributions are welcome! Please follow these steps:
 ## 📄 License
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE).
+
+The Silero VAD model (silero_vad.onnx) is included under the [MIT license](https://github.com/snakers4/silero-vad).
 
 ---
 
