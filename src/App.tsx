@@ -10,17 +10,28 @@ import { AIPanel } from './components/AIPanel';
 import { FloatingAIBar } from './components/FloatingAIBar';
 import { InlineDiffView } from './components/InlineDiffView';
 import { AuthCallback } from './components/AuthCallback';
+import { SettingsModal } from './components/SettingsModal';
+import { DriveBrowser } from './components/DriveBrowser';
+import type { DriveFile } from './services/gdriveService';
+import { confirmAction } from './services/dialogService';
 import { useFileSystem } from './hooks/useFileSystem';
 import { useTheme } from './hooks/useTheme';
 import { useRecentFiles } from './hooks/useRecentFiles';
 import { useScrollSync } from './hooks/useScrollSync';
 import { useAI } from './hooks/useAI';
 import { useAuth } from './hooks/useAuth';
+import { useConverter } from './hooks/useConverter';
 import { isTauri } from './services/platform';
 import { getCallbackPath } from './services/knowaiAuth';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
-import { Link, Unlink } from 'lucide-react';
+import { Link, Unlink, Mic, ScanText, BookOpen, X as IconX } from 'lucide-react';
+import { ConvertSidebar } from './components/sidebar/ConvertSidebar';
+import { AudioTab } from './components/convert/AudioTab';
+import { OcrTab } from './components/convert/OcrTab';
+import type { DroppedFile } from './components/convert/types';
 import './App.css';
+import './components/convert/convert.css';
+import './components/sidebar/sidebar.css';
 
 const FONT_SIZE_MIN = 12;
 const FONT_SIZE_MAX = 28;
@@ -46,6 +57,7 @@ function App() {
     saveFileAs,
     newFile,
     openFromRecent,
+    loadFromMemory,
     renameFile,
   } = useFileSystem(() => onFileOpenedRef.current?.());
 
@@ -68,6 +80,8 @@ function App() {
   const [outlineVisible, setOutlineVisible] = useState(false);
   const [readingMode, setReadingMode] = useState(false);
   const [tutorialVisible, setTutorialVisible] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const [driveBrowserMode, setDriveBrowserMode] = useState<'open' | 'save' | null>(null);
   const [recentPanelVisible, setRecentPanelVisible] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -84,17 +98,186 @@ function App() {
   const ai = useAI();
   const [selectedText, setSelectedText] = useState('');
   const [selectionCoords, setSelectionCoords] = useState<{ top: number; left: number } | null>(null);
-  // Track original content & selected text when AI runs on a selection
   const aiSelectionRef = useRef<{ fullContent: string; selectedText: string } | null>(null);
 
-  const handleToggleAI = useCallback(() => {
-    // Auto-switch to editor mode when opening AI panel
-    if (!ai.panelVisible && viewMode !== 'editor') {
+  // Convert (음성/이미지) 사이드바 — AI Agent 와 mutex
+  // (회의록 작성은 AI Agent의 'meeting-notes' 모드로 병합됨)
+  const converter = useConverter();
+  const [audioPanelVisible, setAudioPanelVisible] = useState(false);
+  const [ocrPanelVisible, setOcrPanelVisible] = useState(false);
+
+  const closeAllConvertPanels = useCallback(() => {
+    setAudioPanelVisible(false);
+    setOcrPanelVisible(false);
+  }, []);
+
+  const ensureEditorView = useCallback(() => {
+    if (viewMode !== 'editor') {
       setViewMode('editor');
       setReadingMode(false);
     }
+  }, [viewMode]);
+
+  const handleToggleAI = useCallback(() => {
+    if (!ai.panelVisible) {
+      ensureEditorView();
+      closeAllConvertPanels();
+    }
     ai.togglePanel();
-  }, [ai, viewMode]);
+  }, [ai, ensureEditorView, closeAllConvertPanels]);
+
+  const handleToggleAudio = useCallback(() => {
+    if (audioPanelVisible) {
+      setAudioPanelVisible(false);
+    } else {
+      if (ai.panelVisible) ai.togglePanel();
+      setOcrPanelVisible(false);
+      ensureEditorView();
+      setAudioPanelVisible(true);
+    }
+  }, [audioPanelVisible, ai, ensureEditorView]);
+
+  const handleToggleOcr = useCallback(() => {
+    if (ocrPanelVisible) {
+      setOcrPanelVisible(false);
+    } else {
+      if (ai.panelVisible) ai.togglePanel();
+      setAudioPanelVisible(false);
+      ensureEditorView();
+      setOcrPanelVisible(true);
+    }
+  }, [ocrPanelVisible, ai, ensureEditorView]);
+
+  // 사이드바로 drop된 파일을 자식 컴포넌트에 전달하기 위한 state
+  const [audioDropped, setAudioDropped] = useState<DroppedFile | null>(null);
+  const [ocrDropped, setOcrDropped] = useState<DroppedFile | null>(null);
+
+  // 최신 패널 state 를 ref 로 유지 — useEffect deps 최소화 (listener 등록/해제 빈도 ↓)
+  const panelStateRef = useRef({ audioPanelVisible: false, ocrPanelVisible: false });
+  useEffect(() => {
+    panelStateRef.current = { audioPanelVisible, ocrPanelVisible };
+  }, [audioPanelVisible, ocrPanelVisible]);
+
+  // OS-level 파일 드롭 라우팅 (mount 시 1회만 등록)
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | null = null;
+    (async () => {
+      try {
+        const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+        const win = getCurrentWebviewWindow();
+        unlisten = await win.listen<{ paths: string[] }>('tauri://drag-drop', async (event) => {
+          const path = event.payload?.paths?.[0];
+          if (!path) return;
+          const ext = path.split('.').pop()?.toLowerCase() ?? '';
+          const name = path.split(/[\\/]/).pop() ?? path;
+          const audioExts = ['mp3','wav','m4a','qta','aac','ogg','flac','wma','amr','opus','mp4','mov','webm','m4v'];
+          const ocrExts = ['png','jpg','jpeg','webp','heic','heif','gif','pdf'];
+          const { audioPanelVisible: audOn, ocrPanelVisible: ocrOn } = panelStateRef.current;
+
+          // 1) 활성 사이드바 우선 라우팅
+          if (audOn && audioExts.includes(ext)) {
+            setAudioDropped({ path, name });
+            return;
+          }
+          if (ocrOn && ocrExts.includes(ext)) {
+            setOcrDropped({ path, name });
+            return;
+          }
+
+          // 2) 사이드바 비활성 + 이미지 → 에디터 인라인 OCR
+          if (ocrExts.filter(e => e !== 'pdf').includes(ext)) {
+            try {
+              const text = await converter.runOcrInline(path);
+              if (text && editorRef.current) {
+                editorRef.current.insertAtCursor(`\n${text}\n`);
+              } else if (!text) {
+                alert('인라인 OCR 실패. Gemini API 키 확인.');
+              }
+            } catch (err) {
+              console.error('[App] 인라인 OCR 실패:', err);
+            }
+          }
+          // 3) 마크다운/텍스트는 기존 Tauri RunEvent::Opened 가 처리 (새 윈도우)
+        });
+      } catch (err) {
+        console.warn('[App] drop listener 등록 실패:', err);
+      }
+    })();
+    return () => {
+      if (unlisten) unlisten();
+    };
+    // converter 만 deps — drop handler 내부는 ref 로 최신 state 접근
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [converter]);
+
+  /**
+   * 변환 결과를 현재 에디터에 로드. 기존 파일 처리:
+   * - dirty 면: confirm 후 저장 안 된 변경 폐기
+   * - clean 이면: 곧바로 교체
+   * 패널은 닫지 않음 (사용자가 다른 결과도 열어볼 수 있게)
+   */
+  const handleOpenInCurrentEditor = useCallback(
+    async (path: string) => {
+      if (isDirty) {
+        let ok = false;
+        if (isTauri()) {
+          // Tauri native dialog (main thread block 안 함, macOS 표준 UI)
+          try {
+            const { ask } = await import('@tauri-apps/plugin-dialog');
+            ok = await ask(
+              '현재 문서에 저장되지 않은 변경사항이 있습니다.\n' +
+              '변환 결과로 교체하시겠습니까? (변경사항은 사라집니다)',
+              { title: 'MarkMind', kind: 'warning' },
+            );
+          } catch {
+            // dialog plugin 실패 시 fallback
+            ok = confirm('변경사항이 사라집니다. 결과로 교체할까요?');
+          }
+        } else {
+          ok = confirm('변경사항이 사라집니다. 결과로 교체할까요?');
+        }
+        if (!ok) return;
+      }
+      try {
+        const text = await converter.readFileText(path);
+        const name = path.split(/[\\/]/).pop() ?? path;
+        openFromRecent(path, text, name);
+      } catch (err) {
+        console.error('[App] 결과 파일 읽기 실패:', err);
+        alert('결과 파일 읽기 실패: ' + err);
+      }
+    },
+    [isDirty, openFromRecent, converter],
+  );
+
+  // AIPanel "실행" 클릭 → 모드에 따라 분기
+  // - meeting-notes: converter.runNotes (새 .md 생성)
+  // - 그 외: ai.runAI (현재 content 변형 → InlineDiff)
+  const handleAIRun = useCallback(async (runContent: string, runPrompt?: string) => {
+    if (ai.mode === 'meeting-notes') {
+      ai.setNotesResult(null);
+      ai.setError(null);
+      ai.setIsLoading(true);
+      try {
+        // selectedModel 이 openai 면 회의록 백엔드 미지원 → Claude 폴백
+        const provider = ai.selectedModel === 'openai' ? 'claude' : ai.selectedModel;
+        const result = await converter.runNotes({
+          transcript: runContent,
+          template: ai.notesTemplate,
+          source: fileName || 'document.md',
+          provider,
+        });
+        if (result) ai.setNotesResult(result);
+      } catch (err) {
+        ai.setError(err instanceof Error ? err.message : '회의록 생성 실패');
+      } finally {
+        ai.setIsLoading(false);
+      }
+    } else {
+      await ai.runAI(runContent, runPrompt);
+    }
+  }, [ai, converter, fileName]);
 
   const handleSelectionChange = useCallback((text: string, coords: { top: number; left: number } | null) => {
     setSelectedText(text);
@@ -156,26 +339,27 @@ function App() {
     }
   }, [filePath, addRecentFile]);
 
-  // Load file from URL query parameter (for multi-window — new window opened with a file path)
+  // 새로 spawn 된 윈도우는 자기 label 로 take_pending_file 호출 → path 로드.
+  // URL 쿼리 (?file=...) 방식은 macOS WKWebView 의 URL 길이 + 한글 인코딩 누락 버그로 폐기.
   useEffect(() => {
     if (!isTauri()) return;
-    const params = new URLSearchParams(window.location.search);
-    const fileParam = params.get('file');
-    if (fileParam) {
-      (async () => {
-        try {
-          const { readTextFile } = await import('@tauri-apps/plugin-fs');
-          const content = await readTextFile(fileParam);
-          const name = fileParam.split('/').pop() || 'Untitled.md';
-          // openFromRecent will call onFileOpened → setViewMode('preview')
-          openFromRecent(fileParam, content, name);
-        } catch (err) {
-          console.error('Failed to load file from query:', err);
-        }
-      })();
-    } else {
-      // New empty window — stay in editor mode (default)
-    }
+    (async () => {
+      try {
+        const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+        const { invoke } = await import('@tauri-apps/api/core');
+        const label = getCurrentWebviewWindow().label;
+        // 'main' 윈도우의 OS file association path 도 같은 명령으로 받음
+        if (label === 'main') return; // main 은 useFileSystem 의 get_pending_file 흐름이 처리
+        const path = await invoke<string | null>('take_pending_file', { label });
+        if (!path) return;
+        const { readTextFile } = await import('@tauri-apps/plugin-fs');
+        const content = await readTextFile(path);
+        const name = path.split('/').pop() || 'Untitled.md';
+        openFromRecent(path, content, name);
+      } catch (err) {
+        console.error('Failed to load pending file:', err);
+      }
+    })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-attach scroll sync + close search on view mode change
@@ -219,9 +403,9 @@ function App() {
 
   // Search toggle
   const toggleSearch = useCallback(() => {
-    // In editor or split mode, trigger CodeMirror's built-in search
+    // In editor or split mode, toggle CodeMirror's built-in search panel
     if (viewMode !== 'preview') {
-      editorRef.current?.openSearch();
+      editorRef.current?.toggleSearch();
       return;
     }
     // In preview mode, show the preview search bar
@@ -365,10 +549,27 @@ function App() {
     [openFromRecent],
   );
 
+  /** File 메뉴 submenu 에서 path 만으로 열기 — content 는 자체적으로 읽음 */
+  const handleOpenRecentByPath = useCallback(
+    async (path: string) => {
+      if (!isTauri()) return;
+      try {
+        const { readTextFile } = await import('@tauri-apps/plugin-fs');
+        const content = await readTextFile(path);
+        const name = path.split(/[\\/]/).pop() ?? path;
+        openFromRecent(path, content, name);
+      } catch (err) {
+        console.error('[App] Recent file open failed:', err);
+      }
+    },
+    [openFromRecent],
+  );
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (settingsVisible) { setSettingsVisible(false); return; }
         if (tutorialVisible) { setTutorialVisible(false); return; }
         if (readingMode) { setReadingMode(false); return; }
         if (searchVisible) { toggleSearch(); return; }
@@ -439,7 +640,7 @@ function App() {
   }, [
     saveFile, saveFileAs, openFile, newFile, toggleSearch,
     handleFontSizeChange, resetFontSize, readingMode, recentPanelVisible,
-    searchVisible, viewMode, handleToggleAI,
+    searchVisible, viewMode, handleToggleAI, tutorialVisible, settingsVisible,
   ]);
 
   // Split pane drag
@@ -550,20 +751,25 @@ function App() {
         onSaveFile={saveFile}
         onSaveFileAs={saveFileAs}
         onShowTutorial={() => setTutorialVisible(true)}
+        onShowSettings={() => setSettingsVisible(true)}
+        onOpenFromDrive={() => setDriveBrowserMode('open')}
+        onSaveToDrive={() => setDriveBrowserMode('save')}
         onFontSizeChange={handleFontSizeChange}
         onFontSizeReset={resetFontSize}
         onToggleOutline={() => setOutlineVisible((v) => !v)}
         onToggleReadingMode={toggleReadingMode}
         onToggleRecentFiles={() => setRecentPanelVisible((v) => !v)}
+        recentFiles={recentFiles}
+        onOpenRecent={handleOpenRecentByPath}
         onToggleSearch={toggleSearch}
         onToggleAI={handleToggleAI}
+        onToggleAudio={handleToggleAudio}
+        onToggleOcr={handleToggleOcr}
+        audioPanelVisible={audioPanelVisible}
+        ocrPanelVisible={ocrPanelVisible}
         showRecent={isTauri()}
         aiPanelVisible={ai.panelVisible}
         onRename={renameFile}
-        authUser={auth.user}
-        authIsLoading={auth.isLoading}
-        onAuthLogin={auth.login}
-        onAuthLogout={auth.logout}
       />
 
       {/* Search bar */}
@@ -604,6 +810,14 @@ function App() {
           ) : searchQuery ? (
             <span className="search-count search-count-empty">No results</span>
           ) : null}
+          <button
+            className="search-close-btn"
+            onClick={toggleSearch}
+            title="검색 닫기 (Esc)"
+            aria-label="검색 닫기"
+          >
+            <IconX size={20} strokeWidth={2} />
+          </button>
         </div>
       )}
 
@@ -714,19 +928,50 @@ function App() {
           streamingText={ai.streamingText}
           apiKeySet={ai.apiKeySet}
           content={content}
-          improveQuality={ai.improveQuality}
+          selectedModel={ai.selectedModel}
+          onSelectedModelChange={ai.setSelectedModel}
           onModeChange={ai.setMode}
           onLanguageChange={ai.setLanguage}
-          onImproveQualityChange={ai.setImproveQuality}
-          onRun={ai.runAI}
-          onSaveApiKey={ai.saveApiKey}
-          onClearApiKey={ai.clearApiKey}
-          currentApiKey={ai.currentApiKey}
+          notesTemplate={ai.notesTemplate}
+          notesResult={ai.notesResult}
+          loadTemplates={converter.listTemplates}
+          openEditorWindow={handleOpenInCurrentEditor}
+          onNotesTemplateChange={ai.setNotesTemplate}
+          onRun={handleAIRun}
+          onShowSettings={() => setSettingsVisible(true)}
         />
+
+        <ConvertSidebar
+          visible={audioPanelVisible}
+          title="음성→텍스트 변환"
+          icon={<Mic size={14} />}
+          onClose={() => setAudioPanelVisible(false)}
+        >
+          <AudioTab
+            converter={converter}
+            onOpenResult={handleOpenInCurrentEditor}
+            droppedFile={audioDropped}
+            onConsumeDropped={() => setAudioDropped(null)}
+          />
+        </ConvertSidebar>
+
+        <ConvertSidebar
+          visible={ocrPanelVisible}
+          title="이미지→텍스트 변환"
+          icon={<ScanText size={14} />}
+          onClose={() => setOcrPanelVisible(false)}
+        >
+          <OcrTab
+            converter={converter}
+            onOpenResult={handleOpenInCurrentEditor}
+            droppedFile={ocrDropped}
+            onConsumeDropped={() => setOcrDropped(null)}
+          />
+        </ConvertSidebar>
 
       </div>
 
-      <StatusBar content={content} filePath={filePath} fontSize={fontSize} />
+      <StatusBar content={content} filePath={filePath} />
 
       <RecentFilesPanel
         files={recentFiles}
@@ -742,8 +987,8 @@ function App() {
         <div className="tutorial-overlay" onClick={() => setTutorialVisible(false)}>
           <div className="tutorial-overlay-content" onClick={(e) => e.stopPropagation()}>
             <div className="tutorial-overlay-header">
-              <span className="tutorial-overlay-title">📖 Tutorial</span>
-              <button className="tutorial-overlay-close" onClick={() => setTutorialVisible(false)}>✕</button>
+              <span className="tutorial-overlay-title"><BookOpen size={16} strokeWidth={1.5} /> Tutorial</span>
+              <button className="tutorial-overlay-close" onClick={() => setTutorialVisible(false)}><IconX size={16} /></button>
             </div>
             <div className="tutorial-overlay-body">
               <Preview content={TUTORIAL_CONTENT} fontSize={fontSize} />
@@ -754,6 +999,34 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* 통합 Settings 모달 — STT/OCR/AI 에이전트 API 키 */}
+      <SettingsModal visible={settingsVisible} onClose={() => setSettingsVisible(false)} />
+
+      {/* Google Drive 파일 브라우저 (Open from / Save to) */}
+      <DriveBrowser
+        visible={driveBrowserMode !== null}
+        mode={driveBrowserMode ?? 'open'}
+        onClose={() => setDriveBrowserMode(null)}
+        onOpen={async (file: DriveFile, contentText: string) => {
+          // unsaved-changes 가드 — 기존 openFile 패턴과 동일
+          if (isDirty) {
+            const ok = await confirmAction(
+              `현재 문서에 저장되지 않은 변경사항이 있습니다.\n` +
+              `Drive 파일 "${file.name}" 의 내용으로 교체하시겠습니까? (변경사항은 사라집니다)`,
+            );
+            if (!ok) return;
+          }
+          // 새 가상 파일로 로드 — filePath 없음 → Save 시 Save As 다이얼로그
+          loadFromMemory(contentText, file.name);
+          setDriveBrowserMode(null);
+        }}
+        saveContent={driveBrowserMode === 'save' ? content : undefined}
+        defaultSaveName={fileName || 'Untitled'}
+        onSaved={(file) => {
+          console.log('[Drive] 저장됨:', file.name);
+        }}
+      />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 {
   "name": "markmind",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -28,6 +28,7 @@
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
+    "remark-frontmatter": "^5.0.0",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {

@@ -1,0 +1,765 @@
+/**
+ * Convert 윈도우 스타일 — MarkMind 의 CSS 변수 시스템 활용해 light/dark 자동 적응.
+ */
+
+.convert-app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    position: relative;
+}
+
+.convert-drag-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 102, 255, 0.18);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 3px dashed var(--accent);
+    box-sizing: border-box;
+}
+.convert-drag-overlay-inner {
+    background: var(--bg-secondary);
+    color: var(--accent);
+    padding: 16px 28px;
+    border-radius: 12px;
+    font-size: 18px;
+    font-weight: 600;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.convert-loading {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+}
+
+/* ─── Header (titlebar + tabs) ─── */
+
+.convert-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px 0;
+    padding-top: max(env(safe-area-inset-top, 0px), 32px);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-primary);
+    flex-shrink: 0;
+}
+
+.convert-tabs {
+    display: flex;
+    gap: 4px;
+}
+
+.convert-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font: inherit;
+    transition: var(--transition-fast);
+}
+.convert-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+.convert-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.convert-settings-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+}
+.convert-settings-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+/* ─── Main ─── */
+
+.convert-main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 24px 32px;
+}
+
+.convert-tab-content {
+    max-width: 640px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* ─── Dropzone ─── */
+
+.convert-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 32px 16px;
+    border: 2px dashed var(--border-primary);
+    border-radius: 12px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition-fast);
+    text-align: center;
+}
+.convert-dropzone:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+}
+.convert-dropzone.has-file {
+    border-style: solid;
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+.convert-dropzone-title {
+    font-size: 15px;
+    font-weight: 500;
+}
+.convert-dropzone-hint {
+    font-size: 12px;
+    color: var(--text-tertiary, var(--text-secondary));
+}
+.convert-dropzone-file {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--accent);
+    word-break: break-all;
+}
+
+/* ─── Options ─── */
+
+.convert-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.convert-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+.convert-option input[type='checkbox']:disabled + span {
+    opacity: 0.5;
+}
+
+.convert-options-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.convert-option-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.convert-option-field label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+.convert-option-field select {
+    padding: 8px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 13px;
+}
+
+.convert-provider-row {
+    display: flex;
+    gap: 8px;
+}
+.convert-provider {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-secondary);
+    flex: 1;
+}
+.convert-provider input {
+    accent-color: var(--accent);
+}
+.convert-provider.active {
+    background: var(--accent-subtle, var(--bg-tertiary));
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ─── Text input ─── */
+
+.convert-text-input {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.convert-text-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.convert-btn-sm {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+}
+.convert-btn-sm:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+.convert-text-input textarea {
+    width: 100%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    padding: 12px;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: vertical;
+    min-height: 200px;
+    box-sizing: border-box;
+}
+
+/* ─── Actions ─── */
+
+.convert-actions {
+    display: flex;
+    gap: 8px;
+}
+.convert-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 18px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    transition: var(--transition-fast);
+}
+.convert-btn:not(.primary):hover:not(:disabled) {
+    background: var(--bg-hover);
+}
+.convert-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.convert-btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+.convert-btn.primary:hover:not(:disabled) {
+    background: var(--accent);
+    color: white;
+    filter: brightness(1.1);
+}
+
+/* ─── Progress (doc-converter UI 와 동일 구조) ─── */
+
+.convert-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+}
+.convert-progress.phase-error {
+    border-color: #f87171;
+}
+
+.convert-progress-bar {
+    height: 3px;
+    background: var(--bg-tertiary);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.convert-progress-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 30%;
+    border-radius: 2px;
+}
+.convert-progress-bar-fill.indeterminate {
+    animation: indeterminate 1.6s linear infinite;
+}
+@keyframes indeterminate {
+    0%   { width: 10%; margin-left: 0%; }
+    50%  { width: 40%; margin-left: 30%; }
+    100% { width: 10%; margin-left: 90%; }
+}
+
+.convert-progress-steps {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.convert-progress-step {
+    padding: 4px 0;
+}
+.step-main {
+    color: var(--text-primary);
+    line-height: 1.4;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.step-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+.step-icon .ok { color: #4ade80; }
+.step-icon .warn { color: #fbbf24; }
+.step-icon .spinning { animation: spin 1s linear infinite; }
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+.step-text {
+    flex: 1;
+}
+.step-detail {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-top: 2px;
+    margin-left: 22px;
+}
+.convert-progress-error {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.08);
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+/* ─── Result Card ─── */
+
+.convert-result-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+}
+.convert-result-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent);
+    font-weight: 500;
+    font-size: 13px;
+}
+.convert-result-files {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.convert-result-files li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--bg-primary);
+    border-radius: 6px;
+}
+.convert-file-info {
+    flex: 1;
+    min-width: 0;
+}
+.convert-file-label {
+    font-size: 13px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+.convert-file-path {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: var(--font-mono);
+}
+.convert-open-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+.convert-open-btn:hover {
+    opacity: 0.9;
+}
+.convert-result-cost {
+    color: var(--text-secondary);
+    font-size: 12px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-primary);
+}
+
+/* ─── Settings ─── */
+
+.convert-settings {
+    max-width: 560px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+.convert-settings h2 {
+    margin: 0;
+    color: var(--text-primary);
+}
+.convert-settings-desc {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin: 0;
+}
+.convert-settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.convert-settings-section label {
+    font-size: 13px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+.convert-settings-section .badge {
+    margin-left: 6px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--accent-subtle, var(--bg-tertiary));
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 400;
+}
+.convert-settings-section .badge-ok {
+    background: rgba(34, 197, 94, 0.15);
+    color: #16a34a;
+}
+.convert-settings-section .badge-warn {
+    background: rgba(239, 68, 68, 0.15);
+    color: #dc2626;
+}
+.convert-key-note.warn {
+    color: #dc2626;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    padding: 8px 10px;
+    border-radius: 6px;
+    white-space: pre-line;
+}
+.convert-key-row {
+    display: flex;
+    gap: 4px;
+}
+.convert-key-row input {
+    flex: 1;
+    padding: 8px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 13px;
+}
+.convert-key-row button {
+    padding: 0 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+}
+.convert-key-row button:hover {
+    background: var(--bg-hover);
+}
+.convert-key-row button.danger {
+    color: #f87171;
+}
+.convert-key-note {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin: 0;
+}
+.convert-key-note a {
+    color: var(--accent);
+}
+.convert-settings-actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 8px;
+}
+.convert-settings-actions button {
+    padding: 12px 20px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+}
+.convert-settings-actions button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+.convert-settings-actions button.save-btn {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    padding: 14px 24px;
+    font-size: 15px;
+    font-weight: 600;
+}
+.convert-settings-actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* 통합 SettingsView 의 하단 안내 */
+.convert-settings-foot {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-primary);
+}
+
+/* Google Drive 섹션 */
+.drive-section {
+    padding-top: 12px;
+}
+
+.drive-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.drive-row button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-primary);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 13px;
+    transition: filter 0.15s;
+}
+
+.drive-row button:hover:not(:disabled) {
+    filter: brightness(1.1);
+}
+
+.drive-row button.primary {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.drive-row button.danger {
+    background: transparent;
+    color: var(--text-secondary);
+}
+
+.drive-row button.danger:hover:not(:disabled) {
+    color: #ff6b6b;
+    border-color: #ff6b6b;
+}
+
+.drive-row button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.drive-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-primary);
+    font-size: 13px;
+    flex: 1;
+    min-width: 0;
+}
+
+.drive-email {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.drive-error {
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    background: rgba(255, 107, 107, 0.1);
+    border: 1px solid rgba(255, 107, 107, 0.3);
+    border-radius: 6px;
+    color: #ff6b6b;
+    font-size: 12px;
+}
+
+.drive-step-desc {
+    margin: 0 0 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.drive-step-desc a {
+    color: var(--accent);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.drive-step-desc a:hover {
+    text-decoration: underline;
+}
+
+.drive-client-id {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    padding: 4px 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.drive-connect-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border-primary);
+}
+
+.drive-connect-row button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-primary);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 13px;
+    transition: filter 0.15s;
+}
+
+.drive-connect-row button:hover:not(:disabled) {
+    filter: brightness(1.1);
+}
+
+.drive-connect-row button.primary {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.drive-connect-row button.danger {
+    background: transparent;
+    color: var(--text-secondary);
+}
+
+.drive-connect-row button.danger:hover:not(:disabled) {
+    color: #ff6b6b;
+    border-color: #ff6b6b;
+}
+
+.drive-connect-row button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

@@ -284,6 +284,14 @@ export function useFileSystem(onFileOpened?: () => void) {
     onFileOpened?.();
   }, [onFileOpened]);
 
+  // 메모리(예: Google Drive 다운로드)에서 가져온 내용을 새 가상 파일로 로드.
+  // filePath 는 null — 사용자가 Save 누르면 Save As 다이얼로그.
+  const loadFromMemory = useCallback((contentText: string, name: string) => {
+    const finalName = name.endsWith('.md') || name.endsWith('.markdown') ? name : `${name}.md`;
+    setFileState({ content: contentText, filePath: null, fileName: finalName, isDirty: false });
+    onFileOpened?.();
+  }, [onFileOpened]);
+
   // Rename file (inline editing in toolbar)
   const renameFile = useCallback(async (newName: string) => {
     if (!newName.trim() || newName === fileNameRef.current) return;
@@ -320,6 +328,7 @@ export function useFileSystem(onFileOpened?: () => void) {
     saveFileAs,
     newFile,
     openFromRecent,
+    loadFromMemory,
     renameFile,
   };
 }

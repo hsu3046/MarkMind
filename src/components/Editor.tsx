@@ -3,9 +3,27 @@ import CodeMirror, { ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
 import { EditorView } from '@codemirror/view';
+import { EditorState } from '@codemirror/state';
 import { openSearchPanel, closeSearchPanel } from '@codemirror/search';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
+
+/** CodeMirror search panel 한국어 phrases */
+const KO_PHRASES = EditorState.phrases.of({
+    'Find': '검색',
+    'Replace': '바꾸기',
+    'next': '다음',
+    'previous': '이전',
+    'all': '모두',
+    'match case': '대/소문자',
+    'by word': '단어 단위',
+    'regexp': '정규식',
+    'replace': '바꾸기',
+    'replace all': '모두 바꾸기',
+    'close': '닫기',
+    'current match': '현재 일치',
+    'replace next': '다음 바꾸기',
+});
 
 interface EditorProps {
     content: string;
@@ -17,8 +35,13 @@ interface EditorProps {
 export interface EditorHandle {
     openSearch: () => void;
     closeSearch: () => void;
+    /** 검색 panel 토글 — 열려있으면 닫고, 닫혀있으면 엶 */
+    toggleSearch: () => void;
+    isSearchOpen: () => boolean;
     getSelectedText: () => string;
     scrollToLine: (line: number) => void;
+    /** 현재 커서 위치에 텍스트 삽입 (인라인 OCR 결과 삽입용) */
+    insertAtCursor: (text: string) => void;
 }
 
 const lightTheme = EditorView.theme({
@@ -124,6 +147,21 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                     closeSearchPanel(view);
                 }
             },
+            toggleSearch: () => {
+                const view = cmRef.current?.view;
+                if (!view) return;
+                const panel = view.dom.querySelector('.cm-search.cm-panel');
+                if (panel) {
+                    closeSearchPanel(view);
+                } else {
+                    openSearchPanel(view);
+                }
+            },
+            isSearchOpen: () => {
+                const view = cmRef.current?.view;
+                if (!view) return false;
+                return !!view.dom.querySelector('.cm-search.cm-panel');
+            },
             getSelectedText: () => {
                 const view = cmRef.current?.view;
                 if (!view) return '';
@@ -141,6 +179,16 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                 });
                 view.focus();
             },
+            insertAtCursor: (text: string) => {
+                const view = cmRef.current?.view;
+                if (!view) return;
+                const { from, to } = view.state.selection.main;
+                view.dispatch({
+                    changes: { from, to, insert: text },
+                    selection: { anchor: from + text.length },
+                });
+                view.focus();
+            },
         }));
 
         const handleChange = useCallback((value: string) => {
@@ -151,6 +199,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
             const exts = [
                 markdown({ base: markdownLanguage, codeLanguages: languages }),
                 EditorView.lineWrapping,
+                KO_PHRASES,
                 ...(theme === 'dark' ? [syntaxHighlighting(darkHighlight)] : []),
             ];
 

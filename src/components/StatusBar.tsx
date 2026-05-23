@@ -1,10 +1,9 @@
 interface StatusBarProps {
     content: string;
     filePath: string | null;
-    fontSize?: number;
 }
 
-export function StatusBar({ content, filePath, fontSize }: StatusBarProps) {
+export function StatusBar({ content, filePath }: StatusBarProps) {
     const lines = content.split('\n').length;
     const words = content.trim() ? content.trim().split(/\s+/).length : 0;
     const chars = content.length;
@@ -15,9 +14,6 @@ export function StatusBar({ content, filePath, fontSize }: StatusBarProps) {
                 <span className="statusbar-item">{lines} lines</span>
                 <span className="statusbar-item">{words} words</span>
                 <span className="statusbar-item">{chars} chars</span>
-                {fontSize && (
-                    <span className="statusbar-item">{fontSize}px</span>
-                )}
             </div>
             <div className="statusbar-group">
                 <span className="statusbar-item">

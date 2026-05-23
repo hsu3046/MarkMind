@@ -1,17 +1,27 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for all windows",
+  "description": "Capability for all windows (main editor + spawned editor + Convert window)",
   "windows": [
     "main",
-    "win-*"
+    "win-*",
+    "convert-*"
   ],
   "permissions": [
     "core:default",
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:event:allow-emit",
+    "core:event:allow-emit-to",
+    "core:webview:default",
+    "core:webview:allow-create-webview-window",
+    "core:webview:allow-internal-toggle-devtools",
     "core:window:allow-start-dragging",
     "core:window:allow-start-resize-dragging",
     "core:window:allow-set-title",
     "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
     "core:window:allow-minimize",
     "core:window:allow-close",
     "core:window:allow-show",
