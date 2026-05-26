@@ -159,20 +159,19 @@ function App() {
     setOcrPanelVisible(false);
   }, []);
 
-  const ensureEditorView = useCallback(() => {
-    if (viewMode !== 'editor') {
-      setViewMode('editor');
-      setReadingMode(false);
-    }
-  }, [viewMode]);
+  // 사이드 패널 열 때 reading mode 만 해제 — 현재 viewMode 는 그대로 유지
+  // (이전엔 강제로 editor 모드로 전환했으나 사용자 의도와 어긋남)
+  const exitReadingMode = useCallback(() => {
+    if (readingMode) setReadingMode(false);
+  }, [readingMode]);
 
   const handleToggleAI = useCallback(() => {
     if (!ai.panelVisible) {
-      ensureEditorView();
+      exitReadingMode();
       closeAllConvertPanels();
     }
     ai.togglePanel();
-  }, [ai, ensureEditorView, closeAllConvertPanels]);
+  }, [ai, exitReadingMode, closeAllConvertPanels]);
 
   const handleToggleAudio = useCallback(() => {
     if (audioPanelVisible) {
@@ -180,10 +179,10 @@ function App() {
     } else {
       if (ai.panelVisible) ai.togglePanel();
       setOcrPanelVisible(false);
-      ensureEditorView();
+      exitReadingMode();
       setAudioPanelVisible(true);
     }
-  }, [audioPanelVisible, ai, ensureEditorView]);
+  }, [audioPanelVisible, ai, exitReadingMode]);
 
   const handleToggleOcr = useCallback(() => {
     if (ocrPanelVisible) {
@@ -191,10 +190,10 @@ function App() {
     } else {
       if (ai.panelVisible) ai.togglePanel();
       setAudioPanelVisible(false);
-      ensureEditorView();
+      exitReadingMode();
       setOcrPanelVisible(true);
     }
-  }, [ocrPanelVisible, ai, ensureEditorView]);
+  }, [ocrPanelVisible, ai, exitReadingMode]);
 
   // 사이드바로 drop된 파일을 자식 컴포넌트에 전달하기 위한 state
   const [audioDropped, setAudioDropped] = useState<DroppedFile | null>(null);
@@ -834,7 +833,20 @@ function App() {
   // Reading mode
   if (readingMode) {
     return (
-      <div className="app reading-mode" onClick={() => setReadingMode(false)}>
+      <div
+        className="app reading-mode"
+        data-line-height={lineHeight}
+        style={
+          bgColor
+            ? ({
+                '--user-bg': bgColor,
+                '--preview-bg': bgColor,
+              } as React.CSSProperties)
+            : undefined
+        }
+        data-custom-bg={bgColor ? 'true' : undefined}
+        onClick={() => setReadingMode(false)}
+      >
         <div className="reading-mode-content" onClick={(e) => e.stopPropagation()}>
           <Preview content={content} fontSize={fontSize + 2} />
         </div>
@@ -868,11 +880,13 @@ function App() {
       style={
         bgColor
           ? ({
+              // content 영역만 적용 — UI chrome (popover/AIPanel/Toolbar) 영향 X
+              '--user-bg': bgColor,
               '--preview-bg': bgColor,
-              '--bg-primary': bgColor,
             } as React.CSSProperties)
           : undefined
       }
+      data-custom-bg={bgColor ? 'true' : undefined}
     >
       <div
         className="titlebar-drag"

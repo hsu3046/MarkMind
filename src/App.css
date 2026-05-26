@@ -1681,6 +1681,82 @@ body.is-resizing .split-pane {
   font-weight: 500;
 }
 
+/* 사용자 정의 배경색 — content 영역만 적용 (UI chrome 영향 X) */
+[data-custom-bg] .preview-wrapper,
+[data-custom-bg] .tiptap-rich,
+[data-custom-bg] .pane,
+[data-custom-bg] .cm-editor,
+[data-custom-bg] .cm-scroller,
+[data-custom-bg] .markdown-body {
+  background: var(--user-bg) !important;
+}
+
+/* 배경색에 따라 hr / blockquote / code 색 조정 (theme 가 luminance 로 dark/light 결정) */
+/* light 배경: hr 더 진하게 (안 보이는 문제 해결) */
+[data-theme="light"] .markdown-body hr,
+[data-theme="light"] .tiptap-rich hr {
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.2);
+  margin: 1.5em 0;
+}
+[data-theme="dark"] .markdown-body hr,
+[data-theme="dark"] .tiptap-rich hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  margin: 1.5em 0;
+}
+
+[data-theme="light"] .markdown-body blockquote,
+[data-theme="light"] .tiptap-rich blockquote {
+  border-left: 3px solid rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.04);
+  padding: 0.5em 1em;
+  margin: 1em 0;
+  color: var(--text-secondary);
+}
+[data-theme="dark"] .markdown-body blockquote,
+[data-theme="dark"] .tiptap-rich blockquote {
+  border-left: 3px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.5em 1em;
+  margin: 1em 0;
+  color: var(--text-secondary);
+}
+
+[data-theme="light"] .markdown-body code:not(pre code),
+[data-theme="light"] .tiptap-rich code:not(pre code) {
+  background: rgba(0, 0, 0, 0.06);
+  color: #c7254e;
+  padding: 0.15em 0.4em;
+  border-radius: 3px;
+  font-size: 0.92em;
+}
+[data-theme="dark"] .markdown-body code:not(pre code),
+[data-theme="dark"] .tiptap-rich code:not(pre code) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f78c6c;
+  padding: 0.15em 0.4em;
+  border-radius: 3px;
+  font-size: 0.92em;
+}
+
+[data-theme="light"] .markdown-body pre,
+[data-theme="light"] .tiptap-rich pre {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 6px;
+  padding: 1em;
+  overflow-x: auto;
+}
+[data-theme="dark"] .markdown-body pre,
+[data-theme="dark"] .tiptap-rich pre {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 1em;
+  overflow-x: auto;
+}
+
 /* 행간 (App root 의 data-line-height attribute 로 cycle) */
 [data-line-height="compact"] .markdown-body,
 [data-line-height="compact"] .tiptap-rich { line-height: 1.5; }
@@ -2277,9 +2353,14 @@ body.is-resizing .split-pane {
 }
 
 .reading-mode-content .preview-wrapper {
-  max-width: 800px;
+  /* 사용자 요청 — 전체 폭 100% 활용 (이전 800px 제한 해제) */
+  max-width: none;
   width: 100%;
   padding: 48px 60px;
+}
+/* reading mode 의 markdown-body 도 폭 제한 해제 */
+.reading-mode-content .preview-wrapper .markdown-body {
+  max-width: none;
 }
 
 .reading-mode-hint {
