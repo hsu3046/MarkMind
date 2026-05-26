@@ -261,7 +261,7 @@ export function Toolbar({
                                             <div className="dropdown-submenu-empty">최근 파일 없음</div>
                                         ) : (
                                             <>
-                                                {recentFiles.slice(0, 10).map((f) => (
+                                                {recentFiles.slice(0, 5).map((f) => (
                                                     <button
                                                         key={f.path}
                                                         className="dropdown-item dropdown-submenu-item"

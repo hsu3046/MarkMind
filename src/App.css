@@ -1595,6 +1595,12 @@ body.is-resizing .split-pane {
   position: relative;
   display: inline-flex;
 }
+.bg-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: transparent;
+}
 .bg-picker-popover {
   position: absolute;
   top: calc(100% + 6px);
