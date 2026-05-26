@@ -3,7 +3,7 @@
  * preset swatches + native color input + 기본(테마) 리셋.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Palette, Check, X } from 'lucide-react';
 
 interface BackgroundPickerProps {
@@ -25,27 +25,19 @@ const PRESETS: { label: string; color: string }[] = [
 
 export function BackgroundPicker({ value, onChange }: BackgroundPickerProps) {
     const [open, setOpen] = useState(false);
-    const rootRef = useRef<HTMLDivElement>(null);
 
-    // 외부 클릭 시 닫기
+    // Esc 닫기 (외부 탭 닫기는 invisible backdrop div 가 처리 — iOS Safari 호환)
     useEffect(() => {
         if (!open) return;
-        const onDocClick = (e: MouseEvent) => {
-            if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-        };
         const onKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') setOpen(false);
         };
-        document.addEventListener('mousedown', onDocClick);
         window.addEventListener('keydown', onKey);
-        return () => {
-            document.removeEventListener('mousedown', onDocClick);
-            window.removeEventListener('keydown', onKey);
-        };
+        return () => window.removeEventListener('keydown', onKey);
     }, [open]);
 
     return (
-        <div className="bg-picker-root" ref={rootRef}>
+        <div className="bg-picker-root">
             <button
                 className={`toolbar-btn${open ? ' active' : ''}`}
                 onClick={() => setOpen((v) => !v)}
@@ -54,6 +46,13 @@ export function BackgroundPicker({ value, onChange }: BackgroundPickerProps) {
                 <Palette size={15} strokeWidth={1.5} />
             </button>
             {open && (
+                <>
+                    {/* iOS Safari 호환 — document mousedown 대신 invisible backdrop div */}
+                    <div
+                        className="bg-picker-backdrop"
+                        onClick={() => setOpen(false)}
+                        aria-hidden
+                    />
                 <div className="bg-picker-popover">
                     <div className="bg-picker-presets">
                         {PRESETS.map((p) => {
@@ -86,6 +85,7 @@ export function BackgroundPicker({ value, onChange }: BackgroundPickerProps) {
                         />
                     </label>
                 </div>
+                </>
             )}
         </div>
     );

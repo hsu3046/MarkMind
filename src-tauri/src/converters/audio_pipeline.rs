@@ -195,7 +195,7 @@ async fn run_pipeline_core(
     emitter.emit("✅ 분할 완료", None);
 
     let mut usages: Vec<UsageInfo> = Vec::new();
-    let chunk_results = transcribe_chunks_sequential(api_key, &chunks, emitter, &mut usages).await;
+    let chunk_results = transcribe_chunks_with_seed_then_parallel(api_key, &chunks, emitter, &mut usages).await;
     cleanup_chunks(&chunks).await;
     let chunk_results = chunk_results?;
 
@@ -309,8 +309,16 @@ fn map_timestamps_to_original(text: &str, map: &[SegmentMap]) -> String {
 /// Gemini inline base64 request body 안전 임계.
 const INLINE_THRESHOLD: u64 = 15 * 1024 * 1024;
 
-/// 병렬 처리 동시도 — Tier 1 RPM 여유 안에서 안전 (24청크 / 6 = 4 wave).
-const CHUNK_PARALLELISM: usize = 6;
+/// 병렬 처리 동시도. ENV `MARKMIND_STT_PARALLELISM` 으로 1~12 사이 조정 가능.
+/// 기본 6 — Gemini Tier 1 RPM 여유 안에서 안전 (24청크 / 6 = 4 wave).
+/// Tier 0 또는 free 환경에서 429 storm 발생 시 4 로 낮추는 게 안전.
+fn chunk_parallelism() -> usize {
+    std::env::var("MARKMIND_STT_PARALLELISM")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .map(|n| n.clamp(1, 12))
+        .unwrap_or(6)
+}
 
 /// 단일 청크 transcribe — 크기 분기로 inline base64 / File API 자동 선택.
 async fn transcribe_one_chunk(
@@ -355,9 +363,10 @@ async fn transcribe_one_chunk(
     }
 }
 
-/// 청크 병렬 처리 — 첫 청크만 sequential (화자 컨텍스트 시드), 나머지는 N 동시 wave.
+/// 청크 처리 — 첫 청크 sequential (화자 컨텍스트 시드), 나머지 N 동시 wave.
 /// 같은 미팅의 화자 일관성은 첫 청크 context 를 모든 후속 청크에 전달해 유지.
-async fn transcribe_chunks_sequential(
+/// (이름 sequential 유지: 외부 caller 가 단일 함수로 보는 추상화 + 첫 청크가 직렬이라는 의미도 부분 보존)
+async fn transcribe_chunks_with_seed_then_parallel(
     api_key: &str,
     chunks: &[AudioChunk],
     emitter: &ProgressEmitter,
@@ -394,14 +403,15 @@ async fn transcribe_chunks_sequential(
         text: first.text,
     });
 
-    // ─── 나머지 청크 병렬 wave (CHUNK_PARALLELISM 동시) ───
+    // ─── 나머지 청크 병렬 wave ───
+    let parallelism = chunk_parallelism();
     if total == 1 {
         return Ok(results);
     }
 
     let mut next_idx = 1;
     while next_idx < total {
-        let end = (next_idx + CHUNK_PARALLELISM).min(total);
+        let end = (next_idx + parallelism).min(total);
         let wave_size = end - next_idx;
         let wave_start = std::time::Instant::now();
         emitter.emit(
@@ -449,14 +459,13 @@ async fn transcribe_chunks_sequential(
             return Err(e);
         }
         wave_results.sort_by_key(|(idx, _, _)| *idx);
-        for (idx, start_sec, res) in wave_results {
+        for (_idx, start_sec, res) in wave_results {
             cumulative_cost += res.usage.cost_usd;
             usages.push(res.usage.clone());
             results.push(ChunkResult {
                 start_sec,
                 text: res.text,
             });
-            let _ = idx;
         }
         emitter.emit(
             format!("✅ {}~{}/{}번째 완료", next_idx + 1, end, total),

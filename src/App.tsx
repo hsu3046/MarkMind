@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AIMode } from './types/ai';
 import { Editor, EditorHandle } from './components/Editor';
 import { Preview } from './components/Preview';
@@ -38,7 +38,7 @@ const FONT_SIZE_MAX = 28;
 const FONT_SIZE_DEFAULT = 14;
 
 function App() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setThemeTransient, resetThemeToOS } = useTheme();
   const auth = useAuth();
   const [isAuthCallback, setIsAuthCallback] = useState(
     () => window.location.pathname === getCallbackPath()
@@ -100,9 +100,8 @@ function App() {
     else localStorage.removeItem('markmind-bg-color');
   }, [bgColor]);
 
-  // 배경색의 상대 휘도 (0~1). 0.5 미만이면 어두운 배경 → 텍스트 반전 필요.
-  // WCAG relative luminance (sRGB).
-  const luminance = (() => {
+  // 배경색의 WCAG 상대 휘도 (0~1). 0.5 미만이면 dark 텍스트가 안 보임 → theme dark 로.
+  const luminance = useMemo(() => {
     if (!bgColor) return null;
     const hex = bgColor.replace('#', '');
     if (hex.length !== 3 && hex.length !== 6) return null;
@@ -112,15 +111,18 @@ function App() {
     const b = parseInt(full.slice(4, 6), 16) / 255;
     const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
     return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-  })();
-  const isDarkBg = luminance != null ? luminance < 0.5 : theme === 'dark';
+  }, [bgColor]);
 
-  // 배경색 변경 시 theme 자동 동기화 — 통합 동작
-  // (dark 배경 선택 시 자동 dark theme, light 배경 선택 시 light)
+  // bgColor 변경 시 theme transient 동기화 (localStorage 안 건드림 → 다음 세션 OS follow 유지).
+  // bgColor='' (기본) 으로 되돌리면 OS prefers-color-scheme 으로 복귀 — 사용자가 dark bg 후
+  // "기본" 골라도 dark theme 에 갇히지 않음.
   useEffect(() => {
-    if (luminance == null) return; // 'theme 기본' 으로 되돌리면 마지막 theme 유지
-    setTheme(luminance < 0.5 ? 'dark' : 'light');
-  }, [luminance, setTheme]);
+    if (luminance == null) {
+      resetThemeToOS();
+      return;
+    }
+    setThemeTransient(luminance < 0.5 ? 'dark' : 'light');
+  }, [luminance, setThemeTransient, resetThemeToOS]);
   const [outlineVisible, setOutlineVisible] = useState(false);
   const [readingMode, setReadingMode] = useState(false);
   const [tutorialVisible, setTutorialVisible] = useState(false);
@@ -435,7 +437,7 @@ function App() {
     };
 
     // mount 직후 — 이전에 저장된 ratio 로 새 element 의 scrollTop 복원.
-    // 마운트 + content 렌더 후 scrollHeight 가 안정되도록 두 번 시도.
+    // ResizeObserver 로 scrollHeight 변화 감지 → 안정될 때까지 자동 재시도 (매직 timeout 제거).
     const restore = () => {
       const el = scrollEl();
       if (!el) return;
@@ -443,21 +445,34 @@ function App() {
       if (max > 0) el.scrollTop = Math.round(max * scrollRatioRef.current);
     };
     restore();
-    const t1 = window.setTimeout(restore, 50);
-    const t2 = window.setTimeout(restore, 200);
+
+    const el = scrollEl();
+    let restored = false;
+    let ro: ResizeObserver | null = null;
+    if (el && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => {
+        if (restored) return;
+        const max = el.scrollHeight - el.clientHeight;
+        if (max > 0) {
+          el.scrollTop = Math.round(max * scrollRatioRef.current);
+          restored = true;
+          ro?.disconnect();
+        }
+      });
+      // 내부 콘텐츠 영역의 첫 자식을 관찰 (Editor pane 의 .cm-content 또는 preview-wrapper 의 .markdown-body)
+      const inner = el.firstElementChild;
+      if (inner) ro.observe(inner);
+    }
 
     // 이 mode 가 활성인 동안 scroll 변화를 ratio 로 추적.
     const tracker = () => {
-      const el = scrollEl();
       if (!el) return;
       const max = el.scrollHeight - el.clientHeight;
       if (max > 0) scrollRatioRef.current = el.scrollTop / max;
     };
-    const el = scrollEl();
     el?.addEventListener('scroll', tracker, { passive: true });
     return () => {
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
+      ro?.disconnect();
       el?.removeEventListener('scroll', tracker);
     };
   }, [viewMode]);
@@ -698,7 +713,10 @@ function App() {
       }
 
       if (e.metaKey || e.ctrlKey) {
-        switch (e.key) {
+        // shift 누르면 e.key 가 대문자 ('S') 또는 다른 글자 ('+' → '=') 로 바뀜 →
+        // 일관 매칭 위해 letter 만 toLowerCase. 숫자/기호는 e.key 그대로.
+        const k = e.key.length === 1 && /[a-zA-Z]/.test(e.key) ? e.key.toLowerCase() : e.key;
+        switch (k) {
           case 's':
             e.preventDefault();
             if (e.shiftKey) saveFileAs();
@@ -713,12 +731,10 @@ function App() {
             newFile();
             break;
           case 'f':
-            // Only intercept for preview mode
             if (viewMode === 'preview') {
               e.preventDefault();
               toggleSearch();
             }
-            // In editor/split mode, let CodeMirror handle ⌘F
             break;
           case '1':
             e.preventDefault();
@@ -749,8 +765,7 @@ function App() {
             resetFontSize();
             break;
           case 'i':
-          case 'I':
-            // ⌘⇧I 만 AI Agent 토글 — ⌘I (shift 없음) 은 TipTap Italic 과 충돌 회피
+            // ⌘⇧I 만 AI Agent 토글 — ⌘I 는 TipTap Italic 과 충돌 회피
             if (e.shiftKey) {
               e.preventDefault();
               handleToggleAI();
@@ -850,7 +865,6 @@ function App() {
     <div
       className="app"
       data-line-height={lineHeight}
-      data-bg-dark={isDarkBg ? 'true' : undefined}
       style={
         bgColor
           ? ({

@@ -31,11 +31,14 @@ export function OutlinePanel({ content, visible, onHeadingClick }: OutlinePanelP
         return saved >= MIN_WIDTH && saved <= MAX_WIDTH ? saved : DEFAULT_WIDTH;
     });
     const draggingRef = useRef(false);
+    const panelRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         const onMove = (e: MouseEvent) => {
             if (!draggingRef.current) return;
-            const next = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, e.clientX));
+            // panel 의 left edge 기준 상대좌표 — outline 이 좌측 끝이 아닐 때도 동작
+            const left = panelRef.current?.getBoundingClientRect().left ?? 0;
+            const next = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, e.clientX - left));
             setWidth(next);
         };
         const onUp = () => {
@@ -111,7 +114,7 @@ export function OutlinePanel({ content, visible, onHeadingClick }: OutlinePanelP
     };
 
     return (
-        <div className="outline-panel" style={{ width }}>
+        <div ref={panelRef} className="outline-panel" style={{ width }}>
             <div className="outline-header">Outline</div>
             <div className="outline-list">
                 {headings.length === 0 ? (

@@ -433,8 +433,7 @@ function RichEditor({
         ],
         content: fixEmphasis(body), // ** 인접 bold 인식되도록 zero-width 삽입
         onUpdate: ({ editor }) => {
-            // @ts-expect-error tiptap-markdown 의 storage 타입
-            const md: string = editor.storage.markdown.getMarkdown();
+            const md: string = editor.storage.markdown?.getMarkdown() ?? '';
             // 직렬화 시 fixEmphasis 의 zero-width 제거 → 파일에는 비가시 문자 안 들어감
             onChange(rawFrontmatter + stripDisplayHelpers(md));
         },
@@ -442,6 +441,18 @@ function RichEditor({
             attributes: {
                 class: 'markdown-body tiptap-rich',
                 style: `font-size: ${fontSize}px`,
+            },
+            // copy 시 fixEmphasis 의 zero-width 가 사용자 클립보드에 섞이지 않도록 제거
+            handleDOMEvents: {
+                copy: (_view, event) => {
+                    const sel = window.getSelection()?.toString() ?? '';
+                    if (sel && sel.includes('​')) {
+                        event.preventDefault();
+                        event.clipboardData?.setData('text/plain', sel.replace(/​/g, ''));
+                        return true;
+                    }
+                    return false;
+                },
             },
         },
     });
@@ -452,10 +463,7 @@ function RichEditor({
         if (!editor) return;
 
         const reportCount = () => {
-            const storage = (editor.storage as unknown as Record<string, {
-                results?: unknown[];
-                resultIndex?: number;
-            }>).searchAndReplace;
+            const storage = editor.storage.searchAndReplace;
             const count = storage?.results?.length ?? 0;
             const index = storage?.resultIndex ?? 0;
             window.dispatchEvent(
@@ -499,9 +507,11 @@ function RichEditor({
     // 사용자가 편집 중인 변경은 덮어쓰지 않도록 — 직렬화 결과와 비교.
     useEffect(() => {
         if (!editor) return;
-        // @ts-expect-error tiptap-markdown storage
-        const current: string = editor.storage.markdown.getMarkdown();
-        if (stripDisplayHelpers(current).trim() !== body.trim()) {
+        const current: string = editor.storage.markdown?.getMarkdown() ?? '';
+        const cleanedCurrent = stripDisplayHelpers(current);
+        // fast-path: 길이 차이 ≥ 8 면 trim 비교 skip — 큰 문서 비용 절감
+        const lenDiff = Math.abs(cleanedCurrent.length - body.length);
+        if (lenDiff > 8 || cleanedCurrent.trim() !== body.trim()) {
             editor.commands.setContent(fixEmphasis(body), { emitUpdate: false });
         }
     }, [body, editor]);
