@@ -459,6 +459,8 @@ function App() {
       } else {
         setSearchQuery('');
         clearHighlights();
+        // Rich Text 검색 highlight 도 같이 clear
+        window.dispatchEvent(new Event('markmind:rich-search-clear'));
       }
       return next;
     });
@@ -493,11 +495,23 @@ function App() {
 
   // Navigate by delta (+1 forward, -1 backward), wrapping around
   const navigateMatch = useCallback((delta: number) => {
+    // Rich Text 모드 — TipTap search ext 명령으로 위임
+    if (viewMode === 'preview') {
+      const ev = delta > 0 ? 'markmind:rich-search-next' : 'markmind:rich-search-prev';
+      window.dispatchEvent(new Event(ev));
+      // current index UI 도 갱신 — count 가 0보다 크면 modulo
+      setSearchCurrentIndex((cur) => {
+        const total = searchMatchCount;
+        if (total === 0) return -1;
+        return (cur + delta + total) % total;
+      });
+      return;
+    }
     const matches = searchMatchesRef.current;
     if (matches.length === 0) return;
     const next = (searchCurrentIndexRef.current + delta + matches.length) % matches.length;
     goToMatchIndex(next, matches);
-  }, [goToMatchIndex]);
+  }, [goToMatchIndex, viewMode, searchMatchCount]);
 
   // Highlight all matches in the preview DOM
   const highlightMatches = useCallback((query: string) => {
@@ -575,13 +589,33 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (viewMode === 'preview') {
+      // Rich Text 모드 — DOM surroundContents 대신 RichEditor 의 TipTap search 위임
+      // (TipTap ProseMirror tree 와 직접 DOM 조작이 충돌하면 editor 깨짐)
+      window.dispatchEvent(
+        new CustomEvent('markmind:rich-search', { detail: { query: searchQuery } }),
+      );
+      return;
+    }
     if (searchQuery) {
       const timer = setTimeout(() => highlightMatches(searchQuery), 200);
       return () => clearTimeout(timer);
     } else {
       clearHighlights();
     }
-  }, [searchQuery, content, highlightMatches, clearHighlights]);
+  }, [searchQuery, content, highlightMatches, clearHighlights, viewMode]);
+
+  // Rich Text search 결과 count 회신 listen
+  useEffect(() => {
+    if (viewMode !== 'preview') return;
+    const onCount = (e: Event) => {
+      const detail = (e as CustomEvent<{ count: number }>).detail;
+      setSearchMatchCount(detail.count ?? 0);
+      setSearchCurrentIndex(detail.count > 0 ? 0 : -1);
+    };
+    window.addEventListener('markmind:rich-search-count', onCount);
+    return () => window.removeEventListener('markmind:rich-search-count', onCount);
+  }, [viewMode]);
 
   // Open recent
   const handleOpenRecent = useCallback(
@@ -671,8 +705,12 @@ function App() {
             resetFontSize();
             break;
           case 'i':
-            e.preventDefault();
-            handleToggleAI();
+          case 'I':
+            // ⌘⇧I 만 AI Agent 토글 — ⌘I (shift 없음) 은 TipTap Italic 과 충돌 회피
+            if (e.shiftKey) {
+              e.preventDefault();
+              handleToggleAI();
+            }
             break;
         }
       }

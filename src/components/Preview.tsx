@@ -14,12 +14,14 @@ import { TableRow } from '@tiptap/extension-table-row';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { Markdown } from 'tiptap-markdown';
+import { SearchAndReplace } from '@sereneinserenade/tiptap-search-and-replace';
 import {
     Bold, Italic, Strikethrough, Code,
     Heading1, Heading2, Heading3, Heading4,
     List, ListOrdered, ListChecks,
     Quote, Code2, Link as LinkIcon, Table as TableIcon,
     Undo2, Redo2, Minus,
+    IndentIncrease, IndentDecrease,
 } from 'lucide-react';
 
 interface PreviewProps {
@@ -148,8 +150,16 @@ function LinkModal({
                         }
                     }}
                 />
-                <p className="link-modal-hint">빈 값 + 적용 → 링크 제거</p>
                 <div className="link-modal-actions">
+                    {initial && (
+                        <button
+                            className="danger"
+                            onClick={() => onApply('')}
+                            title="이 위치의 링크 제거"
+                        >
+                            링크 삭제
+                        </button>
+                    )}
                     <button onClick={onClose}>취소</button>
                     <button className="primary" onClick={() => onApply(value)}>
                         적용
@@ -198,10 +208,43 @@ function RichToolbar({ editor }: { editor: Editor }) {
         };
     }, [editor]);
 
+    /** 현재 위치의 list 타입에 맞게 sink (들여쓰기) / lift (내어쓰기) */
+    const indent = () => {
+        if (editor.isActive('taskList') || editor.isActive('taskItem')) {
+            editor.chain().focus().sinkListItem('taskItem').run();
+        } else {
+            editor.chain().focus().sinkListItem('listItem').run();
+        }
+    };
+    const outdent = () => {
+        if (editor.isActive('taskList') || editor.isActive('taskItem')) {
+            editor.chain().focus().liftListItem('taskItem').run();
+        } else {
+            editor.chain().focus().liftListItem('listItem').run();
+        }
+    };
+    const inList =
+        editor.isActive('bulletList') ||
+        editor.isActive('orderedList') ||
+        editor.isActive('taskList');
+
     const openLinkModal = () => {
         const prev = (editor.getAttributes('link').href as string | undefined) ?? '';
         setLinkModal({ value: prev });
     };
+
+    // ⌘K → 링크 모달 (editor focus 안에서만 동작)
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (!(e.metaKey || e.ctrlKey)) return;
+            if (e.key !== 'k' && e.key !== 'K') return;
+            if (!editor.isFocused) return;
+            e.preventDefault();
+            openLinkModal();
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [editor]);
     const applyLink = (url: string) => {
         const trimmed = url.trim();
         if (trimmed === '') {
@@ -308,6 +351,18 @@ function RichToolbar({ editor }: { editor: Editor }) {
                 icon={<ListChecks size={14} />}
                 title="Task list (⌘⇧9)"
             />
+            <ToolBtn
+                onClick={outdent}
+                disabled={!inList}
+                icon={<IndentDecrease size={14} />}
+                title="Outdent list (Shift+Tab)"
+            />
+            <ToolBtn
+                onClick={indent}
+                disabled={!inList}
+                icon={<IndentIncrease size={14} />}
+                title="Indent list (Tab)"
+            />
             <span className="rich-tool-divider" />
             <ToolBtn
                 onClick={() => editor.chain().focus().toggleBlockquote().run()}
@@ -373,6 +428,10 @@ function RichEditor({
                 transformPastedText: true,
                 transformCopiedText: true,
             }),
+            SearchAndReplace.configure({
+                searchResultClass: 'rich-search-highlight',
+                disableRegex: true,
+            }),
         ],
         content: fixEmphasis(body), // ** 인접 bold 인식되도록 zero-width 삽입
         onUpdate: ({ editor }) => {
@@ -388,6 +447,43 @@ function RichEditor({
             },
         },
     });
+
+    // Rich Text 검색 — App-level SearchBar 가 window event 로 명령 전달.
+    // (editor instance 가 Preview 내부라 ref 노출 대신 event bus 사용)
+    useEffect(() => {
+        if (!editor) return;
+        const onSearch = (e: Event) => {
+            const detail = (e as CustomEvent<{ query: string }>).detail;
+            editor.commands.setSearchTerm(detail.query ?? '');
+            // 결과 개수 회신 — App SearchBar 가 listen
+            // tiptap-search-and-replace 의 storage 타입이 ext 에 없어 any 캐스팅
+            const storage = (editor.storage as unknown as Record<string, { results?: unknown[] }>)
+                .searchAndReplace;
+            const count = storage?.results?.length ?? 0;
+            window.dispatchEvent(
+                new CustomEvent('markmind:rich-search-count', { detail: { count } }),
+            );
+        };
+        const onNext = () => {
+            editor.commands.nextSearchResult();
+        };
+        const onPrev = () => {
+            editor.commands.previousSearchResult();
+        };
+        const onClear = () => {
+            editor.commands.setSearchTerm('');
+        };
+        window.addEventListener('markmind:rich-search', onSearch);
+        window.addEventListener('markmind:rich-search-next', onNext);
+        window.addEventListener('markmind:rich-search-prev', onPrev);
+        window.addEventListener('markmind:rich-search-clear', onClear);
+        return () => {
+            window.removeEventListener('markmind:rich-search', onSearch);
+            window.removeEventListener('markmind:rich-search-next', onNext);
+            window.removeEventListener('markmind:rich-search-prev', onPrev);
+            window.removeEventListener('markmind:rich-search-clear', onClear);
+        };
+    }, [editor]);
 
     // body prop 이 외부에서 바뀌면 (다른 파일 열기) editor content 갱신.
     // 사용자가 편집 중인 변경은 덮어쓰지 않도록 — 직렬화 결과와 비교.
