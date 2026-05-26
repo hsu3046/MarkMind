@@ -1640,21 +1640,10 @@ body.is-resizing .split-pane {
   border: 2px solid var(--accent);
   box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 3px var(--accent);
 }
-/* "no color" (테마 기본) swatch — 항상 light 회색 base + 명확한 checker.
-   dark mode 에서도 일관되게 보이도록 background-color 명시. */
-.bg-picker-swatch[style*="transparent"] {
-  background-color: #f5f5f5;
-  background-image: linear-gradient(45deg, #ccc 25%, transparent 25%),
-                    linear-gradient(-45deg, #ccc 25%, transparent 25%),
-                    linear-gradient(45deg, transparent 75%, #ccc 75%),
-                    linear-gradient(-45deg, transparent 75%, #ccc 75%);
-  background-size: 8px 8px;
-  background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
-  color: #333;
-}
-/* dark theme 에서도 흰색 — "기본으로 되돌리면 라이트로 복귀" 시각 메시지 통일 */
-[data-theme="dark"] .bg-picker-swatch[style*="transparent"] {
-  background-color: #f5f5f5;
+/* "no color" (테마 기본) swatch — 항상 흰색 base + checker.
+   light/dark theme 무관 일관 — "기본으로 되돌리면 라이트 복귀" 시각 메시지. */
+.bg-picker-swatch.no-color {
+  background-color: #ffffff;
   background-image: linear-gradient(45deg, #ccc 25%, transparent 25%),
                     linear-gradient(-45deg, #ccc 25%, transparent 25%),
                     linear-gradient(45deg, transparent 75%, #ccc 75%),

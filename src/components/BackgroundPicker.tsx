@@ -60,10 +60,11 @@ export function BackgroundPicker({ value, onChange }: BackgroundPickerProps) {
                             return (
                                 <button
                                     key={p.label}
-                                    className={`bg-picker-swatch${active ? ' active' : ''}`}
-                                    style={{
-                                        background: p.color || 'transparent',
-                                    }}
+                                    className={`bg-picker-swatch${active ? ' active' : ''}${
+                                        p.color === '' ? ' no-color' : ''
+                                    }`}
+                                    // p.color 가 있을 때만 inline style — '' 면 CSS class 가 background 담당
+                                    style={p.color ? { background: p.color } : undefined}
                                     onClick={() => {
                                         onChange(p.color);
                                         setOpen(false);
