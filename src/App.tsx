@@ -38,7 +38,7 @@ const FONT_SIZE_MAX = 28;
 const FONT_SIZE_DEFAULT = 14;
 
 function App() {
-  const { theme, toggleTheme, setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const auth = useAuth();
   const [isAuthCallback, setIsAuthCallback] = useState(
     () => window.location.pathname === getCallbackPath()
@@ -878,11 +878,9 @@ function App() {
         fileName={fileName}
         isDirty={isDirty}
         viewMode={viewMode}
-        theme={theme}
         fontSize={fontSize}
         outlineVisible={outlineVisible}
         onViewModeChange={setViewMode}
-        onThemeToggle={toggleTheme}
         onNewFile={newFile}
         onOpenFile={openFile}
         onSaveFile={saveFile}

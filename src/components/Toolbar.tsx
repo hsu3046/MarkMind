@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-    Columns2, Sun, Moon, BookOpen,
+    Columns2, BookOpen,
     FilePlus, FolderOpen, Save, Download,
     ZoomIn, ZoomOut, List, Maximize, Clock,
     Search, ChevronRight, Sparkles, Check, X,
@@ -87,13 +87,11 @@ interface ToolbarProps {
     fileName: string;
     isDirty: boolean;
     viewMode: ViewMode;
-    theme: 'light' | 'dark';
     fontSize: number;
     outlineVisible: boolean;
     showRecent: boolean;
     aiPanelVisible: boolean;
     onViewModeChange: (mode: ViewMode) => void;
-    onThemeToggle: () => void;
     onNewFile: () => void;
     onOpenFile: () => void;
     onSaveFile: () => void;
@@ -126,11 +124,9 @@ export function Toolbar({
     fileName,
     isDirty,
     viewMode,
-    theme,
     fontSize,
     outlineVisible,
     onViewModeChange,
-    onThemeToggle,
     onNewFile,
     onOpenFile,
     onSaveFile,
@@ -365,9 +361,6 @@ export function Toolbar({
                     </span>
                 </button>
                 <BackgroundPicker value={bgColor} onChange={onBgColorChange} />
-                <button className="toolbar-btn" onClick={onThemeToggle} title="Toggle Theme (배경색 없을 때)">
-                    {theme === 'dark' ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
-                </button>
 
                 <div className="toolbar-divider" />
 
