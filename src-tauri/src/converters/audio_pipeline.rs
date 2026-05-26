@@ -199,7 +199,10 @@ async fn run_pipeline_core(
     cleanup_chunks(&chunks).await;
     let chunk_results = chunk_results?;
 
-    emitter.emit("💾 결과 합치는 중...", None);
+    emitter.emit(
+        "🔗 청크 결과 합치는 중",
+        Some(format!("{}조각", chunk_results.len())),
+    );
 
     let mut merged = chunk_results
         .iter()
@@ -209,6 +212,10 @@ async fn run_pipeline_core(
 
     // trim 적용 시 timestamp 가 trimmed 시각 기준 → 원본 시각으로 역매핑
     if let Some(map) = segment_map.as_deref() {
+        emitter.emit(
+            "🔁 타임스탬프 원본 시각 매핑",
+            Some(format!("{} segment", map.len())),
+        );
         merged = map_timestamps_to_original(&merged, map);
     }
 
@@ -447,25 +454,44 @@ async fn save_audio_results(
     usages: Vec<UsageInfo>,
     output_dir: Option<String>,
 ) -> ConverterResult<AudioJobResult> {
+    // 진단용 step — hang 위치 추적 (큰 transcript 의 build/write 단계 어디서 멈추는지)
     let target_dir = output_dir
         .as_deref()
         .map(std::path::PathBuf::from)
         .unwrap_or_else(conversions_dir);
+    emitter.emit(
+        "📁 저장 경로 준비",
+        Some(target_dir.to_string_lossy().into_owned()),
+    );
     std::fs::create_dir_all(&target_dir)?;
 
     let meta = EvidenceMeta::new(EvidenceType::Transcript, file_name.clone())
         .with_recorded_at(recorded_at);
 
+    emitter.emit("📝 타임스탬프 본문 생성", None);
     let timestamped_md = build_evidence_markdown(&meta, body.trim());
-    let clean_md = build_evidence_markdown(&meta, remove_timestamps(&body).trim());
+
+    emitter.emit("📝 정리본 (타임스탬프 제거) 생성", None);
+    let cleaned = remove_timestamps(&body);
+    let clean_md = build_evidence_markdown(&meta, cleaned.trim());
 
     let safe = sanitize(&basename);
     let timestamped_path = unique_path(&target_dir, &format!("녹취록_{}_타임스탬프", safe), "md");
     let clean_path = unique_path(&target_dir, &format!("녹취록_{}", safe), "md");
+
+    emitter.emit(
+        "💾 파일 쓰는 중 (1/2 — 타임스탬프)",
+        Some(format!("{} bytes", timestamped_md.len())),
+    );
     std::fs::write(&timestamped_path, &timestamped_md)?;
+
+    emitter.emit(
+        "💾 파일 쓰는 중 (2/2 — 정리본)",
+        Some(format!("{} bytes", clean_md.len())),
+    );
     std::fs::write(&clean_path, &clean_md)?;
 
-    // doc-converter 와 동일: 마지막 저장 step 은 표시하지 않음. 결과 카드의 경로로 충분.
+    emitter.emit("✅ 변환 완료", None);
 
     let _ = Utc::now(); // 미사용 경고 회피
 

@@ -34,3 +34,6 @@ docs/
 # Tauri build artifacts
 src-tauri/target/
 src-tauri/gen/
+
+# 빌드 시 download-ffmpeg.sh 가 채우는 sidecar binary (각 ~76MB, repo 에 commit X)
+src-tauri/binaries/

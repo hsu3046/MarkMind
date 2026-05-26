@@ -85,3 +85,198 @@ pub async fn run_ocr_inline(
 pub fn get_conversions_dir() -> String {
     super::conversions_dir().to_string_lossy().into_owned()
 }
+
+// ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────
+
+/// 마크다운 본문에서 화자 라벨 추출.
+/// 매칭 패턴 (우선순위):
+///   `**[HH:MM:SS] 화자A:**` / `**[MM:SS] Speaker B:**` / `[00:12] 김철수:` 등.
+/// 발견된 모든 고유 라벨을 등장 순서대로 반환.
+#[tauri::command]
+pub fn extract_speakers(paths: Vec<String>) -> Result<Vec<String>, String> {
+    use std::collections::BTreeSet;
+    let re = regex::Regex::new(
+        r"\*?\*?\[\d{1,2}:\d{2}(?::\d{2})?\]\s+([^\*\n:]+?):",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let mut order: Vec<String> = Vec::new();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    for path in &paths {
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        for cap in re.captures_iter(&content) {
+            if let Some(m) = cap.get(1) {
+                let label = m.as_str().trim().to_string();
+                if label.is_empty() {
+                    continue;
+                }
+                if seen.insert(label.clone()) {
+                    order.push(label);
+                }
+            }
+        }
+    }
+    Ok(order)
+}
+
+/// 여러 STT 결과 .md 파일을 순서대로 합쳐 새 .md 1개 생성.
+/// frontend 가 multi-file STT 후 호출 — 각 파일의 frontmatter 1번만 유지,
+/// 본문은 `## 파일N — 이름.m4a` 헤더로 구분해 이어붙임.
+#[tauri::command]
+pub fn merge_md_files(
+    paths: Vec<String>,
+    labels: Vec<String>,
+    output_dir: String,
+    output_basename: String,
+) -> Result<String, String> {
+    if paths.is_empty() {
+        return Err("합칠 파일이 없습니다.".into());
+    }
+    let dir = std::path::PathBuf::from(&output_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let mut combined = String::new();
+    let mut frontmatter_emitted = false;
+    for (idx, p) in paths.iter().enumerate() {
+        let content = std::fs::read_to_string(p).map_err(|e| e.to_string())?;
+        let (front, body) = split_frontmatter(&content);
+        if !frontmatter_emitted {
+            if let Some(f) = front {
+                combined.push_str(&f);
+                if !combined.ends_with('\n') {
+                    combined.push('\n');
+                }
+                combined.push('\n');
+            }
+            frontmatter_emitted = true;
+        }
+        let label = labels.get(idx).cloned().unwrap_or_else(|| format!("파일 {}", idx + 1));
+        combined.push_str(&format!("## 파일 {} — {}\n\n", idx + 1, label));
+        combined.push_str(body.trim());
+        combined.push_str("\n\n");
+    }
+
+    let safe_base = output_basename
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' || c == ' ' { c } else { '_' })
+        .collect::<String>();
+    let target = dir.join(format!("{}.md", safe_base.trim()));
+    // 충돌 시 (2), (3) ...
+    let final_path = if !target.exists() {
+        target
+    } else {
+        let mut i = 2;
+        loop {
+            let candidate = dir.join(format!("{} ({}).md", safe_base.trim(), i));
+            if !candidate.exists() {
+                break candidate;
+            }
+            i += 1;
+            if i > 999 {
+                break target.clone();
+            }
+        }
+    };
+    std::fs::write(&final_path, combined).map_err(|e| e.to_string())?;
+    Ok(final_path.to_string_lossy().into_owned())
+}
+
+fn split_frontmatter(md: &str) -> (Option<String>, String) {
+    if !md.starts_with("---") {
+        return (None, md.to_string());
+    }
+    let after = &md[3..];
+    let Some(end) = after.find("\n---") else {
+        return (None, md.to_string());
+    };
+    let front = &md[..3 + end + 4]; // ---{front}---
+    let rest = &md[3 + end + 4..];
+    let rest = rest.strip_prefix('\n').unwrap_or(rest);
+    (Some(front.to_string()), rest.to_string())
+}
+
+/// 화자 라벨 일괄 치환. mappings: (from, to). `to` 가 빈 문자열이면 그 화자의
+/// 모든 발화 라인 통째로 제거 (라벨 prefix 부터 다음 발화 직전까지).
+#[tauri::command]
+pub fn rename_speakers(
+    paths: Vec<String>,
+    mappings: Vec<(String, String)>,
+) -> Result<(), String> {
+    use std::collections::HashMap;
+    // 빈 매핑 / 동일 매핑 정리
+    let mut rename: HashMap<String, String> = HashMap::new();
+    let mut delete: Vec<String> = Vec::new();
+    for (from, to) in mappings {
+        let f = from.trim().to_string();
+        let t = to.trim().to_string();
+        if f.is_empty() || f == t {
+            continue;
+        }
+        if t.is_empty() {
+            delete.push(f);
+        } else {
+            rename.insert(f, t);
+        }
+    }
+    if rename.is_empty() && delete.is_empty() {
+        return Ok(());
+    }
+
+    for path in &paths {
+        let original = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let mut out = String::with_capacity(original.len());
+
+        // 라벨 헤더 정규식 — bold 유무, HH:MM[:SS] 둘 다 매치
+        let header_re = regex::Regex::new(
+            r"^(?P<prefix>\*?\*?\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)(?P<label>[^\*\n:]+?)(?P<suffix>:\*?\*?)\s*(?P<rest>.*)$",
+        )
+        .map_err(|e| e.to_string())?;
+
+        let lines: Vec<&str> = original.split_inclusive('\n').collect();
+        let mut i = 0;
+        while i < lines.len() {
+            let line = lines[i];
+            // 라인 끝 \n 제외하고 매칭
+            let trimmed_line = line.trim_end_matches('\n');
+            if let Some(caps) = header_re.captures(trimmed_line) {
+                let label = caps.name("label").map(|m| m.as_str().trim()).unwrap_or("");
+                if delete.iter().any(|d| d == label) {
+                    // 이 화자 발화 통째로 제거 — 다음 화자 헤더 만날 때까지 skip
+                    i += 1;
+                    while i < lines.len() {
+                        let next = lines[i].trim_end_matches('\n');
+                        if header_re.is_match(next) {
+                            break;
+                        }
+                        i += 1;
+                    }
+                    continue;
+                }
+                if let Some(new_label) = rename.get(label) {
+                    let prefix = caps.name("prefix").map(|m| m.as_str()).unwrap_or("");
+                    let suffix = caps.name("suffix").map(|m| m.as_str()).unwrap_or("");
+                    let rest = caps.name("rest").map(|m| m.as_str()).unwrap_or("");
+                    out.push_str(prefix);
+                    out.push_str(new_label);
+                    out.push_str(suffix);
+                    if !rest.is_empty() {
+                        out.push(' ');
+                        out.push_str(rest);
+                    }
+                    if line.ends_with('\n') {
+                        out.push('\n');
+                    }
+                    i += 1;
+                    continue;
+                }
+            }
+            out.push_str(line);
+            i += 1;
+        }
+
+        std::fs::write(path, &out).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}

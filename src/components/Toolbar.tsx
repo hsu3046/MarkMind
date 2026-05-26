@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-    Eye, PenLine, Columns2, Sun, Moon, BookOpen,
+    Columns2, Sun, Moon, BookOpen,
     FilePlus, FolderOpen, Save, Download,
     ZoomIn, ZoomOut, List, Maximize, Clock,
     Search, ChevronRight, Sparkles, Check, X,
     Mic, ScanText, Settings, Menu as MenuIcon,
+    FileCode, FileText,
 } from 'lucide-react';
 import * as gdriveService from '../services/gdriveService';
 import type { RecentFile } from '../hooks/useRecentFiles';
@@ -302,20 +303,20 @@ export function Toolbar({
 
                 <div className="toolbar-divider" />
 
-                {/* View modes (Editor + Preview 순서 교체, Split 마지막) */}
+                {/* View modes — Markdown / Rich Text / Split */}
                 <button
                     className={`toolbar-btn${viewMode === 'editor' ? ' active' : ''}`}
                     onClick={() => onViewModeChange('editor')}
-                    title="Editor (⌘1)"
+                    title="Markdown (⌘1)"
                 >
-                    <PenLine size={16} strokeWidth={1.5} />
+                    <FileCode size={16} strokeWidth={1.5} />
                 </button>
                 <button
                     className={`toolbar-btn${viewMode === 'preview' ? ' active' : ''}`}
                     onClick={() => onViewModeChange('preview')}
-                    title="Preview (⌘3)"
+                    title="Rich Text (⌘3)"
                 >
-                    <Eye size={16} strokeWidth={1.5} />
+                    <FileText size={16} strokeWidth={1.5} />
                 </button>
                 <button
                     className={`toolbar-btn${viewMode === 'split' ? ' active' : ''}`}

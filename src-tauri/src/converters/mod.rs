@@ -27,9 +27,14 @@ use serde::{Deserialize, Serialize};
 
 pub const MODEL_OCR_FAST: &str = "gemini-3.1-flash-image-preview";
 pub const MODEL_OCR_ENHANCE: &str = "gemini-3-pro-image-preview";
-pub const MODEL_AUDIO: &str = "gemini-3-flash-preview";
+// 2026-05 조사 결과 적용 — gemini-3.5-flash → 3.1-flash-lite
+// (출력 속도 ~1.64x, TTFT 2.5x, 6배 저렴, ASR 품질 동급/개선. 공식 high-volume
+//  transcription 권장 모델.) 음질 회귀 발견 시 mod.rs 의 이 상수만 되돌리면 됨.
+pub const MODEL_AUDIO: &str = "gemini-3.1-flash-lite";
 pub const MODEL_NOTES_GEMINI: &str = "gemini-3.1-pro-preview";
 pub const MODEL_NOTES_CLAUDE: &str = "claude-sonnet-4-6";
+#[allow(dead_code)] // OpenAI 호출 아직 미구현 — 미래 사용용 default
+pub const MODEL_OPENAI_DEFAULT: &str = "gpt-5.4-mini-2026-03-17";
 
 /// 단가 — USD per 1M tokens
 pub fn pricing(model: &str) -> Option<(f64, f64)> {
@@ -38,6 +43,8 @@ pub fn pricing(model: &str) -> Option<(f64, f64)> {
         "gemini-3-pro-image-preview" => Some((2.00, 12.00)),
         "gemini-3.1-pro-preview" => Some((2.00, 12.00)),
         "gemini-3-flash-preview" => Some((0.50, 3.00)),
+        "gemini-3.5-flash" => Some((1.50, 9.00)),
+        "gemini-3.1-flash-lite" => Some((0.25, 1.50)), // 공식 단가 (2026-05)
         "claude-sonnet-4-6" => Some((3.00, 15.00)),
         _ => None,
     }
