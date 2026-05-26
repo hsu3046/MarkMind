@@ -19,7 +19,11 @@ use tokio::process::Command;
 
 static INIT: Once = Once::new();
 
-const CHUNK_SIZE_GUARD_BYTES: u64 = 150 * 1024 * 1024;
+/// 청크 크기 가드 — 초과 시 16kHz mono 32kbps mp3 로 다운인코딩.
+/// 임계 15MB → 대부분 청크가 Gemini inline base64 path 임계 (~20MB request body) 안에 들어가
+/// File API 우회 + round-trip 절약 (B+C 의 핵심).
+/// Gemini 가 어차피 내부에서 16kbps mono 로 다운샘플하므로 quality 손실 X.
+const CHUNK_SIZE_GUARD_BYTES: u64 = 15 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct AudioChunk {
@@ -266,7 +270,8 @@ pub async fn split_audio_to_chunks(
             }
         }
 
-        // 사이즈 가드: 150MB 초과 시 64kbps 다운샘플
+        // 사이즈 가드: 15MB 초과 시 16kHz mono 32kbps mp3 로 재인코딩.
+        // (Gemini inline base64 임계 안으로 + 어차피 내부 16kbps downsample 이라 quality 손실 X)
         if let Ok(meta) = tokio::fs::metadata(&chunk_path).await {
             if meta.len() > CHUNK_SIZE_GUARD_BYTES {
                 let _ = tokio::fs::remove_file(&chunk_path).await;
@@ -277,7 +282,13 @@ pub async fn split_audio_to_chunks(
                     .arg(format!("{}", chunk_duration_sec))
                     .arg("-i")
                     .arg(input)
-                    .args(["-vn", "-acodec", "libmp3lame", "-b:a", "64k"])
+                    .args([
+                        "-vn",
+                        "-ac", "1",       // mono
+                        "-ar", "16000",   // 16kHz
+                        "-acodec", "libmp3lame",
+                        "-b:a", "32k",
+                    ])
                     .arg(&chunk_path)
                     .output()
                     .await;
