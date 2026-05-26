@@ -4,11 +4,12 @@ import {
     FilePlus, FolderOpen, Save, Download,
     ZoomIn, ZoomOut, List, Maximize, Clock,
     Search, ChevronRight, Sparkles, Check, X,
-    Mic, ScanText, Settings, Menu as MenuIcon,
+    Mic, ScanText, Settings,
     FileCode, FileText, AlignVerticalSpaceAround,
 } from 'lucide-react';
 import * as gdriveService from '../services/gdriveService';
 import type { RecentFile } from '../hooks/useRecentFiles';
+import { BackgroundPicker } from './BackgroundPicker';
 
 export type ViewMode = 'split' | 'editor' | 'preview';
 
@@ -102,6 +103,8 @@ interface ToolbarProps {
     onFontSizeReset: () => void;
     lineHeight: 'compact' | 'normal' | 'relaxed';
     onCycleLineHeight: () => void;
+    bgColor: string;
+    onBgColorChange: (color: string) => void;
     onToggleOutline: () => void;
     onToggleReadingMode: () => void;
     onToggleRecentFiles: () => void;
@@ -137,6 +140,8 @@ export function Toolbar({
     onFontSizeReset,
     lineHeight,
     onCycleLineHeight,
+    bgColor,
+    onBgColorChange,
     onToggleOutline,
     onToggleReadingMode,
     onToggleRecentFiles,
@@ -203,8 +208,7 @@ export function Toolbar({
                         className={`toolbar-text-btn${fileMenuOpen ? ' active' : ''}`}
                         onClick={() => setFileMenuOpen((v) => !v)}
                     >
-                        <MenuIcon size={14} strokeWidth={1.5} />
-                        <span>Menu</span>
+                        <span>File</span>
                     </button>
                     {fileMenuOpen && (
                         <div className="toolbar-dropdown-menu">
@@ -345,14 +349,20 @@ export function Toolbar({
                     </button>
                 </div>
 
-                {/* 행간 토글 — compact / normal / relaxed 사이클 */}
+                {/* 행간 토글 — compact 1.5 / normal 1.8 / relaxed 2.2 사이클 */}
                 <button
-                    className="toolbar-btn"
+                    className="toolbar-btn toolbar-lineheight-btn"
                     onClick={onCycleLineHeight}
-                    title={`행간: ${lineHeight === 'compact' ? '좁게' : lineHeight === 'normal' ? '보통' : '넓게'} (클릭하면 변경)`}
+                    title={`행간 ${lineHeight === 'compact' ? '1.5 (좁게)' : lineHeight === 'normal' ? '1.8 (보통)' : '2.2 (넓게)'} — 클릭으로 변경`}
                 >
                     <AlignVerticalSpaceAround size={15} strokeWidth={1.5} />
+                    <span className="toolbar-lineheight-value">
+                        {lineHeight === 'compact' ? '1.5' : lineHeight === 'normal' ? '1.8' : '2.2'}
+                    </span>
                 </button>
+
+                {/* 배경색 picker */}
+                <BackgroundPicker value={bgColor} onChange={onBgColorChange} />
 
                 <div className="toolbar-divider" />
 
