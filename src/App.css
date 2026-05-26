@@ -1573,6 +1573,21 @@ body.is-resizing .split-pane {
   outline: none;
   min-height: 300px;
 }
+/* Rich Text 의 heading 은 em 단위 — 본문 fontSize 변경 시 비례 확대 */
+.tiptap-rich h1 { font-size: 2em; letter-spacing: -0.02em; }
+.tiptap-rich h2 { font-size: 1.55em; letter-spacing: -0.01em; }
+.tiptap-rich h3 { font-size: 1.3em; }
+.tiptap-rich h4 { font-size: 1.12em; }
+.tiptap-rich h5 { font-size: 1em; }
+.tiptap-rich h6 { font-size: 0.9em; color: var(--text-secondary); }
+
+/* 행간 (App root 의 data-line-height attribute 로 cycle) */
+[data-line-height="compact"] .markdown-body,
+[data-line-height="compact"] .tiptap-rich { line-height: 1.5; }
+[data-line-height="normal"] .markdown-body,
+[data-line-height="normal"] .tiptap-rich { line-height: 1.8; }
+[data-line-height="relaxed"] .markdown-body,
+[data-line-height="relaxed"] .tiptap-rich { line-height: 2.2; }
 .tiptap-rich p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
@@ -1583,24 +1598,68 @@ body.is-resizing .split-pane {
 .tiptap-rich:focus {
   outline: none;
 }
+/* === Task list 공통 — 커스텀 정사각형 체크박스 + 정밀 정렬 === */
+
+/* 체크박스 (Rich Text + Preview 공통) — OS default 무시, 정사각형 + radius 0 */
+.tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"],
+.markdown-body ul li input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--text-secondary, #999);
+  border-radius: 0;
+  background: var(--bg-primary);
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  transition: background 0.12s, border-color 0.12s;
+}
+.tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"]:hover,
+.markdown-body ul li input[type="checkbox"]:hover {
+  border-color: var(--accent);
+}
+.tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"]:checked,
+.markdown-body ul li input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+/* 체크마크 — 흰 ✓ */
+.tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"]:checked::after,
+.markdown-body ul li input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 5px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  box-sizing: content-box;
+}
+
+/* === Rich Text (TipTap) 의 list layout === */
 .tiptap-rich ul[data-type="taskList"] {
   list-style: none;
   padding-left: 0;
 }
 .tiptap-rich ul[data-type="taskList"] li {
   display: flex;
-  align-items: baseline; /* 텍스트 첫 줄 baseline 기준 — 세로 어긋남 fix */
-  gap: 8px;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 4px 0;
 }
 .tiptap-rich ul[data-type="taskList"] li > label {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  height: 1.5em; /* line-height 와 동일 → 체크박스가 첫 줄 가운데 */
-}
-.tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"] {
-  margin: 0;
-  vertical-align: middle;
+  /* line-height 의 ascent 만큼 체크박스 내림 → 텍스트 첫 줄 정중앙 정렬 */
+  height: 1.55em;
 }
 .tiptap-rich ul[data-type="taskList"] li > div {
   flex: 1;
@@ -1610,16 +1669,18 @@ body.is-resizing .split-pane {
   margin: 0;
 }
 
-/* ReadOnlyView (react-markdown) 의 GFM task list 정렬 */
-.markdown-body ul li input[type="checkbox"] {
-  margin: 0 6px 0 0;
-  vertical-align: middle;
-  position: relative;
-  top: -1px; /* 체크박스가 살짝 아래로 보이는 시각 보정 */
-}
+/* === Preview (react-markdown) 의 GFM task list layout === */
 .markdown-body ul li.task-list-item,
 .markdown-body ul li:has(> input[type="checkbox"]) {
   list-style: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-left: -1.4em; /* bullet 영역 제거 */
+}
+.markdown-body ul li input[type="checkbox"] {
+  /* baseline 보정 — flex container 안에서 첫 줄 정중앙 */
+  margin-top: 0.15em;
 }
 .tiptap-rich table {
   border-collapse: collapse;
@@ -1985,9 +2046,9 @@ body.is-resizing .split-pane {
 
 /* ---------- Outline Panel ---------- */
 .outline-panel {
-  width: 240px;
+  /* width 는 inline style 로 OutlinePanel 컴포넌트가 관리 */
   min-width: 160px;
-  max-width: 400px;
+  max-width: 500px;
   height: 100%;
   border-right: 1px solid var(--border-primary);
   background: var(--bg-tertiary);
@@ -1995,8 +2056,26 @@ body.is-resizing .split-pane {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  resize: horizontal;
   position: relative;
+}
+
+/* drag handle — 우측 가장자리 4px col-resize */
+.outline-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+  transition: background 0.12s;
+}
+.outline-resize-handle:hover {
+  background: var(--accent);
+}
+.outline-resize-handle:active {
+  background: var(--accent);
+  opacity: 0.7;
 }
 
 @keyframes slideIn {

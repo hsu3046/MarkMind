@@ -15,6 +15,7 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { Markdown } from 'tiptap-markdown';
 import { SearchAndReplace } from '@sereneinserenade/tiptap-search-and-replace';
+import { Typography } from '@tiptap/extension-typography';
 import {
     Bold, Italic, Strikethrough, Code,
     Heading1, Heading2, Heading3, Heading4,
@@ -208,25 +209,18 @@ function RichToolbar({ editor }: { editor: Editor }) {
         };
     }, [editor]);
 
-    /** 현재 위치의 list 타입에 맞게 sink (들여쓰기) / lift (내어쓰기) */
+    /** 현재 위치의 list 타입에 맞게 sink (들여쓰기) / lift (내어쓰기).
+     *  실제 동작 가능 여부는 editor.can() 으로 — 이미 최상위면 lift 불가, 부모 없으면 sink 불가. */
+    const isTask = editor.isActive('taskList') || editor.isActive('taskItem');
+    const itemType = isTask ? 'taskItem' : 'listItem';
+    const canSink = editor.can().sinkListItem(itemType);
+    const canLift = editor.can().liftListItem(itemType);
     const indent = () => {
-        if (editor.isActive('taskList') || editor.isActive('taskItem')) {
-            editor.chain().focus().sinkListItem('taskItem').run();
-        } else {
-            editor.chain().focus().sinkListItem('listItem').run();
-        }
+        if (canSink) editor.chain().focus().sinkListItem(itemType).run();
     };
     const outdent = () => {
-        if (editor.isActive('taskList') || editor.isActive('taskItem')) {
-            editor.chain().focus().liftListItem('taskItem').run();
-        } else {
-            editor.chain().focus().liftListItem('listItem').run();
-        }
+        if (canLift) editor.chain().focus().liftListItem(itemType).run();
     };
-    const inList =
-        editor.isActive('bulletList') ||
-        editor.isActive('orderedList') ||
-        editor.isActive('taskList');
 
     const openLinkModal = () => {
         const prev = (editor.getAttributes('link').href as string | undefined) ?? '';
@@ -353,13 +347,13 @@ function RichToolbar({ editor }: { editor: Editor }) {
             />
             <ToolBtn
                 onClick={outdent}
-                disabled={!inList}
+                disabled={!canLift}
                 icon={<IndentDecrease size={14} />}
                 title="Outdent list (Shift+Tab)"
             />
             <ToolBtn
                 onClick={indent}
-                disabled={!inList}
+                disabled={!canSink}
                 icon={<IndentIncrease size={14} />}
                 title="Indent list (Tab)"
             />
@@ -412,7 +406,9 @@ function RichEditor({
                 heading: { levels: [1, 2, 3, 4, 5, 6] },
                 codeBlock: { HTMLAttributes: { class: 'hljs' } },
             }),
-            Link.configure({ openOnClick: false, autolink: true }),
+            // autolink: false — `arena.ai` 같은 평문 URL 이 자동으로 링크되는 동작 끄기
+            // (사용자가 명시적으로 toolbar Link 버튼/⌘K 로만 링크 생성)
+            Link.configure({ openOnClick: false, autolink: false }),
             TaskList,
             TaskItem.configure({ nested: true }),
             Table.configure({ resizable: false }),
@@ -423,7 +419,7 @@ function RichEditor({
                 html: false,
                 tightLists: true,
                 bulletListMarker: '-',
-                linkify: true,
+                linkify: false, // 자동 URL → 링크 변환 끄기 (사용자 요청)
                 breaks: false,
                 transformPastedText: true,
                 transformCopiedText: true,
@@ -432,6 +428,8 @@ function RichEditor({
                 searchResultClass: 'rich-search-highlight',
                 disableRegex: true,
             }),
+            // Smart typography — `->` → `→`, `--` → `—`, `(c)` → `©` 등 자동 치환
+            Typography,
         ],
         content: fixEmphasis(body), // ** 인접 bold 인식되도록 zero-width 삽입
         onUpdate: ({ editor }) => {
