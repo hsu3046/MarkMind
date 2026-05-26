@@ -90,6 +90,15 @@ function App() {
       prev === 'compact' ? 'normal' : prev === 'normal' ? 'relaxed' : 'compact',
     );
   };
+
+  // 배경색 — 빈 문자열 = 테마 기본, 그 외엔 사용자 지정 CSS color
+  const [bgColor, setBgColor] = useState<string>(
+    () => localStorage.getItem('markmind-bg-color') || '',
+  );
+  useEffect(() => {
+    if (bgColor) localStorage.setItem('markmind-bg-color', bgColor);
+    else localStorage.removeItem('markmind-bg-color');
+  }, [bgColor]);
   const [outlineVisible, setOutlineVisible] = useState(false);
   const [readingMode, setReadingMode] = useState(false);
   const [tutorialVisible, setTutorialVisible] = useState(false);
@@ -816,7 +825,18 @@ function App() {
   }
 
   return (
-    <div className="app" data-line-height={lineHeight}>
+    <div
+      className="app"
+      data-line-height={lineHeight}
+      style={
+        bgColor
+          ? ({
+              '--preview-bg': bgColor,
+              '--bg-primary': bgColor,
+            } as React.CSSProperties)
+          : undefined
+      }
+    >
       <div
         className="titlebar-drag"
         onMouseDown={(e) => {
@@ -852,6 +872,8 @@ function App() {
         onFontSizeReset={resetFontSize}
         lineHeight={lineHeight}
         onCycleLineHeight={cycleLineHeight}
+        bgColor={bgColor}
+        onBgColorChange={setBgColor}
         onToggleOutline={() => setOutlineVisible((v) => !v)}
         onToggleReadingMode={toggleReadingMode}
         onToggleRecentFiles={() => setRecentPanelVisible((v) => !v)}
