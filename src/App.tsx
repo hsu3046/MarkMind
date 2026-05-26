@@ -72,11 +72,24 @@ function App() {
     setViewMode('preview');
     setReadingMode(false);
   };
-  const { syncEnabled, toggleSync, reattach } = useScrollSync(false);
+  const { syncEnabled, toggleSync, reattach } = useScrollSync(true);
   const [fontSize, setFontSize] = useState(() => {
     const saved = localStorage.getItem('md-editor-font-size');
     return saved ? parseInt(saved, 10) : FONT_SIZE_DEFAULT;
   });
+  // 행간 — compact (1.5) / normal (1.8) / relaxed (2.2) cycle, localStorage 보존
+  const [lineHeight, setLineHeight] = useState<'compact' | 'normal' | 'relaxed'>(() => {
+    const v = localStorage.getItem('markmind-line-height');
+    return v === 'compact' || v === 'relaxed' ? v : 'normal';
+  });
+  useEffect(() => {
+    localStorage.setItem('markmind-line-height', lineHeight);
+  }, [lineHeight]);
+  const cycleLineHeight = () => {
+    setLineHeight((prev) =>
+      prev === 'compact' ? 'normal' : prev === 'normal' ? 'relaxed' : 'compact',
+    );
+  };
   const [outlineVisible, setOutlineVisible] = useState(false);
   const [readingMode, setReadingMode] = useState(false);
   const [tutorialVisible, setTutorialVisible] = useState(false);
@@ -803,7 +816,7 @@ function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app" data-line-height={lineHeight}>
       <div
         className="titlebar-drag"
         onMouseDown={(e) => {
@@ -837,6 +850,8 @@ function App() {
         onSaveToDrive={() => setDriveBrowserMode('save')}
         onFontSizeChange={handleFontSizeChange}
         onFontSizeReset={resetFontSize}
+        lineHeight={lineHeight}
+        onCycleLineHeight={cycleLineHeight}
         onToggleOutline={() => setOutlineVisible((v) => !v)}
         onToggleReadingMode={toggleReadingMode}
         onToggleRecentFiles={() => setRecentPanelVisible((v) => !v)}

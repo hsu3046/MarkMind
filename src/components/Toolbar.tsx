@@ -5,7 +5,7 @@ import {
     ZoomIn, ZoomOut, List, Maximize, Clock,
     Search, ChevronRight, Sparkles, Check, X,
     Mic, ScanText, Settings, Menu as MenuIcon,
-    FileCode, FileText,
+    FileCode, FileText, AlignVerticalSpaceAround,
 } from 'lucide-react';
 import * as gdriveService from '../services/gdriveService';
 import type { RecentFile } from '../hooks/useRecentFiles';
@@ -100,6 +100,8 @@ interface ToolbarProps {
     onShowTutorial: () => void;
     onFontSizeChange: (delta: number) => void;
     onFontSizeReset: () => void;
+    lineHeight: 'compact' | 'normal' | 'relaxed';
+    onCycleLineHeight: () => void;
     onToggleOutline: () => void;
     onToggleReadingMode: () => void;
     onToggleRecentFiles: () => void;
@@ -133,6 +135,8 @@ export function Toolbar({
     onShowTutorial,
     onFontSizeChange,
     onFontSizeReset,
+    lineHeight,
+    onCycleLineHeight,
     onToggleOutline,
     onToggleReadingMode,
     onToggleRecentFiles,
@@ -340,6 +344,15 @@ export function Toolbar({
                         <ZoomIn size={15} strokeWidth={1.5} />
                     </button>
                 </div>
+
+                {/* 행간 토글 — compact / normal / relaxed 사이클 */}
+                <button
+                    className="toolbar-btn"
+                    onClick={onCycleLineHeight}
+                    title={`행간: ${lineHeight === 'compact' ? '좁게' : lineHeight === 'normal' ? '보통' : '넓게'} (클릭하면 변경)`}
+                >
+                    <AlignVerticalSpaceAround size={15} strokeWidth={1.5} />
+                </button>
 
                 <div className="toolbar-divider" />
 
