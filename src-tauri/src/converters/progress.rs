@@ -21,6 +21,7 @@ pub struct ProgressStep {
     pub progress: Option<f32>,
 }
 
+#[derive(Clone)]
 pub struct ProgressEmitter {
     app: AppHandle,
     job_id: String,
