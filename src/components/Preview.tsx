@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
@@ -13,12 +14,15 @@ import { TableRow } from '@tiptap/extension-table-row';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { Markdown } from 'tiptap-markdown';
+import { SearchAndReplace } from '@sereneinserenade/tiptap-search-and-replace';
+import { Typography } from '@tiptap/extension-typography';
 import {
     Bold, Italic, Strikethrough, Code,
     Heading1, Heading2, Heading3, Heading4,
     List, ListOrdered, ListChecks,
     Quote, Code2, Link as LinkIcon, Table as TableIcon,
     Undo2, Redo2, Minus,
+    IndentIncrease, IndentDecrease,
 } from 'lucide-react';
 
 interface PreviewProps {
@@ -115,6 +119,59 @@ function ReadOnlyView({
     );
 }
 
+// ─── 링크 입력 모달 (Tauri WKWebView 가 prompt() 불안정해서 커스텀) ───
+function LinkModal({
+    initial,
+    onApply,
+    onClose,
+}: {
+    initial: string;
+    onApply: (url: string) => void;
+    onClose: () => void;
+}) {
+    const [value, setValue] = useState(initial);
+    return createPortal(
+        <div className="link-modal-root" role="dialog" aria-modal="true">
+            <div className="link-modal-backdrop" onClick={onClose} aria-hidden />
+            <div className="link-modal">
+                <div className="link-modal-title">링크 URL</div>
+                <input
+                    type="text"
+                    autoFocus
+                    value={value}
+                    placeholder="https://example.com"
+                    onChange={(e) => setValue(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            onApply(value);
+                        } else if (e.key === 'Escape') {
+                            onClose();
+                        }
+                    }}
+                />
+                <div className="link-modal-actions">
+                    {initial && (
+                        <button
+                            className="danger"
+                            onClick={() => onApply('')}
+                            title="이 위치의 링크 제거"
+                        >
+                            링크 삭제
+                        </button>
+                    )}
+                    <button onClick={onClose}>취소</button>
+                    <button className="primary" onClick={() => onApply(value)}>
+                        적용
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
 // ─── 편집 toolbar ───
 interface ToolBtnProps {
     onClick: () => void;
@@ -141,6 +198,7 @@ function ToolBtn({ onClick, icon, title, active, disabled }: ToolBtnProps) {
 function RichToolbar({ editor }: { editor: Editor }) {
     // editor state 변경 (selection, marks) 시 toolbar 가 갱신되도록 강제 리렌더
     const [, setTick] = useState(0);
+    const [linkModal, setLinkModal] = useState<{ value: string } | null>(null);
     useEffect(() => {
         const handler = () => setTick((t) => t + 1);
         editor.on('selectionUpdate', handler);
@@ -151,15 +209,44 @@ function RichToolbar({ editor }: { editor: Editor }) {
         };
     }, [editor]);
 
-    const promptLink = () => {
-        const prev = editor.getAttributes('link').href ?? '';
-        const url = prompt('링크 URL (빈 값 = 제거)', prev);
-        if (url === null) return;
-        if (url === '') {
+    /** 현재 위치의 list 타입에 맞게 sink (들여쓰기) / lift (내어쓰기).
+     *  실제 동작 가능 여부는 editor.can() 으로 — 이미 최상위면 lift 불가, 부모 없으면 sink 불가. */
+    const isTask = editor.isActive('taskList') || editor.isActive('taskItem');
+    const itemType = isTask ? 'taskItem' : 'listItem';
+    const canSink = editor.can().sinkListItem(itemType);
+    const canLift = editor.can().liftListItem(itemType);
+    const indent = () => {
+        if (canSink) editor.chain().focus().sinkListItem(itemType).run();
+    };
+    const outdent = () => {
+        if (canLift) editor.chain().focus().liftListItem(itemType).run();
+    };
+
+    const openLinkModal = () => {
+        const prev = (editor.getAttributes('link').href as string | undefined) ?? '';
+        setLinkModal({ value: prev });
+    };
+
+    // ⌘K → 링크 모달 (editor focus 안에서만 동작)
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (!(e.metaKey || e.ctrlKey)) return;
+            if (e.key !== 'k' && e.key !== 'K') return;
+            if (!editor.isFocused) return;
+            e.preventDefault();
+            openLinkModal();
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [editor]);
+    const applyLink = (url: string) => {
+        const trimmed = url.trim();
+        if (trimmed === '') {
             editor.chain().focus().extendMarkRange('link').unsetLink().run();
         } else {
-            editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+            editor.chain().focus().extendMarkRange('link').setLink({ href: trimmed }).run();
         }
+        setLinkModal(null);
     };
 
     return (
@@ -227,11 +314,18 @@ function RichToolbar({ editor }: { editor: Editor }) {
                 title="Inline code (⌘E)"
             />
             <ToolBtn
-                onClick={promptLink}
+                onClick={openLinkModal}
                 active={editor.isActive('link')}
                 icon={<LinkIcon size={14} />}
                 title="Link (⌘K)"
             />
+            {linkModal && (
+                <LinkModal
+                    initial={linkModal.value}
+                    onClose={() => setLinkModal(null)}
+                    onApply={applyLink}
+                />
+            )}
             <span className="rich-tool-divider" />
             <ToolBtn
                 onClick={() => editor.chain().focus().toggleBulletList().run()}
@@ -250,6 +344,18 @@ function RichToolbar({ editor }: { editor: Editor }) {
                 active={editor.isActive('taskList')}
                 icon={<ListChecks size={14} />}
                 title="Task list (⌘⇧9)"
+            />
+            <ToolBtn
+                onClick={outdent}
+                disabled={!canLift}
+                icon={<IndentDecrease size={14} />}
+                title="Outdent list (Shift+Tab)"
+            />
+            <ToolBtn
+                onClick={indent}
+                disabled={!canSink}
+                icon={<IndentIncrease size={14} />}
+                title="Indent list (Tab)"
             />
             <span className="rich-tool-divider" />
             <ToolBtn
@@ -300,7 +406,9 @@ function RichEditor({
                 heading: { levels: [1, 2, 3, 4, 5, 6] },
                 codeBlock: { HTMLAttributes: { class: 'hljs' } },
             }),
-            Link.configure({ openOnClick: false, autolink: true }),
+            // autolink: false — `arena.ai` 같은 평문 URL 이 자동으로 링크되는 동작 끄기
+            // (사용자가 명시적으로 toolbar Link 버튼/⌘K 로만 링크 생성)
+            Link.configure({ openOnClick: false, autolink: false }),
             TaskList,
             TaskItem.configure({ nested: true }),
             Table.configure({ resizable: false }),
@@ -311,16 +419,21 @@ function RichEditor({
                 html: false,
                 tightLists: true,
                 bulletListMarker: '-',
-                linkify: true,
+                linkify: false, // 자동 URL → 링크 변환 끄기 (사용자 요청)
                 breaks: false,
                 transformPastedText: true,
                 transformCopiedText: true,
             }),
+            SearchAndReplace.configure({
+                searchResultClass: 'rich-search-highlight',
+                disableRegex: true,
+            }),
+            // Smart typography — `->` → `→`, `--` → `—`, `(c)` → `©` 등 자동 치환
+            Typography,
         ],
         content: fixEmphasis(body), // ** 인접 bold 인식되도록 zero-width 삽입
         onUpdate: ({ editor }) => {
-            // @ts-expect-error tiptap-markdown 의 storage 타입
-            const md: string = editor.storage.markdown.getMarkdown();
+            const md: string = editor.storage.markdown?.getMarkdown() ?? '';
             // 직렬화 시 fixEmphasis 의 zero-width 제거 → 파일에는 비가시 문자 안 들어감
             onChange(rawFrontmatter + stripDisplayHelpers(md));
         },
@@ -329,16 +442,76 @@ function RichEditor({
                 class: 'markdown-body tiptap-rich',
                 style: `font-size: ${fontSize}px`,
             },
+            // copy 시 fixEmphasis 의 zero-width 가 사용자 클립보드에 섞이지 않도록 제거
+            handleDOMEvents: {
+                copy: (_view, event) => {
+                    const sel = window.getSelection()?.toString() ?? '';
+                    if (sel && sel.includes('​')) {
+                        event.preventDefault();
+                        event.clipboardData?.setData('text/plain', sel.replace(/​/g, ''));
+                        return true;
+                    }
+                    return false;
+                },
+            },
         },
     });
+
+    // Rich Text 검색 — App-level SearchBar 가 window event 로 명령 전달.
+    // tiptap-search-and-replace 의 storage 타입이 ext 에 없어 any 캐스팅.
+    useEffect(() => {
+        if (!editor) return;
+
+        const reportCount = () => {
+            const storage = editor.storage.searchAndReplace;
+            const count = storage?.results?.length ?? 0;
+            const index = storage?.resultIndex ?? 0;
+            window.dispatchEvent(
+                new CustomEvent('markmind:rich-search-count', {
+                    detail: { count, index },
+                }),
+            );
+        };
+
+        const onSearch = (e: Event) => {
+            const detail = (e as CustomEvent<{ query: string }>).detail;
+            editor.commands.setSearchTerm(detail.query ?? '');
+            // setSearchTerm 후 storage 갱신은 다음 frame — setTimeout 0
+            setTimeout(reportCount, 0);
+        };
+        const onNext = () => {
+            editor.commands.nextSearchResult();
+            setTimeout(reportCount, 0);
+        };
+        const onPrev = () => {
+            editor.commands.previousSearchResult();
+            setTimeout(reportCount, 0);
+        };
+        const onClear = () => {
+            editor.commands.setSearchTerm('');
+            setTimeout(reportCount, 0);
+        };
+        window.addEventListener('markmind:rich-search', onSearch);
+        window.addEventListener('markmind:rich-search-next', onNext);
+        window.addEventListener('markmind:rich-search-prev', onPrev);
+        window.addEventListener('markmind:rich-search-clear', onClear);
+        return () => {
+            window.removeEventListener('markmind:rich-search', onSearch);
+            window.removeEventListener('markmind:rich-search-next', onNext);
+            window.removeEventListener('markmind:rich-search-prev', onPrev);
+            window.removeEventListener('markmind:rich-search-clear', onClear);
+        };
+    }, [editor]);
 
     // body prop 이 외부에서 바뀌면 (다른 파일 열기) editor content 갱신.
     // 사용자가 편집 중인 변경은 덮어쓰지 않도록 — 직렬화 결과와 비교.
     useEffect(() => {
         if (!editor) return;
-        // @ts-expect-error tiptap-markdown storage
-        const current: string = editor.storage.markdown.getMarkdown();
-        if (stripDisplayHelpers(current).trim() !== body.trim()) {
+        const current: string = editor.storage.markdown?.getMarkdown() ?? '';
+        const cleanedCurrent = stripDisplayHelpers(current);
+        // fast-path: 길이 차이 ≥ 8 면 trim 비교 skip — 큰 문서 비용 절감
+        const lenDiff = Math.abs(cleanedCurrent.length - body.length);
+        if (lenDiff > 8 || cleanedCurrent.trim() !== body.trim()) {
             editor.commands.setContent(fixEmphasis(body), { emitUpdate: false });
         }
     }, [body, editor]);

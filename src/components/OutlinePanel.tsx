@@ -1,4 +1,9 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+const LS_WIDTH_KEY = 'markmind-outline-width';
+const MIN_WIDTH = 160;
+const MAX_WIDTH = 500;
+const DEFAULT_WIDTH = 240;
 
 interface OutlineItem {
     level: number;
@@ -20,6 +25,49 @@ interface OutlinePanelProps {
 }
 
 export function OutlinePanel({ content, visible, onHeadingClick }: OutlinePanelProps) {
+    // 사용자가 drag 로 조정한 폭을 localStorage 보존
+    const [width, setWidth] = useState<number>(() => {
+        const saved = Number(localStorage.getItem(LS_WIDTH_KEY));
+        return saved >= MIN_WIDTH && saved <= MAX_WIDTH ? saved : DEFAULT_WIDTH;
+    });
+    const draggingRef = useRef(false);
+    const panelRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        const onMove = (e: MouseEvent) => {
+            if (!draggingRef.current) return;
+            // panel 의 left edge 기준 상대좌표 — outline 이 좌측 끝이 아닐 때도 동작
+            const left = panelRef.current?.getBoundingClientRect().left ?? 0;
+            const next = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, e.clientX - left));
+            setWidth(next);
+        };
+        const onUp = () => {
+            if (!draggingRef.current) return;
+            draggingRef.current = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+    }, []);
+
+    // width 변경 시 localStorage 저장 (debounced)
+    useEffect(() => {
+        const t = setTimeout(() => localStorage.setItem(LS_WIDTH_KEY, String(width)), 300);
+        return () => clearTimeout(t);
+    }, [width]);
+
+    const startDrag = (e: React.MouseEvent) => {
+        e.preventDefault();
+        draggingRef.current = true;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    };
+
     const headings = useMemo<OutlineItem[]>(() => {
         if (!content) return [];
         const lines = content.split('\n');
@@ -66,7 +114,7 @@ export function OutlinePanel({ content, visible, onHeadingClick }: OutlinePanelP
     };
 
     return (
-        <div className="outline-panel">
+        <div ref={panelRef} className="outline-panel" style={{ width }}>
             <div className="outline-header">Outline</div>
             <div className="outline-list">
                 {headings.length === 0 ? (
@@ -84,6 +132,12 @@ export function OutlinePanel({ content, visible, onHeadingClick }: OutlinePanelP
                     ))
                 )}
             </div>
+            {/* drag handle — 우측 가장자리 col-resize */}
+            <div
+                className="outline-resize-handle"
+                onMouseDown={startDrag}
+                title="드래그로 폭 조정"
+            />
         </div>
     );
 }

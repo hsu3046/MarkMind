@@ -566,6 +566,16 @@ body {
   outline: 1.5px solid rgba(255, 140, 0, 0.9);
 }
 
+/* TipTap search-and-replace 의 highlight (Rich Text 모드) */
+.rich-search-highlight {
+  background: rgba(255, 200, 0, 0.35);
+  border-radius: 2px;
+}
+.search-result-current {
+  background: rgba(255, 140, 0, 0.7);
+  outline: 1.5px solid rgba(255, 140, 0, 0.9);
+}
+
 .search-count-empty {
   color: var(--text-tertiary);
   opacity: 0.6;
@@ -1440,6 +1450,9 @@ body.is-resizing .split-pane {
 }
 .preview-wrapper.preview-rich-mode .tiptap-rich {
   padding-bottom: 32px;
+  /* 편집 모드는 가용 폭 100% 활용 — read-only preview 의 720px 제한 override */
+  max-width: none;
+  width: auto;
 }
 
 /* 편집 toolbar — Rich Text 모드에서 main Toolbar 바로 아래 sticky 0, seamless */
@@ -1491,11 +1504,283 @@ body.is-resizing .split-pane {
   margin: 0 4px;
 }
 
+/* === Link 입력 모달 === */
+.link-modal-root { position: fixed; inset: 0; z-index: 270; }
+.link-modal-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.35);
+  animation: fade-in 0.12s ease;
+}
+.link-modal {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100vw - 64px);
+  max-width: 480px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+  padding: 16px;
+}
+.link-modal-title {
+  font-size: 13px; font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+.link-modal input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.link-modal input:focus { outline: 1px solid var(--accent); }
+.link-modal-hint {
+  margin: 6px 0 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.link-modal-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.link-modal-actions button {
+  padding: 6px 14px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+}
+.link-modal-actions button.primary {
+  background: var(--accent); color: white; border-color: var(--accent);
+}
+.link-modal-actions button.danger {
+  color: #dc2626; border-color: rgba(220, 38, 38, 0.4);
+  margin-right: auto; /* 왼쪽 정렬 — 취소/적용과 시각적 분리 */
+}
+.link-modal-actions button.danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+}
+.link-modal-actions button:hover { filter: brightness(1.08); }
+
 /* TipTap WYSIWYG 영역 */
 .tiptap-rich {
   outline: none;
   min-height: 300px;
 }
+/* Rich Text 의 heading 은 em 단위 — 본문 fontSize 변경 시 비례 확대 */
+.tiptap-rich h1 { font-size: 2em; letter-spacing: -0.02em; }
+.tiptap-rich h2 { font-size: 1.55em; letter-spacing: -0.01em; }
+.tiptap-rich h3 { font-size: 1.3em; }
+.tiptap-rich h4 { font-size: 1.12em; }
+.tiptap-rich h5 { font-size: 1em; }
+.tiptap-rich h6 { font-size: 0.9em; color: var(--text-secondary); }
+
+/* List bullet/번호 ::marker 크게 — 가독성 (task list 제외) */
+.markdown-body ul:not([data-type="taskList"]) li::marker,
+.markdown-body ol li::marker,
+.tiptap-rich ul:not([data-type="taskList"]) li::marker,
+.tiptap-rich ol li::marker {
+  font-size: 1.25em;
+  color: var(--text-secondary);
+}
+
+/* === Background color picker === */
+.bg-picker-root {
+  position: relative;
+  display: inline-flex;
+}
+.bg-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: transparent;
+}
+.bg-picker-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 200px;
+  padding: 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  animation: fade-in 0.12s ease;
+}
+.bg-picker-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.bg-picker-swatch {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  position: relative;
+  transition: transform 0.1s, border-color 0.1s;
+}
+.bg-picker-swatch:hover {
+  transform: scale(1.05);
+  border-color: var(--accent);
+}
+.bg-picker-swatch.active {
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 3px var(--accent);
+}
+/* "no color" (테마 기본) swatch — 항상 흰색 base + checker.
+   light/dark theme 무관 일관 — "기본으로 되돌리면 라이트 복귀" 시각 메시지. */
+.bg-picker-swatch.no-color {
+  background-color: #ffffff;
+  background-image: linear-gradient(45deg, #ccc 25%, transparent 25%),
+                    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+                    linear-gradient(45deg, transparent 75%, #ccc 75%),
+                    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+  color: #333;
+}
+.bg-picker-custom {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.bg-picker-custom input[type="color"] {
+  width: 32px;
+  height: 24px;
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  background: none;
+}
+
+/* 행간 toolbar 버튼 — 현재 값 라벨 */
+.toolbar-lineheight-btn {
+  width: auto !important;
+  padding: 0 6px !important;
+  gap: 4px;
+}
+.toolbar-lineheight-value {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* 사용자 정의 배경색 — content 영역만 적용 (UI chrome 영향 X) */
+[data-custom-bg] .preview-wrapper,
+[data-custom-bg] .tiptap-rich,
+[data-custom-bg] .pane,
+[data-custom-bg] .cm-editor,
+[data-custom-bg] .cm-scroller,
+[data-custom-bg] .cm-gutters,
+[data-custom-bg] .cm-gutter,
+[data-custom-bg] .cm-gutterElement,
+[data-custom-bg] .cm-activeLineGutter,
+[data-custom-bg] .markdown-body {
+  background: var(--user-bg) !important;
+}
+/* line number 폰트 색 — theme 변수가 자동 dark/light 갱신되므로 별도 override 불필요.
+   단 active line gutter 의 하이라이트는 너무 두드러지지 않게 半透明 */
+[data-custom-bg] .cm-activeLineGutter {
+  background: var(--user-bg) !important;
+  filter: brightness(0.95);
+}
+[data-theme="dark"][data-custom-bg] .cm-activeLineGutter {
+  filter: brightness(1.15);
+}
+
+/* 배경색에 따라 hr / blockquote / code 색 조정 (theme 가 luminance 로 dark/light 결정) */
+/* light 배경: hr 더 진하게 (안 보이는 문제 해결) */
+[data-theme="light"] .markdown-body hr,
+[data-theme="light"] .tiptap-rich hr {
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.2);
+  margin: 1.5em 0;
+}
+[data-theme="dark"] .markdown-body hr,
+[data-theme="dark"] .tiptap-rich hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  margin: 1.5em 0;
+}
+
+[data-theme="light"] .markdown-body blockquote,
+[data-theme="light"] .tiptap-rich blockquote {
+  border-left: 3px solid rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.04);
+  padding: 0.5em 1em;
+  margin: 1em 0;
+  color: var(--text-secondary);
+}
+[data-theme="dark"] .markdown-body blockquote,
+[data-theme="dark"] .tiptap-rich blockquote {
+  border-left: 3px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.5em 1em;
+  margin: 1em 0;
+  color: var(--text-secondary);
+}
+
+[data-theme="light"] .markdown-body code:not(pre code),
+[data-theme="light"] .tiptap-rich code:not(pre code) {
+  background: rgba(0, 0, 0, 0.06);
+  color: #c7254e;
+  padding: 0.15em 0.4em;
+  border-radius: 3px;
+  font-size: 0.92em;
+}
+[data-theme="dark"] .markdown-body code:not(pre code),
+[data-theme="dark"] .tiptap-rich code:not(pre code) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f78c6c;
+  padding: 0.15em 0.4em;
+  border-radius: 3px;
+  font-size: 0.92em;
+}
+
+[data-theme="light"] .markdown-body pre,
+[data-theme="light"] .tiptap-rich pre {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 6px;
+  padding: 1em;
+  overflow-x: auto;
+}
+[data-theme="dark"] .markdown-body pre,
+[data-theme="dark"] .tiptap-rich pre {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 1em;
+  overflow-x: auto;
+}
+
+/* 행간 (App root 의 data-line-height attribute 로 cycle) */
+[data-line-height="compact"] .markdown-body,
+[data-line-height="compact"] .tiptap-rich { line-height: 1.5; }
+[data-line-height="normal"] .markdown-body,
+[data-line-height="normal"] .tiptap-rich { line-height: 1.8; }
+[data-line-height="relaxed"] .markdown-body,
+[data-line-height="relaxed"] .tiptap-rich { line-height: 2.2; }
 .tiptap-rich p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
@@ -1506,6 +1791,52 @@ body.is-resizing .split-pane {
 .tiptap-rich:focus {
   outline: none;
 }
+/* === Task list 공통 — 커스텀 정사각형 체크박스 + 정밀 정렬 === */
+
+/* 체크박스 (Rich Text + Preview 공통) — OS default 무시, 정사각형 + radius 0 */
+.tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"],
+.markdown-body ul li input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--text-secondary, #999);
+  border-radius: 0;
+  background: var(--bg-primary);
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  transition: background 0.12s, border-color 0.12s;
+}
+.tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"]:hover,
+.markdown-body ul li input[type="checkbox"]:hover {
+  border-color: var(--accent);
+}
+.tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"]:checked,
+.markdown-body ul li input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+/* 체크마크 — 흰 ✓ */
+.tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"]:checked::after,
+.markdown-body ul li input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 5px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  box-sizing: content-box;
+}
+
+/* === Rich Text (TipTap) 의 list layout === */
 .tiptap-rich ul[data-type="taskList"] {
   list-style: none;
   padding-left: 0;
@@ -1513,11 +1844,36 @@ body.is-resizing .split-pane {
 .tiptap-rich ul[data-type="taskList"] li {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
+  margin: 4px 0;
 }
 .tiptap-rich ul[data-type="taskList"] li > label {
   flex-shrink: 0;
-  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  /* line-height 의 ascent 만큼 체크박스 내림 → 텍스트 첫 줄 정중앙 정렬 */
+  height: 1.55em;
+}
+.tiptap-rich ul[data-type="taskList"] li > div {
+  flex: 1;
+  min-width: 0;
+}
+.tiptap-rich ul[data-type="taskList"] li > div > p {
+  margin: 0;
+}
+
+/* === Preview (react-markdown) 의 GFM task list layout === */
+.markdown-body ul li.task-list-item,
+.markdown-body ul li:has(> input[type="checkbox"]) {
+  list-style: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-left: -1.4em; /* bullet 영역 제거 */
+}
+.markdown-body ul li input[type="checkbox"] {
+  /* baseline 보정 — flex container 안에서 첫 줄 정중앙 */
+  margin-top: 0.15em;
 }
 .tiptap-rich table {
   border-collapse: collapse;
@@ -1883,9 +2239,9 @@ body.is-resizing .split-pane {
 
 /* ---------- Outline Panel ---------- */
 .outline-panel {
-  width: 240px;
+  /* width 는 inline style 로 OutlinePanel 컴포넌트가 관리 */
   min-width: 160px;
-  max-width: 400px;
+  max-width: 500px;
   height: 100%;
   border-right: 1px solid var(--border-primary);
   background: var(--bg-tertiary);
@@ -1893,8 +2249,26 @@ body.is-resizing .split-pane {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  resize: horizontal;
   position: relative;
+}
+
+/* drag handle — 우측 가장자리 4px col-resize */
+.outline-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+  transition: background 0.12s;
+}
+.outline-resize-handle:hover {
+  background: var(--accent);
+}
+.outline-resize-handle:active {
+  background: var(--accent);
+  opacity: 0.7;
 }
 
 @keyframes slideIn {
@@ -1996,9 +2370,14 @@ body.is-resizing .split-pane {
 }
 
 .reading-mode-content .preview-wrapper {
-  max-width: 800px;
+  /* 사용자 요청 — 전체 폭 100% 활용 (이전 800px 제한 해제) */
+  max-width: none;
   width: 100%;
   padding: 48px 60px;
+}
+/* reading mode 의 markdown-body 도 폭 제한 해제 */
+.reading-mode-content .preview-wrapper .markdown-body {
+  max-width: none;
 }
 
 .reading-mode-hint {

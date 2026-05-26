@@ -1,14 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-    Columns2, Sun, Moon, BookOpen,
+    Columns2, BookOpen,
     FilePlus, FolderOpen, Save, Download,
     ZoomIn, ZoomOut, List, Maximize, Clock,
     Search, ChevronRight, Sparkles, Check, X,
-    Mic, ScanText, Settings, Menu as MenuIcon,
-    FileCode, FileText,
+    Mic, ScanText, Settings,
+    FileCode, FileText, AlignVerticalSpaceAround,
 } from 'lucide-react';
 import * as gdriveService from '../services/gdriveService';
 import type { RecentFile } from '../hooks/useRecentFiles';
+import { BackgroundPicker } from './BackgroundPicker';
 
 export type ViewMode = 'split' | 'editor' | 'preview';
 
@@ -86,13 +87,11 @@ interface ToolbarProps {
     fileName: string;
     isDirty: boolean;
     viewMode: ViewMode;
-    theme: 'light' | 'dark';
     fontSize: number;
     outlineVisible: boolean;
     showRecent: boolean;
     aiPanelVisible: boolean;
     onViewModeChange: (mode: ViewMode) => void;
-    onThemeToggle: () => void;
     onNewFile: () => void;
     onOpenFile: () => void;
     onSaveFile: () => void;
@@ -100,6 +99,10 @@ interface ToolbarProps {
     onShowTutorial: () => void;
     onFontSizeChange: (delta: number) => void;
     onFontSizeReset: () => void;
+    lineHeight: 'compact' | 'normal' | 'relaxed';
+    onCycleLineHeight: () => void;
+    bgColor: string;
+    onBgColorChange: (color: string) => void;
     onToggleOutline: () => void;
     onToggleReadingMode: () => void;
     onToggleRecentFiles: () => void;
@@ -121,11 +124,9 @@ export function Toolbar({
     fileName,
     isDirty,
     viewMode,
-    theme,
     fontSize,
     outlineVisible,
     onViewModeChange,
-    onThemeToggle,
     onNewFile,
     onOpenFile,
     onSaveFile,
@@ -133,6 +134,10 @@ export function Toolbar({
     onShowTutorial,
     onFontSizeChange,
     onFontSizeReset,
+    lineHeight,
+    onCycleLineHeight,
+    bgColor,
+    onBgColorChange,
     onToggleOutline,
     onToggleReadingMode,
     onToggleRecentFiles,
@@ -199,8 +204,7 @@ export function Toolbar({
                         className={`toolbar-text-btn${fileMenuOpen ? ' active' : ''}`}
                         onClick={() => setFileMenuOpen((v) => !v)}
                     >
-                        <MenuIcon size={14} strokeWidth={1.5} />
-                        <span>Menu</span>
+                        <span>File</span>
                     </button>
                     {fileMenuOpen && (
                         <div className="toolbar-dropdown-menu">
@@ -257,7 +261,7 @@ export function Toolbar({
                                             <div className="dropdown-submenu-empty">최근 파일 없음</div>
                                         ) : (
                                             <>
-                                                {recentFiles.slice(0, 10).map((f) => (
+                                                {recentFiles.slice(0, 5).map((f) => (
                                                     <button
                                                         key={f.path}
                                                         className="dropdown-item dropdown-submenu-item"
@@ -293,14 +297,6 @@ export function Toolbar({
                     )}
                 </div>
 
-                {/* Search + Outline (순서 교체) */}
-                <button className="toolbar-btn" onClick={onToggleSearch} title="Search (⌘F)">
-                    <Search size={15} strokeWidth={1.5} />
-                </button>
-                <button className={`toolbar-btn${outlineVisible ? ' active' : ''}`} onClick={onToggleOutline} title="Outline">
-                    <List size={16} strokeWidth={1.5} />
-                </button>
-
                 <div className="toolbar-divider" />
 
                 {/* View modes — Markdown / Rich Text / Split */}
@@ -328,6 +324,16 @@ export function Toolbar({
 
                 <div className="toolbar-divider" />
 
+                {/* Outline + Search */}
+                <button className={`toolbar-btn${outlineVisible ? ' active' : ''}`} onClick={onToggleOutline} title="Outline">
+                    <List size={16} strokeWidth={1.5} />
+                </button>
+                <button className="toolbar-btn" onClick={onToggleSearch} title="Search (⌘F)">
+                    <Search size={15} strokeWidth={1.5} />
+                </button>
+
+                <div className="toolbar-divider" />
+
                 {/* Font size controls (압축 그룹 — 간격 좁힘) */}
                 <div className="toolbar-fontsize-group">
                     <button className="toolbar-btn" onClick={() => onFontSizeChange(-1)} title="Zoom Out (⌘-)" disabled={viewMode === 'editor'}>
@@ -343,11 +349,23 @@ export function Toolbar({
 
                 <div className="toolbar-divider" />
 
-                {/* Theme + Reading mode (순서 교체) */}
-                <button className="toolbar-btn" onClick={onThemeToggle} title="Toggle Theme">
-                    {theme === 'dark' ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
+                {/* 행간 토글 + 배경색 picker (Theme 토글은 배경색에 자동 동기화되므로 제거) */}
+                <button
+                    className="toolbar-btn toolbar-lineheight-btn"
+                    onClick={onCycleLineHeight}
+                    title={`행간 ${lineHeight === 'compact' ? '1.5 (좁게)' : lineHeight === 'normal' ? '1.8 (보통)' : '2.2 (넓게)'} — 클릭으로 변경`}
+                >
+                    <AlignVerticalSpaceAround size={15} strokeWidth={1.5} />
+                    <span className="toolbar-lineheight-value">
+                        {lineHeight === 'compact' ? '1.5' : lineHeight === 'normal' ? '1.8' : '2.2'}
+                    </span>
                 </button>
-                <button className="toolbar-btn" onClick={onToggleReadingMode} title="Reading Mode">
+                <BackgroundPicker value={bgColor} onChange={onBgColorChange} />
+
+                <div className="toolbar-divider" />
+
+                {/* Full (Reading mode) */}
+                <button className="toolbar-btn" onClick={onToggleReadingMode} title="Full / Reading Mode">
                     <Maximize size={16} strokeWidth={1.5} />
                 </button>
             </div>
@@ -369,7 +387,7 @@ export function Toolbar({
                     <ScanText size={14} strokeWidth={1.5} />
                     <span>이미지 인식</span>
                 </button>
-                <button className={`toolbar-text-btn ai-agent${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI 에이전트 (⌘I)">
+                <button className={`toolbar-text-btn ai-agent${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI 에이전트 (⌘⇧I)">
                     <Sparkles size={14} strokeWidth={1.5} />
                     <span>AI 에이전트</span>
                 </button>

@@ -195,7 +195,7 @@ async fn run_pipeline_core(
     emitter.emit("✅ 분할 완료", None);
 
     let mut usages: Vec<UsageInfo> = Vec::new();
-    let chunk_results = transcribe_chunks_sequential(api_key, &chunks, emitter, &mut usages).await;
+    let chunk_results = transcribe_chunks_with_seed_then_parallel(api_key, &chunks, emitter, &mut usages).await;
     cleanup_chunks(&chunks).await;
     let chunk_results = chunk_results?;
 
@@ -306,51 +306,178 @@ fn map_timestamps_to_original(text: &str, map: &[SegmentMap]) -> String {
     .into_owned()
 }
 
-async fn transcribe_chunks_sequential(
+/// Gemini inline base64 request body 안전 임계.
+const INLINE_THRESHOLD: u64 = 15 * 1024 * 1024;
+
+/// 병렬 처리 동시도. ENV `MARKMIND_STT_PARALLELISM` 으로 1~12 사이 조정 가능.
+/// 기본 6 — Gemini Tier 1 RPM 여유 안에서 안전 (24청크 / 6 = 4 wave).
+/// Tier 0 또는 free 환경에서 429 storm 발생 시 4 로 낮추는 게 안전.
+fn chunk_parallelism() -> usize {
+    std::env::var("MARKMIND_STT_PARALLELISM")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .map(|n| n.clamp(1, 12))
+        .unwrap_or(6)
+}
+
+/// 단일 청크 transcribe — 크기 분기로 inline base64 / File API 자동 선택.
+async fn transcribe_one_chunk(
+    api_key: &str,
+    chunk: &AudioChunk,
+    context: Option<&str>,
+) -> ConverterResult<super::GenerateResult> {
+    let prompt = build_prompt_with_context(context);
+    let mime = guess_mime(&chunk.chunk_path);
+    let chunk_size = tokio::fs::metadata(&chunk.chunk_path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(u64::MAX);
+
+    if chunk_size <= INLINE_THRESHOLD {
+        let bytes = tokio::fs::read(&chunk.chunk_path)
+            .await
+            .map_err(|e| ConverterError::Internal(format!("청크 read: {}", e)))?;
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let data_b64 = STANDARD.encode(&bytes);
+        gemini::generate_text(
+            api_key,
+            MODEL_AUDIO,
+            &prompt,
+            vec![gemini::InlineData {
+                mime_type: mime.to_string(),
+                data_base64: data_b64,
+            }],
+            None,
+        )
+        .await
+    } else {
+        gemini::generate_text_with_file_api(
+            api_key,
+            MODEL_AUDIO,
+            &prompt,
+            &chunk.chunk_path,
+            mime,
+            None,
+        )
+        .await
+    }
+}
+
+/// 청크 처리 — 첫 청크 sequential (화자 컨텍스트 시드), 나머지 N 동시 wave.
+/// 같은 미팅의 화자 일관성은 첫 청크 context 를 모든 후속 청크에 전달해 유지.
+/// (이름 sequential 유지: 외부 caller 가 단일 함수로 보는 추상화 + 첫 청크가 직렬이라는 의미도 부분 보존)
+async fn transcribe_chunks_with_seed_then_parallel(
     api_key: &str,
     chunks: &[AudioChunk],
     emitter: &ProgressEmitter,
     usages: &mut Vec<UsageInfo>,
 ) -> ConverterResult<Vec<ChunkResult>> {
     let total = chunks.len();
-    let mut prev_context: Option<String> = None;
-    let mut results = Vec::with_capacity(chunks.len());
+    let mut results: Vec<ChunkResult> = Vec::with_capacity(total);
     let mut cumulative_cost = 0.0;
 
-    for (i, chunk) in chunks.iter().enumerate() {
+    if total == 0 {
+        return Ok(results);
+    }
+
+    // ─── 첫 청크 sequential — 화자 라벨 시드 ───
+    emitter.emit(
+        format!("🎙️ 1/{}번째 조각 녹취 중... (컨텍스트 시드)", total),
+        None,
+    );
+    let start = std::time::Instant::now();
+    let first = transcribe_one_chunk(api_key, &chunks[0], None).await?;
+    cumulative_cost += first.usage.cost_usd;
+    usages.push(first.usage.clone());
+    emitter.emit(
+        format!("✅ 1/{}번째 완료", total),
+        Some(format!(
+            "{:.0}초 · 누적 ${:.3}",
+            start.elapsed().as_secs_f64(),
+            cumulative_cost
+        )),
+    );
+    let context = extract_last_speaker_lines(&first.text, PREV_CONTEXT_LINES);
+    results.push(ChunkResult {
+        start_sec: chunks[0].start_sec,
+        text: first.text,
+    });
+
+    // ─── 나머지 청크 병렬 wave ───
+    let parallelism = chunk_parallelism();
+    if total == 1 {
+        return Ok(results);
+    }
+
+    let mut next_idx = 1;
+    while next_idx < total {
+        let end = (next_idx + parallelism).min(total);
+        let wave_size = end - next_idx;
+        let wave_start = std::time::Instant::now();
         emitter.emit(
-            format!("🎙️ {}/{}번째 조각 녹취 중...", i + 1, total),
-            if i == 0 { None } else { Some("이전 대화 이어받기".into()) },
+            format!("⚡ {}~{}/{}번째 병렬 처리", next_idx + 1, end, total),
+            Some(format!("동시 {}개", wave_size)),
         );
-        let prompt = build_prompt_with_context(prev_context.as_deref());
-        let start = std::time::Instant::now();
-        let mime = guess_mime(&chunk.chunk_path);
-        let progress_cb = |msg: &str| emitter.emit(msg.to_string(), None);
-        let result = gemini::generate_text_with_file_api(
-            api_key,
-            MODEL_AUDIO,
-            &prompt,
-            &chunk.chunk_path,
-            mime,
-            Some(&progress_cb),
-        )
-        .await?;
-        cumulative_cost += result.usage.cost_usd;
-        usages.push(result.usage.clone());
+
+        // JoinSet 으로 spawn — 한 task fail 해도 모든 task await 완료까지 기다림 →
+        // generate_text_with_file_api 의 delete_file cleanup 보장 (Gemini 서버에
+        // 업로드된 임시 파일이 미정리로 남는 quota leak 방지).
+        let mut set = tokio::task::JoinSet::new();
+        for (local_i, chunk) in chunks[next_idx..end].iter().enumerate() {
+            let api_key = api_key.to_string();
+            let chunk = chunk.clone();
+            let ctx = context.clone();
+            let global_idx = next_idx + local_i;
+            let start_sec = chunk.start_sec;
+            set.spawn(async move {
+                let res = transcribe_one_chunk(&api_key, &chunk, Some(&ctx)).await;
+                (global_idx, start_sec, res)
+            });
+        }
+
+        let mut wave_results: Vec<(usize, f64, super::GenerateResult)> = Vec::with_capacity(wave_size);
+        let mut first_err: Option<ConverterError> = None;
+        while let Some(joined) = set.join_next().await {
+            match joined {
+                Ok((idx, start_sec, Ok(res))) => wave_results.push((idx, start_sec, res)),
+                Ok((_idx, _start_sec, Err(e))) => {
+                    if first_err.is_none() {
+                        first_err = Some(e);
+                    }
+                }
+                Err(join_err) => {
+                    if first_err.is_none() {
+                        first_err = Some(ConverterError::Internal(format!(
+                            "wave task join 실패: {}",
+                            join_err
+                        )));
+                    }
+                }
+            }
+        }
+        if let Some(e) = first_err {
+            return Err(e);
+        }
+        wave_results.sort_by_key(|(idx, _, _)| *idx);
+        for (_idx, start_sec, res) in wave_results {
+            cumulative_cost += res.usage.cost_usd;
+            usages.push(res.usage.clone());
+            results.push(ChunkResult {
+                start_sec,
+                text: res.text,
+            });
+        }
         emitter.emit(
-            format!("✅ {}/{}번째 완료", i + 1, total),
+            format!("✅ {}~{}/{}번째 완료", next_idx + 1, end, total),
             Some(format!(
-                "{:.0}초 소요 · 누적 ${:.3}",
-                start.elapsed().as_secs_f64(),
+                "{:.0}초 · 누적 ${:.3}",
+                wave_start.elapsed().as_secs_f64(),
                 cumulative_cost
             )),
         );
-        prev_context = Some(extract_last_speaker_lines(&result.text, PREV_CONTEXT_LINES));
-        results.push(ChunkResult {
-            start_sec: chunk.start_sec,
-            text: result.text,
-        });
+        next_idx = end;
     }
+
     Ok(results)
 }
 

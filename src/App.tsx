@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AIMode } from './types/ai';
 import { Editor, EditorHandle } from './components/Editor';
 import { Preview } from './components/Preview';
@@ -38,7 +38,7 @@ const FONT_SIZE_MAX = 28;
 const FONT_SIZE_DEFAULT = 14;
 
 function App() {
-  const { theme, toggleTheme } = useTheme();
+  const { theme, setThemeTransient, resetThemeToOS } = useTheme();
   const auth = useAuth();
   const [isAuthCallback, setIsAuthCallback] = useState(
     () => window.location.pathname === getCallbackPath()
@@ -72,11 +72,57 @@ function App() {
     setViewMode('preview');
     setReadingMode(false);
   };
-  const { syncEnabled, toggleSync, reattach } = useScrollSync(false);
+  const { syncEnabled, toggleSync, reattach } = useScrollSync(true);
   const [fontSize, setFontSize] = useState(() => {
     const saved = localStorage.getItem('md-editor-font-size');
     return saved ? parseInt(saved, 10) : FONT_SIZE_DEFAULT;
   });
+  // 행간 — compact (1.5) / normal (1.8) / relaxed (2.2) cycle, localStorage 보존
+  const [lineHeight, setLineHeight] = useState<'compact' | 'normal' | 'relaxed'>(() => {
+    const v = localStorage.getItem('markmind-line-height');
+    return v === 'compact' || v === 'relaxed' ? v : 'normal';
+  });
+  useEffect(() => {
+    localStorage.setItem('markmind-line-height', lineHeight);
+  }, [lineHeight]);
+  const cycleLineHeight = () => {
+    setLineHeight((prev) =>
+      prev === 'compact' ? 'normal' : prev === 'normal' ? 'relaxed' : 'compact',
+    );
+  };
+
+  // 배경색 — 빈 문자열 = 테마 기본, 그 외엔 사용자 지정 CSS color
+  const [bgColor, setBgColor] = useState<string>(
+    () => localStorage.getItem('markmind-bg-color') || '',
+  );
+  useEffect(() => {
+    if (bgColor) localStorage.setItem('markmind-bg-color', bgColor);
+    else localStorage.removeItem('markmind-bg-color');
+  }, [bgColor]);
+
+  // 배경색의 WCAG 상대 휘도 (0~1). 0.5 미만이면 dark 텍스트가 안 보임 → theme dark 로.
+  const luminance = useMemo(() => {
+    if (!bgColor) return null;
+    const hex = bgColor.replace('#', '');
+    if (hex.length !== 3 && hex.length !== 6) return null;
+    const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+    const r = parseInt(full.slice(0, 2), 16) / 255;
+    const g = parseInt(full.slice(2, 4), 16) / 255;
+    const b = parseInt(full.slice(4, 6), 16) / 255;
+    const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  }, [bgColor]);
+
+  // bgColor 변경 시 theme transient 동기화 (localStorage 안 건드림 → 다음 세션 OS follow 유지).
+  // bgColor='' (기본) 으로 되돌리면 OS prefers-color-scheme 으로 복귀 — 사용자가 dark bg 후
+  // "기본" 골라도 dark theme 에 갇히지 않음.
+  useEffect(() => {
+    if (luminance == null) {
+      resetThemeToOS();
+      return;
+    }
+    setThemeTransient(luminance < 0.5 ? 'dark' : 'light');
+  }, [luminance, setThemeTransient, resetThemeToOS]);
   const [outlineVisible, setOutlineVisible] = useState(false);
   const [readingMode, setReadingMode] = useState(false);
   const [tutorialVisible, setTutorialVisible] = useState(false);
@@ -91,6 +137,8 @@ function App() {
   const searchCurrentIndexRef = useRef(-1);
   const isDragging = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // viewMode 전환 시 scroll 위치 보존 — Markdown(CodeMirror) ↔ Rich Text(.preview-wrapper) ↔ Split
+  const scrollRatioRef = useRef<number>(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<EditorHandle>(null);
 
@@ -111,20 +159,19 @@ function App() {
     setOcrPanelVisible(false);
   }, []);
 
-  const ensureEditorView = useCallback(() => {
-    if (viewMode !== 'editor') {
-      setViewMode('editor');
-      setReadingMode(false);
-    }
-  }, [viewMode]);
+  // 사이드 패널 열 때 reading mode 만 해제 — 현재 viewMode 는 그대로 유지
+  // (이전엔 강제로 editor 모드로 전환했으나 사용자 의도와 어긋남)
+  const exitReadingMode = useCallback(() => {
+    if (readingMode) setReadingMode(false);
+  }, [readingMode]);
 
   const handleToggleAI = useCallback(() => {
     if (!ai.panelVisible) {
-      ensureEditorView();
+      exitReadingMode();
       closeAllConvertPanels();
     }
     ai.togglePanel();
-  }, [ai, ensureEditorView, closeAllConvertPanels]);
+  }, [ai, exitReadingMode, closeAllConvertPanels]);
 
   const handleToggleAudio = useCallback(() => {
     if (audioPanelVisible) {
@@ -132,10 +179,10 @@ function App() {
     } else {
       if (ai.panelVisible) ai.togglePanel();
       setOcrPanelVisible(false);
-      ensureEditorView();
+      exitReadingMode();
       setAudioPanelVisible(true);
     }
-  }, [audioPanelVisible, ai, ensureEditorView]);
+  }, [audioPanelVisible, ai, exitReadingMode]);
 
   const handleToggleOcr = useCallback(() => {
     if (ocrPanelVisible) {
@@ -143,10 +190,10 @@ function App() {
     } else {
       if (ai.panelVisible) ai.togglePanel();
       setAudioPanelVisible(false);
-      ensureEditorView();
+      exitReadingMode();
       setOcrPanelVisible(true);
     }
-  }, [ocrPanelVisible, ai, ensureEditorView]);
+  }, [ocrPanelVisible, ai, exitReadingMode]);
 
   // 사이드바로 drop된 파일을 자식 컴포넌트에 전달하기 위한 state
   const [audioDropped, setAudioDropped] = useState<DroppedFile | null>(null);
@@ -375,6 +422,60 @@ function App() {
     }
   }, [viewMode, reattach]);
 
+  // viewMode 전환 시 scroll 위치 보존 (Markdown ↔ Rich Text).
+  // 이전 모드의 scroll 비율을 기억해 새 모드의 같은 비율 위치로 자동 이동.
+  // 추적 element: editor → .cm-scroller, preview → .preview-wrapper.
+  useEffect(() => {
+    const scrollEl = (): HTMLElement | null => {
+      const root = containerRef.current;
+      if (!root) return null;
+      if (viewMode === 'editor') return root.querySelector<HTMLElement>('.cm-scroller');
+      if (viewMode === 'preview') return root.querySelector<HTMLElement>('.preview-wrapper');
+      // split — 보존 안 함 (양쪽 모두 보임)
+      return null;
+    };
+
+    // mount 직후 — 이전에 저장된 ratio 로 새 element 의 scrollTop 복원.
+    // ResizeObserver 로 scrollHeight 변화 감지 → 안정될 때까지 자동 재시도 (매직 timeout 제거).
+    const restore = () => {
+      const el = scrollEl();
+      if (!el) return;
+      const max = el.scrollHeight - el.clientHeight;
+      if (max > 0) el.scrollTop = Math.round(max * scrollRatioRef.current);
+    };
+    restore();
+
+    const el = scrollEl();
+    let restored = false;
+    let ro: ResizeObserver | null = null;
+    if (el && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => {
+        if (restored) return;
+        const max = el.scrollHeight - el.clientHeight;
+        if (max > 0) {
+          el.scrollTop = Math.round(max * scrollRatioRef.current);
+          restored = true;
+          ro?.disconnect();
+        }
+      });
+      // 내부 콘텐츠 영역의 첫 자식을 관찰 (Editor pane 의 .cm-content 또는 preview-wrapper 의 .markdown-body)
+      const inner = el.firstElementChild;
+      if (inner) ro.observe(inner);
+    }
+
+    // 이 mode 가 활성인 동안 scroll 변화를 ratio 로 추적.
+    const tracker = () => {
+      if (!el) return;
+      const max = el.scrollHeight - el.clientHeight;
+      if (max > 0) scrollRatioRef.current = el.scrollTop / max;
+    };
+    el?.addEventListener('scroll', tracker, { passive: true });
+    return () => {
+      ro?.disconnect();
+      el?.removeEventListener('scroll', tracker);
+    };
+  }, [viewMode]);
+
   // Font size
   const handleFontSizeChange = useCallback((delta: number) => {
     setFontSize((prev) => {
@@ -416,6 +517,8 @@ function App() {
       } else {
         setSearchQuery('');
         clearHighlights();
+        // Rich Text 검색 highlight 도 같이 clear
+        window.dispatchEvent(new Event('markmind:rich-search-clear'));
       }
       return next;
     });
@@ -450,11 +553,23 @@ function App() {
 
   // Navigate by delta (+1 forward, -1 backward), wrapping around
   const navigateMatch = useCallback((delta: number) => {
+    // Rich Text 모드 — TipTap search ext 명령으로 위임
+    if (viewMode === 'preview') {
+      const ev = delta > 0 ? 'markmind:rich-search-next' : 'markmind:rich-search-prev';
+      window.dispatchEvent(new Event(ev));
+      // current index UI 도 갱신 — count 가 0보다 크면 modulo
+      setSearchCurrentIndex((cur) => {
+        const total = searchMatchCount;
+        if (total === 0) return -1;
+        return (cur + delta + total) % total;
+      });
+      return;
+    }
     const matches = searchMatchesRef.current;
     if (matches.length === 0) return;
     const next = (searchCurrentIndexRef.current + delta + matches.length) % matches.length;
     goToMatchIndex(next, matches);
-  }, [goToMatchIndex]);
+  }, [goToMatchIndex, viewMode, searchMatchCount]);
 
   // Highlight all matches in the preview DOM
   const highlightMatches = useCallback((query: string) => {
@@ -532,13 +647,33 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (viewMode === 'preview') {
+      // Rich Text 모드 — DOM surroundContents 대신 RichEditor 의 TipTap search 위임
+      // (TipTap ProseMirror tree 와 직접 DOM 조작이 충돌하면 editor 깨짐)
+      window.dispatchEvent(
+        new CustomEvent('markmind:rich-search', { detail: { query: searchQuery } }),
+      );
+      return;
+    }
     if (searchQuery) {
       const timer = setTimeout(() => highlightMatches(searchQuery), 200);
       return () => clearTimeout(timer);
     } else {
       clearHighlights();
     }
-  }, [searchQuery, content, highlightMatches, clearHighlights]);
+  }, [searchQuery, content, highlightMatches, clearHighlights, viewMode]);
+
+  // Rich Text search 결과 count + 현재 index 회신 listen
+  useEffect(() => {
+    if (viewMode !== 'preview') return;
+    const onCount = (e: Event) => {
+      const detail = (e as CustomEvent<{ count: number; index: number }>).detail;
+      setSearchMatchCount(detail.count ?? 0);
+      setSearchCurrentIndex(detail.count > 0 ? (detail.index ?? 0) : -1);
+    };
+    window.addEventListener('markmind:rich-search-count', onCount);
+    return () => window.removeEventListener('markmind:rich-search-count', onCount);
+  }, [viewMode]);
 
   // Open recent
   const handleOpenRecent = useCallback(
@@ -577,7 +712,10 @@ function App() {
       }
 
       if (e.metaKey || e.ctrlKey) {
-        switch (e.key) {
+        // shift 누르면 e.key 가 대문자 ('S') 또는 다른 글자 ('+' → '=') 로 바뀜 →
+        // 일관 매칭 위해 letter 만 toLowerCase. 숫자/기호는 e.key 그대로.
+        const k = e.key.length === 1 && /[a-zA-Z]/.test(e.key) ? e.key.toLowerCase() : e.key;
+        switch (k) {
           case 's':
             e.preventDefault();
             if (e.shiftKey) saveFileAs();
@@ -592,12 +730,10 @@ function App() {
             newFile();
             break;
           case 'f':
-            // Only intercept for preview mode
             if (viewMode === 'preview') {
               e.preventDefault();
               toggleSearch();
             }
-            // In editor/split mode, let CodeMirror handle ⌘F
             break;
           case '1':
             e.preventDefault();
@@ -628,8 +764,11 @@ function App() {
             resetFontSize();
             break;
           case 'i':
-            e.preventDefault();
-            handleToggleAI();
+            // ⌘⇧I 만 AI Agent 토글 — ⌘I 는 TipTap Italic 과 충돌 회피
+            if (e.shiftKey) {
+              e.preventDefault();
+              handleToggleAI();
+            }
             break;
         }
       }
@@ -694,7 +833,20 @@ function App() {
   // Reading mode
   if (readingMode) {
     return (
-      <div className="app reading-mode" onClick={() => setReadingMode(false)}>
+      <div
+        className="app reading-mode"
+        data-line-height={lineHeight}
+        style={
+          bgColor
+            ? ({
+                '--user-bg': bgColor,
+                '--preview-bg': bgColor,
+              } as React.CSSProperties)
+            : undefined
+        }
+        data-custom-bg={bgColor ? 'true' : undefined}
+        onClick={() => setReadingMode(false)}
+      >
         <div className="reading-mode-content" onClick={(e) => e.stopPropagation()}>
           <Preview content={content} fontSize={fontSize + 2} />
         </div>
@@ -722,7 +874,20 @@ function App() {
   }
 
   return (
-    <div className="app">
+    <div
+      className="app"
+      data-line-height={lineHeight}
+      style={
+        bgColor
+          ? ({
+              // content 영역만 적용 — UI chrome (popover/AIPanel/Toolbar) 영향 X
+              '--user-bg': bgColor,
+              '--preview-bg': bgColor,
+            } as React.CSSProperties)
+          : undefined
+      }
+      data-custom-bg={bgColor ? 'true' : undefined}
+    >
       <div
         className="titlebar-drag"
         onMouseDown={(e) => {
@@ -741,11 +906,9 @@ function App() {
         fileName={fileName}
         isDirty={isDirty}
         viewMode={viewMode}
-        theme={theme}
         fontSize={fontSize}
         outlineVisible={outlineVisible}
         onViewModeChange={setViewMode}
-        onThemeToggle={toggleTheme}
         onNewFile={newFile}
         onOpenFile={openFile}
         onSaveFile={saveFile}
@@ -756,6 +919,10 @@ function App() {
         onSaveToDrive={() => setDriveBrowserMode('save')}
         onFontSizeChange={handleFontSizeChange}
         onFontSizeReset={resetFontSize}
+        lineHeight={lineHeight}
+        onCycleLineHeight={cycleLineHeight}
+        bgColor={bgColor}
+        onBgColorChange={setBgColor}
         onToggleOutline={() => setOutlineVisible((v) => !v)}
         onToggleReadingMode={toggleReadingMode}
         onToggleRecentFiles={() => setRecentPanelVisible((v) => !v)}
