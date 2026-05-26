@@ -1640,13 +1640,27 @@ body.is-resizing .split-pane {
   border: 2px solid var(--accent);
   box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 3px var(--accent);
 }
+/* "no color" (테마 기본) swatch — 항상 light 회색 base + 명확한 checker.
+   dark mode 에서도 일관되게 보이도록 background-color 명시. */
 .bg-picker-swatch[style*="transparent"] {
+  background-color: #f5f5f5;
   background-image: linear-gradient(45deg, #ccc 25%, transparent 25%),
                     linear-gradient(-45deg, #ccc 25%, transparent 25%),
                     linear-gradient(45deg, transparent 75%, #ccc 75%),
                     linear-gradient(-45deg, transparent 75%, #ccc 75%);
   background-size: 8px 8px;
   background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+  color: #333;
+}
+[data-theme="dark"] .bg-picker-swatch[style*="transparent"] {
+  background-color: #555;
+  background-image: linear-gradient(45deg, #888 25%, transparent 25%),
+                    linear-gradient(-45deg, #888 25%, transparent 25%),
+                    linear-gradient(45deg, transparent 75%, #888 75%),
+                    linear-gradient(-45deg, transparent 75%, #888 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+  color: #fff;
 }
 .bg-picker-custom {
   margin-top: 10px;
@@ -1687,8 +1701,21 @@ body.is-resizing .split-pane {
 [data-custom-bg] .pane,
 [data-custom-bg] .cm-editor,
 [data-custom-bg] .cm-scroller,
+[data-custom-bg] .cm-gutters,
+[data-custom-bg] .cm-gutter,
+[data-custom-bg] .cm-gutterElement,
+[data-custom-bg] .cm-activeLineGutter,
 [data-custom-bg] .markdown-body {
   background: var(--user-bg) !important;
+}
+/* line number 폰트 색 — theme 변수가 자동 dark/light 갱신되므로 별도 override 불필요.
+   단 active line gutter 의 하이라이트는 너무 두드러지지 않게 半透明 */
+[data-custom-bg] .cm-activeLineGutter {
+  background: var(--user-bg) !important;
+  filter: brightness(0.95);
+}
+[data-theme="dark"][data-custom-bg] .cm-activeLineGutter {
+  filter: brightness(1.15);
 }
 
 /* 배경색에 따라 hr / blockquote / code 색 조정 (theme 가 luminance 로 dark/light 결정) */
