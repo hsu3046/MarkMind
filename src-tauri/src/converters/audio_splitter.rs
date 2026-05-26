@@ -5,7 +5,11 @@
 //! - probe_recording_time: ffprobe 메타데이터 creation_time / date / TDRC
 //! - split_audio_to_chunks: -ss/-t/-c copy (재인코딩 회피)
 //!
-//! ffmpeg/ffprobe binary 는 ffmpeg-sidecar 가 자동 다운로드 후 사용자 home 캐시.
+//! ffmpeg/ffprobe binary 해결 순서:
+//! 1) .app 안 동봉 sidecar (current_exe 의 sibling, Tauri externalBin 으로 빌드)
+//! 2) 시스템 PATH (which / `/opt/homebrew/bin` / `/usr/local/bin`)
+//! 3) ffmpeg-sidecar 다운로드 cache (~/Library/Caches/ffmpeg-sidecar/)
+//! 4) ffmpeg-sidecar auto_download() 후 (3) 재시도
 
 use crate::converters::error::{ConverterError, ConverterResult};
 use chrono::DateTime;
@@ -25,7 +29,7 @@ pub struct AudioChunk {
     pub index: usize,
 }
 
-/// App 시작 시 한 번 호출. ffmpeg binary 가 없으면 다운로드.
+/// ffmpeg-sidecar 자동 다운로드 (1회만). 동봉 binary 가 있으면 호출 안 함.
 pub fn ensure_ffmpeg_blocking() -> ConverterResult<()> {
     let mut err: Option<String> = None;
     INIT.call_once(|| {
@@ -42,18 +46,86 @@ pub fn ensure_ffmpeg_blocking() -> ConverterResult<()> {
     Ok(())
 }
 
-fn ffmpeg_binary() -> &'static str {
-    "ffmpeg"
+/// current_exe 의 sibling 에 동봉된 sidecar binary 검색.
+/// Tauri externalBin 으로 빌드된 경우 .app/Contents/MacOS/{name}-{target-triple} 또는 그냥 {name}.
+fn find_bundled_sidecar(name: &str) -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let candidates = [
+        dir.join(name),
+        dir.join(format!("{}-{}", name, std::env::consts::ARCH)),
+        // Tauri 가 target-triple 접미사 그대로 두는 경우
+        #[cfg(target_arch = "aarch64")]
+        dir.join(format!("{}-aarch64-apple-darwin", name)),
+        #[cfg(target_arch = "x86_64")]
+        dir.join(format!("{}-x86_64-apple-darwin", name)),
+    ];
+    candidates.into_iter().find(|p| p.is_file())
 }
 
-fn ffprobe_binary() -> &'static str {
-    "ffprobe"
+/// 시스템 표준 위치 + which 검색
+fn find_system(name: &str) -> Option<PathBuf> {
+    if let Ok(out) = std::process::Command::new("which").arg(name).output() {
+        if out.status.success() {
+            let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !raw.is_empty() {
+                let p = PathBuf::from(raw);
+                if p.is_file() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+    for prefix in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
+        let p = PathBuf::from(prefix).join(name);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// ffmpeg-sidecar 다운로드 cache 디렉토리 안 binary
+fn find_sidecar_cache(name: &str) -> Option<PathBuf> {
+    let dir = ffmpeg_sidecar::paths::sidecar_dir().ok()?;
+    let p = dir.join(name);
+    p.is_file().then_some(p)
+}
+
+/// ffmpeg / ffprobe binary path 해결. 못 찾으면 다운로드 시도.
+pub fn resolve_binary(name: &str) -> ConverterResult<PathBuf> {
+    if let Some(p) = find_bundled_sidecar(name) {
+        return Ok(p);
+    }
+    if let Some(p) = find_system(name) {
+        return Ok(p);
+    }
+    if let Some(p) = find_sidecar_cache(name) {
+        return Ok(p);
+    }
+    // 마지막 fallback — 다운로드 시도
+    ensure_ffmpeg_blocking()?;
+    find_sidecar_cache(name).ok_or_else(|| {
+        ConverterError::Ffmpeg(format!(
+            "{} binary 를 찾을 수 없습니다 (동봉 sidecar / 시스템 PATH / 다운로드 cache 모두 실패)",
+            name
+        ))
+    })
+}
+
+/// 호출용 헬퍼 — `Command::new(ffmpeg_path()?)` 패턴.
+pub fn ffmpeg_path() -> ConverterResult<PathBuf> {
+    resolve_binary("ffmpeg")
+}
+
+pub fn ffprobe_path() -> ConverterResult<PathBuf> {
+    resolve_binary("ffprobe")
 }
 
 /// 오디오 길이 (초)
 pub async fn probe_duration(path: &Path) -> ConverterResult<f64> {
     ensure_ffmpeg_blocking()?;
-    let output = Command::new(ffprobe_binary())
+    let output = Command::new(ffprobe_path()?)
         .args([
             "-v", "error",
             "-show_entries", "format=duration",
@@ -82,7 +154,7 @@ pub async fn probe_recording_time(
     path: &Path,
 ) -> ConverterResult<Option<chrono::DateTime<chrono::Utc>>> {
     ensure_ffmpeg_blocking()?;
-    let output = Command::new(ffprobe_binary())
+    let output = Command::new(ffprobe_path()?)
         .args(["-v", "quiet", "-print_format", "json", "-show_format"])
         .arg(path)
         .output()
@@ -155,7 +227,7 @@ pub async fn split_audio_to_chunks(
         let chunk_path = out_dir.join(format!("chunk_{:03}.mp3", i));
 
         // 1st try: -c copy (재인코딩 없음 — 빠름)
-        let try1 = Command::new(ffmpeg_binary())
+        let try1 = Command::new(ffmpeg_path()?)
             .args(["-y", "-ss"])
             .arg(format!("{}", intended_start))
             .args(["-t"])
@@ -173,7 +245,7 @@ pub async fn split_audio_to_chunks(
         if !copy_ok {
             // fallback: 128kbps mp3 재인코딩
             let _ = tokio::fs::remove_file(&chunk_path).await;
-            let try2 = Command::new(ffmpeg_binary())
+            let try2 = Command::new(ffmpeg_path()?)
                 .args(["-y", "-ss"])
                 .arg(format!("{}", intended_start))
                 .args(["-t"])
@@ -198,7 +270,7 @@ pub async fn split_audio_to_chunks(
         if let Ok(meta) = tokio::fs::metadata(&chunk_path).await {
             if meta.len() > CHUNK_SIZE_GUARD_BYTES {
                 let _ = tokio::fs::remove_file(&chunk_path).await;
-                let _ = Command::new(ffmpeg_binary())
+                let _ = Command::new(ffmpeg_path()?)
                     .args(["-y", "-ss"])
                     .arg(format!("{}", intended_start))
                     .args(["-t"])

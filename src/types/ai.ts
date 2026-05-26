@@ -47,7 +47,7 @@ export type ImproveQuality = 'speed' | 'quality';
 /** 모드별 모델 매핑 */
 export const AI_MODELS = {
     lite: 'gemini-3.1-flash-lite-preview',   // 문법, 번역
-    flash: 'gemini-3-flash-preview',          // 상세 지시 / 속도 우선
+    flash: 'gemini-3.5-flash',                // 기본 — 상세 지시 / 속도 우선
     pro: 'gemini-3.1-pro-preview',            // 퀄리티 우선
 } as const;
 

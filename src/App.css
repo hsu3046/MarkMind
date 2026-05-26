@@ -855,6 +855,213 @@ body {
 .spinning {
   animation: spin 1s linear infinite;
 }
+
+/* === Audio multi-file list === */
+.audio-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.audio-file-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto auto auto;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  font-size: 13px;
+}
+.audio-file-index {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.audio-file-name {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audio-file-btn {
+  width: 26px; height: 26px;
+  border: 1px solid var(--border-primary);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.audio-file-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.audio-file-btn.danger:hover:not(:disabled) {
+  color: #ef4444; border-color: #ef4444;
+}
+.audio-file-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.audio-file-add {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-primary);
+}
+.audio-file-summary {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.audio-batch-progress {
+  margin: 6px 0;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.audio-batch-error {
+  margin: 6px 0;
+  padding: 8px 12px;
+  background: rgba(239,68,68,0.1);
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: 6px;
+  font-size: 12px;
+  color: #dc2626;
+}
+
+/* === Speaker Editor 모달 === */
+.speaker-editor-root { position: fixed; inset: 0; z-index: 260; }
+.speaker-editor-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.45);
+  animation: fade-in 0.15s ease;
+}
+.speaker-editor-modal {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100vw - 64px);
+  max-width: 560px;
+  max-height: calc(100vh - 96px);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-lg, 0 20px 50px rgba(0,0,0,0.25));
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.speaker-editor-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px 8px;
+  border-bottom: 1px solid var(--border-primary);
+}
+.speaker-editor-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 600; color: var(--text-primary);
+}
+.speaker-editor-close {
+  width: 32px; height: 32px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.speaker-editor-close:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border-color: #ef4444;
+}
+.speaker-editor-desc {
+  margin: 0; padding: 10px 18px 6px;
+  font-size: 12px; color: var(--text-secondary);
+}
+.speaker-editor-empty {
+  padding: 32px 18px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.speaker-editor-list {
+  list-style: none; margin: 0; padding: 8px 18px;
+  overflow-y: auto;
+  flex: 1;
+}
+.speaker-editor-row {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) 16px 1fr 32px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-secondary, var(--border-primary));
+}
+.speaker-editor-row:last-child { border-bottom: none; }
+.speaker-editor-row.deleted .speaker-original { text-decoration: line-through; opacity: 0.55; }
+.speaker-original {
+  font-weight: 500; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.speaker-arrow { color: var(--text-secondary); text-align: center; }
+.speaker-editor-row input {
+  padding: 6px 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.speaker-editor-row input:focus { outline: 1px solid var(--accent); }
+.speaker-editor-row input:disabled { opacity: 0.4; }
+.speaker-delete-btn {
+  width: 28px; height: 28px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.speaker-delete-btn:hover:not(:disabled) {
+  color: #ef4444; border-color: #ef4444;
+}
+.speaker-delete-btn.active {
+  background: rgba(239,68,68,0.12);
+  color: #ef4444; border-color: #ef4444;
+}
+.speaker-editor-error {
+  margin: 0 18px 8px;
+  padding: 8px 10px;
+  background: rgba(255,107,107,0.1);
+  border: 1px solid rgba(255,107,107,0.3);
+  border-radius: 6px;
+  color: #ff6b6b; font-size: 12px;
+}
+.speaker-editor-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border-primary);
+}
+.speaker-editor-actions button {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+}
+.speaker-editor-actions button.primary {
+  background: var(--accent); color: white; border-color: var(--accent);
+}
+.speaker-editor-actions button:hover:not(:disabled) { filter: brightness(1.08); }
+.speaker-editor-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -1212,9 +1419,115 @@ body.is-resizing .split-pane {
 .preview-wrapper {
   height: 100%;
   overflow-y: auto;
-  padding: 32px 40px;
   background: var(--preview-bg);
   scroll-behavior: smooth;
+  position: relative;
+  padding: 32px 40px;
+}
+
+/* Rich Text mode 는 패딩 0 — rich-toolbar 가 상단 seamless 로 main Toolbar 와 붙음.
+   본문 영역만 padding 적용. */
+.preview-wrapper.preview-rich-mode {
+  padding: 0;
+}
+.preview-wrapper.preview-rich-mode .markdown-frontmatter,
+.preview-wrapper.preview-rich-mode .tiptap-rich {
+  margin-left: 40px;
+  margin-right: 40px;
+}
+.preview-wrapper.preview-rich-mode .markdown-frontmatter {
+  margin-top: 24px;
+}
+.preview-wrapper.preview-rich-mode .tiptap-rich {
+  padding-bottom: 32px;
+}
+
+/* 편집 toolbar — Rich Text 모드에서 main Toolbar 바로 아래 sticky 0, seamless */
+.rich-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-items: center;
+  /* 좌측 공백 최소화 — 첫 버튼이 가까이 오게 (이전 좌우 40px 패딩 제거) */
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  margin: 0;
+}
+.rich-tool-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition-fast);
+  padding: 0;
+}
+.rich-tool-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary, rgba(0,0,0,0.05));
+  color: var(--text-primary);
+}
+.rich-tool-btn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+.rich-tool-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.rich-tool-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-primary);
+  margin: 0 4px;
+}
+
+/* TipTap WYSIWYG 영역 */
+.tiptap-rich {
+  outline: none;
+  min-height: 300px;
+}
+.tiptap-rich p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--text-tertiary, #999);
+  pointer-events: none;
+  height: 0;
+}
+.tiptap-rich:focus {
+  outline: none;
+}
+.tiptap-rich ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+.tiptap-rich ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.tiptap-rich ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.tiptap-rich table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+}
+.tiptap-rich table td, .tiptap-rich table th {
+  border: 1px solid var(--border-primary);
+  padding: 6px 10px;
+  vertical-align: top;
 }
 
 /* YAML frontmatter — Preview 상단 메타 박스 */

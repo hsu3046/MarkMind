@@ -124,6 +124,9 @@ pub fn run() {
             converters::commands::run_notes_job,
             converters::commands::run_ocr_inline,
             converters::commands::get_conversions_dir,
+            converters::commands::extract_speakers,
+            converters::commands::rename_speakers,
+            converters::commands::merge_md_files,
             // Google Drive
             gdrive::commands::gdrive_is_configured,
             gdrive::commands::gdrive_get_client_id,

@@ -905,7 +905,13 @@ function App() {
                 width: viewMode === 'split' ? `${(1 - splitRatio) * 100}%` : '100%',
               }}
             >
-              <Preview content={content} fontSize={fontSize} />
+              {/* split 모드에선 source 가 CodeMirror 가 담당 — Preview 는 read-only.
+                  preview-only 모드에선 onChange 연결해 WYSIWYG 편집 가능. */}
+              <Preview
+                content={content}
+                fontSize={fontSize}
+                onChange={viewMode === 'preview' ? updateContent : undefined}
+              />
             </div>
           )}
         </div>

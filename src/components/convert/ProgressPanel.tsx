@@ -57,18 +57,22 @@ export function ProgressPanel({ state }: ProgressPanelProps) {
                 </div>
             )}
             <ol className="convert-progress-steps">
-                {state.steps.map((s, i) => {
-                    const { icon, text } = iconFor(s.step);
-                    return (
-                        <li key={i} className="convert-progress-step">
-                            <div className="step-main">
-                                {icon && <span className="step-icon">{icon}</span>}
-                                <span className="step-text">{text}</span>
-                            </div>
-                            {s.detail && <div className="step-detail">{s.detail}</div>}
-                        </li>
-                    );
-                })}
+                {/* 최신이 위로 — slice() 로 원본 보존 후 reverse */}
+                {state.steps
+                    .slice()
+                    .reverse()
+                    .map((s, i) => {
+                        const { icon, text } = iconFor(s.step);
+                        return (
+                            <li key={state.steps.length - 1 - i} className="convert-progress-step">
+                                <div className="step-main">
+                                    {icon && <span className="step-icon">{icon}</span>}
+                                    <span className="step-text">{text}</span>
+                                </div>
+                                {s.detail && <div className="step-detail">{s.detail}</div>}
+                            </li>
+                        );
+                    })}
             </ol>
             {state.error && <div className="convert-progress-error">{state.error}</div>}
         </div>

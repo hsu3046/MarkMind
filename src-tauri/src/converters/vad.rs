@@ -11,6 +11,7 @@
 use crate::converters::error::{ConverterError, ConverterResult};
 use crate::converters::progress::{fmt_duration, ProgressEmitter};
 use ndarray::{Array, Array1, Array3};
+use super::audio_splitter::ffmpeg_path;
 use ort::session::{builder::GraphOptimizationLevel, Session};
 use ort::value::TensorRef;
 use std::path::{Path, PathBuf};
@@ -268,7 +269,7 @@ fn post_process(probs: &[f32], cfg: PostProcessConfig) -> Vec<SpeechSegment> {
 
 /// ffmpeg 로 input → 16kHz mono PCM (Int16Array 동치)
 async fn decode_to_16k_pcm(input: &Path) -> ConverterResult<Vec<i16>> {
-    let output = Command::new("ffmpeg")
+    let output = Command::new(ffmpeg_path()?)
         .args([
             "-i",
             input
@@ -404,7 +405,7 @@ pub async fn trim_silence(
     let list_path = work_dir.join("concat.txt");
     tokio::fs::write(&list_path, &list_script).await?;
 
-    let output = Command::new("ffmpeg")
+    let output = Command::new(ffmpeg_path()?)
         .args([
             "-y",
             "-f",

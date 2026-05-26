@@ -40,6 +40,28 @@ export async function pickAudioFile(): Promise<PickedFile | null> {
     return { path, name: basename(path) };
 }
 
+/** 다중 오디오 파일 선택. multi-file STT 합치기용. */
+export async function pickAudioFilesMulti(): Promise<PickedFile[]> {
+    if (!isTauri()) {
+        alert('파일 선택은 데스크탑 앱에서만 사용 가능합니다.');
+        return [];
+    }
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+        multiple: true,
+        directory: false,
+        filters: [
+            {
+                name: '오디오',
+                extensions: ['mp3', 'wav', 'm4a', 'qta', 'aac', 'ogg', 'flac', 'wma', 'amr', 'opus', 'mp4', 'mov', 'webm', 'm4v'],
+            },
+        ],
+    });
+    if (!selected) return [];
+    const paths = Array.isArray(selected) ? selected : [selected];
+    return paths.map((p) => ({ path: p, name: basename(p) }));
+}
+
 export async function pickImageOrPdfFile(): Promise<PickedFile | null> {
     const path = await tauriOpenDialog([
         {

@@ -29,6 +29,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": [
+      "binaries/ffmpeg",
+      "binaries/ffprobe"
+    ],
     "resources": [
       "resources/silero_vad.onnx",
       "resources/meeting-templates/*.md"
