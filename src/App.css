@@ -1440,6 +1440,9 @@ body.is-resizing .split-pane {
 }
 .preview-wrapper.preview-rich-mode .tiptap-rich {
   padding-bottom: 32px;
+  /* 편집 모드는 가용 폭 100% 활용 — read-only preview 의 720px 제한 override */
+  max-width: none;
+  width: auto;
 }
 
 /* 편집 toolbar — Rich Text 모드에서 main Toolbar 바로 아래 sticky 0, seamless */
@@ -1490,6 +1493,63 @@ body.is-resizing .split-pane {
   background: var(--border-primary);
   margin: 0 4px;
 }
+
+/* === Link 입력 모달 === */
+.link-modal-root { position: fixed; inset: 0; z-index: 270; }
+.link-modal-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.35);
+  animation: fade-in 0.12s ease;
+}
+.link-modal {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100vw - 64px);
+  max-width: 480px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+  padding: 16px;
+}
+.link-modal-title {
+  font-size: 13px; font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+.link-modal input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.link-modal input:focus { outline: 1px solid var(--accent); }
+.link-modal-hint {
+  margin: 6px 0 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.link-modal-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.link-modal-actions button {
+  padding: 6px 14px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+}
+.link-modal-actions button.primary {
+  background: var(--accent); color: white; border-color: var(--accent);
+}
+.link-modal-actions button:hover { filter: brightness(1.08); }
 
 /* TipTap WYSIWYG 영역 */
 .tiptap-rich {

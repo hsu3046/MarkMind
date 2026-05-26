@@ -95,8 +95,11 @@ pub fn get_conversions_dir() -> String {
 #[tauri::command]
 pub fn extract_speakers(paths: Vec<String>) -> Result<Vec<String>, String> {
     use std::collections::BTreeSet;
+    // bold 마커 필수 + timestamp optional — timestamped 와 clean 두 형식 모두 매치
+    //   timestamped: `**[00:05:00] 화자A:**`
+    //   clean:       `**화자A:**`
     let re = regex::Regex::new(
-        r"\*?\*?\[\d{1,2}:\d{2}(?::\d{2})?\]\s+([^\*\n:]+?):",
+        r"\*\*(?:\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)?([^\*\n:]+?):\*\*",
     )
     .map_err(|e| e.to_string())?;
 
@@ -228,9 +231,11 @@ pub fn rename_speakers(
         let original = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
         let mut out = String::with_capacity(original.len());
 
-        // 라벨 헤더 정규식 — bold 유무, HH:MM[:SS] 둘 다 매치
+        // 라벨 헤더 정규식 — bold 마커 필수, timestamp optional
+        //   timestamped: `**[00:05:00] 화자A:**` + 본문
+        //   clean:       `**화자A:**` + 본문
         let header_re = regex::Regex::new(
-            r"^(?P<prefix>\*?\*?\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)(?P<label>[^\*\n:]+?)(?P<suffix>:\*?\*?)\s*(?P<rest>.*)$",
+            r"^(?P<prefix>\*\*(?:\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)?)(?P<label>[^\*\n:]+?)(?P<suffix>:\*\*)\s*(?P<rest>.*)$",
         )
         .map_err(|e| e.to_string())?;
 
