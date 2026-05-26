@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
@@ -115,6 +116,51 @@ function ReadOnlyView({
     );
 }
 
+// ─── 링크 입력 모달 (Tauri WKWebView 가 prompt() 불안정해서 커스텀) ───
+function LinkModal({
+    initial,
+    onApply,
+    onClose,
+}: {
+    initial: string;
+    onApply: (url: string) => void;
+    onClose: () => void;
+}) {
+    const [value, setValue] = useState(initial);
+    return createPortal(
+        <div className="link-modal-root" role="dialog" aria-modal="true">
+            <div className="link-modal-backdrop" onClick={onClose} aria-hidden />
+            <div className="link-modal">
+                <div className="link-modal-title">링크 URL</div>
+                <input
+                    type="text"
+                    autoFocus
+                    value={value}
+                    placeholder="https://example.com"
+                    onChange={(e) => setValue(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            onApply(value);
+                        } else if (e.key === 'Escape') {
+                            onClose();
+                        }
+                    }}
+                />
+                <p className="link-modal-hint">빈 값 + 적용 → 링크 제거</p>
+                <div className="link-modal-actions">
+                    <button onClick={onClose}>취소</button>
+                    <button className="primary" onClick={() => onApply(value)}>
+                        적용
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
 // ─── 편집 toolbar ───
 interface ToolBtnProps {
     onClick: () => void;
@@ -141,6 +187,7 @@ function ToolBtn({ onClick, icon, title, active, disabled }: ToolBtnProps) {
 function RichToolbar({ editor }: { editor: Editor }) {
     // editor state 변경 (selection, marks) 시 toolbar 가 갱신되도록 강제 리렌더
     const [, setTick] = useState(0);
+    const [linkModal, setLinkModal] = useState<{ value: string } | null>(null);
     useEffect(() => {
         const handler = () => setTick((t) => t + 1);
         editor.on('selectionUpdate', handler);
@@ -151,15 +198,18 @@ function RichToolbar({ editor }: { editor: Editor }) {
         };
     }, [editor]);
 
-    const promptLink = () => {
-        const prev = editor.getAttributes('link').href ?? '';
-        const url = prompt('링크 URL (빈 값 = 제거)', prev);
-        if (url === null) return;
-        if (url === '') {
+    const openLinkModal = () => {
+        const prev = (editor.getAttributes('link').href as string | undefined) ?? '';
+        setLinkModal({ value: prev });
+    };
+    const applyLink = (url: string) => {
+        const trimmed = url.trim();
+        if (trimmed === '') {
             editor.chain().focus().extendMarkRange('link').unsetLink().run();
         } else {
-            editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+            editor.chain().focus().extendMarkRange('link').setLink({ href: trimmed }).run();
         }
+        setLinkModal(null);
     };
 
     return (
@@ -227,11 +277,18 @@ function RichToolbar({ editor }: { editor: Editor }) {
                 title="Inline code (⌘E)"
             />
             <ToolBtn
-                onClick={promptLink}
+                onClick={openLinkModal}
                 active={editor.isActive('link')}
                 icon={<LinkIcon size={14} />}
                 title="Link (⌘K)"
             />
+            {linkModal && (
+                <LinkModal
+                    initial={linkModal.value}
+                    onClose={() => setLinkModal(null)}
+                    onApply={applyLink}
+                />
+            )}
             <span className="rich-tool-divider" />
             <ToolBtn
                 onClick={() => editor.chain().focus().toggleBulletList().run()}

@@ -409,25 +409,45 @@ async fn transcribe_chunks_sequential(
             Some(format!("동시 {}개", wave_size)),
         );
 
-        let futs: Vec<_> = chunks[next_idx..end]
-            .iter()
-            .enumerate()
-            .map(|(local_i, chunk)| {
-                let api_key = api_key.to_string();
-                let chunk = chunk.clone();
-                let ctx = context.clone();
-                let global_idx = next_idx + local_i;
-                let start_sec = chunk.start_sec;
-                async move {
-                    let res = transcribe_one_chunk(&api_key, &chunk, Some(&ctx)).await?;
-                    Ok::<(usize, f64, super::GenerateResult), ConverterError>((
-                        global_idx, start_sec, res,
-                    ))
-                }
-            })
-            .collect();
+        // JoinSet 으로 spawn — 한 task fail 해도 모든 task await 완료까지 기다림 →
+        // generate_text_with_file_api 의 delete_file cleanup 보장 (Gemini 서버에
+        // 업로드된 임시 파일이 미정리로 남는 quota leak 방지).
+        let mut set = tokio::task::JoinSet::new();
+        for (local_i, chunk) in chunks[next_idx..end].iter().enumerate() {
+            let api_key = api_key.to_string();
+            let chunk = chunk.clone();
+            let ctx = context.clone();
+            let global_idx = next_idx + local_i;
+            let start_sec = chunk.start_sec;
+            set.spawn(async move {
+                let res = transcribe_one_chunk(&api_key, &chunk, Some(&ctx)).await;
+                (global_idx, start_sec, res)
+            });
+        }
 
-        let mut wave_results = futures_util::future::try_join_all(futs).await?;
+        let mut wave_results: Vec<(usize, f64, super::GenerateResult)> = Vec::with_capacity(wave_size);
+        let mut first_err: Option<ConverterError> = None;
+        while let Some(joined) = set.join_next().await {
+            match joined {
+                Ok((idx, start_sec, Ok(res))) => wave_results.push((idx, start_sec, res)),
+                Ok((_idx, _start_sec, Err(e))) => {
+                    if first_err.is_none() {
+                        first_err = Some(e);
+                    }
+                }
+                Err(join_err) => {
+                    if first_err.is_none() {
+                        first_err = Some(ConverterError::Internal(format!(
+                            "wave task join 실패: {}",
+                            join_err
+                        )));
+                    }
+                }
+            }
+        }
+        if let Some(e) = first_err {
+            return Err(e);
+        }
         wave_results.sort_by_key(|(idx, _, _)| *idx);
         for (idx, start_sec, res) in wave_results {
             cumulative_cost += res.usage.cost_usd;

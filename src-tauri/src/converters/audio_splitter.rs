@@ -108,7 +108,7 @@ pub fn resolve_binary(name: &str) -> ConverterResult<PathBuf> {
         return Ok(p);
     }
     // 마지막 fallback — 다운로드 시도
-    ensure_ffmpeg_blocking()?;
+    // (auto_download 호출 제거 — resolve_binary 가 동봉/PATH/cache fallback 후 최후에만 다운로드)
     find_sidecar_cache(name).ok_or_else(|| {
         ConverterError::Ffmpeg(format!(
             "{} binary 를 찾을 수 없습니다 (동봉 sidecar / 시스템 PATH / 다운로드 cache 모두 실패)",
@@ -128,7 +128,7 @@ pub fn ffprobe_path() -> ConverterResult<PathBuf> {
 
 /// 오디오 길이 (초)
 pub async fn probe_duration(path: &Path) -> ConverterResult<f64> {
-    ensure_ffmpeg_blocking()?;
+    // (auto_download 호출 제거 — resolve_binary 가 동봉/PATH/cache fallback 후 최후에만 다운로드)
     let output = Command::new(ffprobe_path()?)
         .args([
             "-v", "error",
@@ -157,7 +157,7 @@ pub async fn probe_duration(path: &Path) -> ConverterResult<f64> {
 pub async fn probe_recording_time(
     path: &Path,
 ) -> ConverterResult<Option<chrono::DateTime<chrono::Utc>>> {
-    ensure_ffmpeg_blocking()?;
+    // (auto_download 호출 제거 — resolve_binary 가 동봉/PATH/cache fallback 후 최후에만 다운로드)
     let output = Command::new(ffprobe_path()?)
         .args(["-v", "quiet", "-print_format", "json", "-show_format"])
         .arg(path)
@@ -217,7 +217,7 @@ pub async fn split_audio_to_chunks(
     input: &Path,
     chunk_duration_sec: f64,
 ) -> ConverterResult<Vec<AudioChunk>> {
-    ensure_ffmpeg_blocking()?;
+    // (auto_download 호출 제거 — resolve_binary 가 동봉/PATH/cache fallback 후 최후에만 다운로드)
     let duration = probe_duration(input).await?;
     let num_chunks = (duration / chunk_duration_sec).ceil() as usize;
 

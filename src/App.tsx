@@ -91,6 +91,8 @@ function App() {
   const searchCurrentIndexRef = useRef(-1);
   const isDragging = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // viewMode 전환 시 scroll 위치 보존 — Markdown(CodeMirror) ↔ Rich Text(.preview-wrapper) ↔ Split
+  const scrollRatioRef = useRef<number>(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<EditorHandle>(null);
 
@@ -374,6 +376,47 @@ function App() {
       reattach();
     }
   }, [viewMode, reattach]);
+
+  // viewMode 전환 시 scroll 위치 보존 (Markdown ↔ Rich Text).
+  // 이전 모드의 scroll 비율을 기억해 새 모드의 같은 비율 위치로 자동 이동.
+  // 추적 element: editor → .cm-scroller, preview → .preview-wrapper.
+  useEffect(() => {
+    const scrollEl = (): HTMLElement | null => {
+      const root = containerRef.current;
+      if (!root) return null;
+      if (viewMode === 'editor') return root.querySelector<HTMLElement>('.cm-scroller');
+      if (viewMode === 'preview') return root.querySelector<HTMLElement>('.preview-wrapper');
+      // split — 보존 안 함 (양쪽 모두 보임)
+      return null;
+    };
+
+    // mount 직후 — 이전에 저장된 ratio 로 새 element 의 scrollTop 복원.
+    // 마운트 + content 렌더 후 scrollHeight 가 안정되도록 두 번 시도.
+    const restore = () => {
+      const el = scrollEl();
+      if (!el) return;
+      const max = el.scrollHeight - el.clientHeight;
+      if (max > 0) el.scrollTop = Math.round(max * scrollRatioRef.current);
+    };
+    restore();
+    const t1 = window.setTimeout(restore, 50);
+    const t2 = window.setTimeout(restore, 200);
+
+    // 이 mode 가 활성인 동안 scroll 변화를 ratio 로 추적.
+    const tracker = () => {
+      const el = scrollEl();
+      if (!el) return;
+      const max = el.scrollHeight - el.clientHeight;
+      if (max > 0) scrollRatioRef.current = el.scrollTop / max;
+    };
+    const el = scrollEl();
+    el?.addEventListener('scroll', tracker, { passive: true });
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      el?.removeEventListener('scroll', tracker);
+    };
+  }, [viewMode]);
 
   // Font size
   const handleFontSizeChange = useCallback((delta: number) => {
