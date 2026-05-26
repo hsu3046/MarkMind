@@ -369,7 +369,7 @@ export function Toolbar({
                     <ScanText size={14} strokeWidth={1.5} />
                     <span>이미지 인식</span>
                 </button>
-                <button className={`toolbar-text-btn ai-agent${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI 에이전트 (⌘I)">
+                <button className={`toolbar-text-btn ai-agent${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI 에이전트 (⌘⇧I)">
                     <Sparkles size={14} strokeWidth={1.5} />
                     <span>AI 에이전트</span>
                 </button>

@@ -566,6 +566,16 @@ body {
   outline: 1.5px solid rgba(255, 140, 0, 0.9);
 }
 
+/* TipTap search-and-replace 의 highlight (Rich Text 모드) */
+.rich-search-highlight {
+  background: rgba(255, 200, 0, 0.35);
+  border-radius: 2px;
+}
+.search-result-current {
+  background: rgba(255, 140, 0, 0.7);
+  outline: 1.5px solid rgba(255, 140, 0, 0.9);
+}
+
 .search-count-empty {
   color: var(--text-tertiary);
   opacity: 0.6;
@@ -1549,6 +1559,13 @@ body.is-resizing .split-pane {
 .link-modal-actions button.primary {
   background: var(--accent); color: white; border-color: var(--accent);
 }
+.link-modal-actions button.danger {
+  color: #dc2626; border-color: rgba(220, 38, 38, 0.4);
+  margin-right: auto; /* 왼쪽 정렬 — 취소/적용과 시각적 분리 */
+}
+.link-modal-actions button.danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+}
 .link-modal-actions button:hover { filter: brightness(1.08); }
 
 /* TipTap WYSIWYG 영역 */
@@ -1572,12 +1589,37 @@ body.is-resizing .split-pane {
 }
 .tiptap-rich ul[data-type="taskList"] li {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline; /* 텍스트 첫 줄 baseline 기준 — 세로 어긋남 fix */
   gap: 8px;
 }
 .tiptap-rich ul[data-type="taskList"] li > label {
   flex-shrink: 0;
-  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  height: 1.5em; /* line-height 와 동일 → 체크박스가 첫 줄 가운데 */
+}
+.tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"] {
+  margin: 0;
+  vertical-align: middle;
+}
+.tiptap-rich ul[data-type="taskList"] li > div {
+  flex: 1;
+  min-width: 0;
+}
+.tiptap-rich ul[data-type="taskList"] li > div > p {
+  margin: 0;
+}
+
+/* ReadOnlyView (react-markdown) 의 GFM task list 정렬 */
+.markdown-body ul li input[type="checkbox"] {
+  margin: 0 6px 0 0;
+  vertical-align: middle;
+  position: relative;
+  top: -1px; /* 체크박스가 살짝 아래로 보이는 시각 보정 */
+}
+.markdown-body ul li.task-list-item,
+.markdown-body ul li:has(> input[type="checkbox"]) {
+  list-style: none;
 }
 .tiptap-rich table {
   border-collapse: collapse;
