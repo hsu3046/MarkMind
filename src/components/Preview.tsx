@@ -447,29 +447,41 @@ function RichEditor({
     });
 
     // Rich Text 검색 — App-level SearchBar 가 window event 로 명령 전달.
-    // (editor instance 가 Preview 내부라 ref 노출 대신 event bus 사용)
+    // tiptap-search-and-replace 의 storage 타입이 ext 에 없어 any 캐스팅.
     useEffect(() => {
         if (!editor) return;
+
+        const reportCount = () => {
+            const storage = (editor.storage as unknown as Record<string, {
+                results?: unknown[];
+                resultIndex?: number;
+            }>).searchAndReplace;
+            const count = storage?.results?.length ?? 0;
+            const index = storage?.resultIndex ?? 0;
+            window.dispatchEvent(
+                new CustomEvent('markmind:rich-search-count', {
+                    detail: { count, index },
+                }),
+            );
+        };
+
         const onSearch = (e: Event) => {
             const detail = (e as CustomEvent<{ query: string }>).detail;
             editor.commands.setSearchTerm(detail.query ?? '');
-            // 결과 개수 회신 — App SearchBar 가 listen
-            // tiptap-search-and-replace 의 storage 타입이 ext 에 없어 any 캐스팅
-            const storage = (editor.storage as unknown as Record<string, { results?: unknown[] }>)
-                .searchAndReplace;
-            const count = storage?.results?.length ?? 0;
-            window.dispatchEvent(
-                new CustomEvent('markmind:rich-search-count', { detail: { count } }),
-            );
+            // setSearchTerm 후 storage 갱신은 다음 frame — setTimeout 0
+            setTimeout(reportCount, 0);
         };
         const onNext = () => {
             editor.commands.nextSearchResult();
+            setTimeout(reportCount, 0);
         };
         const onPrev = () => {
             editor.commands.previousSearchResult();
+            setTimeout(reportCount, 0);
         };
         const onClear = () => {
             editor.commands.setSearchTerm('');
+            setTimeout(reportCount, 0);
         };
         window.addEventListener('markmind:rich-search', onSearch);
         window.addEventListener('markmind:rich-search-next', onNext);

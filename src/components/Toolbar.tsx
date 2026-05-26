@@ -301,14 +301,6 @@ export function Toolbar({
                     )}
                 </div>
 
-                {/* Search + Outline (순서 교체) */}
-                <button className="toolbar-btn" onClick={onToggleSearch} title="Search (⌘F)">
-                    <Search size={15} strokeWidth={1.5} />
-                </button>
-                <button className={`toolbar-btn${outlineVisible ? ' active' : ''}`} onClick={onToggleOutline} title="Outline">
-                    <List size={16} strokeWidth={1.5} />
-                </button>
-
                 <div className="toolbar-divider" />
 
                 {/* View modes — Markdown / Rich Text / Split */}
@@ -336,6 +328,16 @@ export function Toolbar({
 
                 <div className="toolbar-divider" />
 
+                {/* Outline + Search */}
+                <button className={`toolbar-btn${outlineVisible ? ' active' : ''}`} onClick={onToggleOutline} title="Outline">
+                    <List size={16} strokeWidth={1.5} />
+                </button>
+                <button className="toolbar-btn" onClick={onToggleSearch} title="Search (⌘F)">
+                    <Search size={15} strokeWidth={1.5} />
+                </button>
+
+                <div className="toolbar-divider" />
+
                 {/* Font size controls (압축 그룹 — 간격 좁힘) */}
                 <div className="toolbar-fontsize-group">
                     <button className="toolbar-btn" onClick={() => onFontSizeChange(-1)} title="Zoom Out (⌘-)" disabled={viewMode === 'editor'}>
@@ -349,7 +351,9 @@ export function Toolbar({
                     </button>
                 </div>
 
-                {/* 행간 토글 — compact 1.5 / normal 1.8 / relaxed 2.2 사이클 */}
+                <div className="toolbar-divider" />
+
+                {/* 행간 토글 + 배경색 picker (Theme 토글은 배경색에 자동 동기화되므로 제거) */}
                 <button
                     className="toolbar-btn toolbar-lineheight-btn"
                     onClick={onCycleLineHeight}
@@ -360,17 +364,15 @@ export function Toolbar({
                         {lineHeight === 'compact' ? '1.5' : lineHeight === 'normal' ? '1.8' : '2.2'}
                     </span>
                 </button>
-
-                {/* 배경색 picker */}
                 <BackgroundPicker value={bgColor} onChange={onBgColorChange} />
+                <button className="toolbar-btn" onClick={onThemeToggle} title="Toggle Theme (배경색 없을 때)">
+                    {theme === 'dark' ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
+                </button>
 
                 <div className="toolbar-divider" />
 
-                {/* Theme + Reading mode (순서 교체) */}
-                <button className="toolbar-btn" onClick={onThemeToggle} title="Toggle Theme">
-                    {theme === 'dark' ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
-                </button>
-                <button className="toolbar-btn" onClick={onToggleReadingMode} title="Reading Mode">
+                {/* Full (Reading mode) */}
+                <button className="toolbar-btn" onClick={onToggleReadingMode} title="Full / Reading Mode">
                     <Maximize size={16} strokeWidth={1.5} />
                 </button>
             </div>
