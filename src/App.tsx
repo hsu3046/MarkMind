@@ -38,7 +38,7 @@ const FONT_SIZE_MAX = 28;
 const FONT_SIZE_DEFAULT = 14;
 
 function App() {
-  const { theme, toggleTheme } = useTheme();
+  const { theme, toggleTheme, setTheme } = useTheme();
   const auth = useAuth();
   const [isAuthCallback, setIsAuthCallback] = useState(
     () => window.location.pathname === getCallbackPath()
@@ -99,6 +99,28 @@ function App() {
     if (bgColor) localStorage.setItem('markmind-bg-color', bgColor);
     else localStorage.removeItem('markmind-bg-color');
   }, [bgColor]);
+
+  // 배경색의 상대 휘도 (0~1). 0.5 미만이면 어두운 배경 → 텍스트 반전 필요.
+  // WCAG relative luminance (sRGB).
+  const luminance = (() => {
+    if (!bgColor) return null;
+    const hex = bgColor.replace('#', '');
+    if (hex.length !== 3 && hex.length !== 6) return null;
+    const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+    const r = parseInt(full.slice(0, 2), 16) / 255;
+    const g = parseInt(full.slice(2, 4), 16) / 255;
+    const b = parseInt(full.slice(4, 6), 16) / 255;
+    const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  })();
+  const isDarkBg = luminance != null ? luminance < 0.5 : theme === 'dark';
+
+  // 배경색 변경 시 theme 자동 동기화 — 통합 동작
+  // (dark 배경 선택 시 자동 dark theme, light 배경 선택 시 light)
+  useEffect(() => {
+    if (luminance == null) return; // 'theme 기본' 으로 되돌리면 마지막 theme 유지
+    setTheme(luminance < 0.5 ? 'dark' : 'light');
+  }, [luminance, setTheme]);
   const [outlineVisible, setOutlineVisible] = useState(false);
   const [readingMode, setReadingMode] = useState(false);
   const [tutorialVisible, setTutorialVisible] = useState(false);
@@ -627,13 +649,13 @@ function App() {
     }
   }, [searchQuery, content, highlightMatches, clearHighlights, viewMode]);
 
-  // Rich Text search 결과 count 회신 listen
+  // Rich Text search 결과 count + 현재 index 회신 listen
   useEffect(() => {
     if (viewMode !== 'preview') return;
     const onCount = (e: Event) => {
-      const detail = (e as CustomEvent<{ count: number }>).detail;
+      const detail = (e as CustomEvent<{ count: number; index: number }>).detail;
       setSearchMatchCount(detail.count ?? 0);
-      setSearchCurrentIndex(detail.count > 0 ? 0 : -1);
+      setSearchCurrentIndex(detail.count > 0 ? (detail.index ?? 0) : -1);
     };
     window.addEventListener('markmind:rich-search-count', onCount);
     return () => window.removeEventListener('markmind:rich-search-count', onCount);
@@ -828,6 +850,7 @@ function App() {
     <div
       className="app"
       data-line-height={lineHeight}
+      data-bg-dark={isDarkBg ? 'true' : undefined}
       style={
         bgColor
           ? ({
