@@ -218,21 +218,33 @@ struct SpeakerSample {
 /// commands.rs::speaker_line_patterns 와 동일 4-tier fallback — 본문 시작에서
 /// 라벨을 떼낸 뒤 그 라인의 나머지 + 다음 헤더까지의 내용을 발화로 본다.
 fn extract_speaker_samples(text: &str) -> Vec<SpeakerSample> {
-    // Same 3-tier set as commands.rs::speaker_line_patterns. The
-    // `**LABEL**:` (no timestamp) shape is omitted on purpose — it would
-    // match meeting-note metadata lines (`**일시**: ...` etc.) and feed
-    // them to dedup as speaker candidates, which then poisons the LLM
-    // prompt and could cause real labels to be merged with metadata
-    // labels.
+    // **All Tiers REQUIRE a `[HH:MM:SS]` anchor** — kept in lockstep with
+    // `apply_rename` below so the dedup sample set never contains labels
+    // whose lines `apply_rename` would later refuse to rewrite. The earlier
+    // version made the timestamp optional on Tier 1; a mixed-format Gemini
+    // response could then feed no-timestamp `**화자C:**` headers into the
+    // LLM prompt, the LLM would propose "merge 화자C → 화자A", but
+    // apply_rename (timestamp-required) wouldn't touch the actual file
+    // line — the UI would announce a merge that didn't happen. By
+    // gating extraction the same way, every sampled label is guaranteed
+    // to be rewritable.
+    //
+    // No-timestamp shapes (`**LABEL:**` / `**LABEL**:`) are skipped here
+    // not just for the alignment reason but also because they coincide
+    // with meeting-note metadata (`**일시:**`, `**참석자:**`) — admitting
+    // them would poison the dedup prompt with non-speaker candidates.
     let header_patterns = [
+        // 1: **[time] LABEL:**   (timestamp REQUIRED)
         Regex::new(
-            r"^(?P<prefix>\*\*(?:\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)?)(?P<label>[^\*\n:]{1,40}?):\*\*\s*(?P<rest>.*)$",
+            r"^(?P<prefix>\*\*\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)(?P<label>[^\*\n:]{1,40}?):\*\*\s*(?P<rest>.*)$",
         )
         .expect("regex compile"),
+        // 2: [time] **LABEL**:
         Regex::new(
             r"^(?P<prefix>\[\d{1,2}:\d{2}(?::\d{2})?\]\s+\*\*)(?P<label>[^\*\n:]{1,40}?)\*\*\s*:\s+(?P<rest>\S.*)$",
         )
         .expect("regex compile"),
+        // 3: [time] LABEL:
         Regex::new(
             r"^(?P<prefix>\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)(?P<label>[^\*\n:]{1,40}?):\s+(?P<rest>\S.*)$",
         )
@@ -458,6 +470,21 @@ mod tests {
         let labels: Vec<&str> = s.iter().map(|s| s.label.as_str()).collect();
         assert_eq!(labels, vec!["화자A", "화자B"]);
         assert!(!labels.iter().any(|l| *l == "일시" || *l == "참석자" || *l == "장소"));
+    }
+
+    /// Codex follow-up — extract and apply_rename must use the same
+    /// admission criteria, otherwise the LLM dedup prompt accepts labels
+    /// (no-timestamp Tier 1) that apply_rename refuses to rewrite, and
+    /// the UI announces a merge that never happened in the file.
+    #[test]
+    fn extract_skips_no_timestamp_header() {
+        // Mixed: one timestamped line + one bare bold header (e.g. stray
+        // metadata or a fragment of a meeting template).
+        let text = "**[00:00:05] 화자A:** 안녕하세요\n**일시:** 2026-05-28";
+        let s = extract_speaker_samples(text);
+        let labels: Vec<&str> = s.iter().map(|s| s.label.as_str()).collect();
+        assert_eq!(labels, vec!["화자A"]);
+        assert!(!labels.iter().any(|l| *l == "일시"));
     }
 
     /// Codex follow-up P2 — Tier 1 `**LABEL:**` (colon INSIDE bold) is the
