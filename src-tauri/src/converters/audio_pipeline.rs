@@ -627,9 +627,33 @@ fn format_ts(total_sec: i64) -> String {
     format!("[{:02}:{:02}:{:02}]", h, m, s)
 }
 
+/// Strip `[HH:MM:SS]` markers from every speaker-line variant we accept
+/// in `commands.rs::speaker_line_patterns` — so the "clean" companion
+/// transcript actually has no timestamps regardless of which shape
+/// Gemini chose for a given line.
+///
+/// The shapes we strip (line-anchored to avoid clobbering timestamps
+/// that appear inside utterance text):
+///   1. `**[HH:MM:SS] LABEL:**`  → `**LABEL:**`     (canonical)
+///   2. `[HH:MM:SS] **LABEL**:`  → `**LABEL**:`     (Tier 2 from extract)
+///   3. `[HH:MM:SS] LABEL:`      → `LABEL:`         (Tier 3 from extract)
+///
+/// Previously only #1 was handled, so a clean file built from Gemini
+/// output containing #2 or #3 still carried `[HH:MM:SS]` prefixes.
 fn remove_timestamps(timestamped: &str) -> String {
-    let re = Regex::new(r"\*\*\[\d{1,2}:\d{2}(?::\d{2})?\]\s*").unwrap();
-    re.replace_all(timestamped, "**").into_owned()
+    // Pass 1: canonical bold envelope — strip `**[time] ` keeping `**`.
+    let canon = Regex::new(r"(?m)^\*\*\[\d{1,2}:\d{2}(?::\d{2})?\]\s+").unwrap();
+    let mut s = canon.replace_all(timestamped, "**").into_owned();
+    // Pass 2: line-leading `[time] ` (covers BOTH Tier 2's
+    // `[time] **LABEL**:` and Tier 3's `[time] LABEL:`). Rust regex has
+    // no lookahead, but this naive strip works because whatever follows
+    // `[time] ` — whether `**` or a bare label — is exactly what we
+    // want to keep, so we don't need to look ahead to preserve it. The
+    // `(?m)^` anchor keeps timestamps embedded inside utterance text
+    // untouched (`회의는 [10:30] 에 시작...` stays as-is).
+    let lead = Regex::new(r"(?m)^\[\d{1,2}:\d{2}(?::\d{2})?\]\s+").unwrap();
+    s = lead.replace_all(&s, "").into_owned();
+    s
 }
 
 fn guess_mime(path: &Path) -> &'static str {
@@ -774,6 +798,36 @@ mod tests {
         let result = remove_timestamps(text);
         assert!(!result.contains('['));
         assert!(result.contains("화자A:**"));
+    }
+
+    /// remove_timestamps — Tier 2 형식 `[time] **LABEL**:` 도 strip
+    #[test]
+    fn test_remove_timestamps_tier2_label_only_bold() {
+        let text = "[00:00:05] **화자A**: 안녕\n[00:00:10] **화자B**: 네";
+        let result = remove_timestamps(text);
+        assert!(!result.contains('['), "expected no timestamps, got: {}", result);
+        assert!(result.contains("**화자A**:"));
+        assert!(result.contains("**화자B**:"));
+    }
+
+    /// remove_timestamps — Tier 3 형식 `[time] LABEL:` (no bold) 도 strip
+    #[test]
+    fn test_remove_timestamps_tier3_no_bold() {
+        let text = "[00:00:05] 화자A: 안녕\n[00:00:10] 화자B: 네";
+        let result = remove_timestamps(text);
+        assert!(!result.contains('['), "expected no timestamps, got: {}", result);
+        assert!(result.contains("화자A: 안녕"));
+        assert!(result.contains("화자B: 네"));
+    }
+
+    /// remove_timestamps — utterance 내부의 timestamp 는 건드리지 않음
+    #[test]
+    fn test_remove_timestamps_preserves_inline() {
+        let text = "**[00:00:05] 화자A:** 회의는 [10:30] 에 시작했어요";
+        let result = remove_timestamps(text);
+        // 헤더 [00:00:05] 는 제거되지만 발화 내부 [10:30] 은 보존
+        assert!(!result.contains("[00:00:05]"));
+        assert!(result.contains("[10:30]"), "inline timestamp lost: {}", result);
     }
 
     /// format_ts — i64 초 → [HH:MM:SS]
