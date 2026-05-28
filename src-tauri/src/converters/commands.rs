@@ -88,6 +88,68 @@ pub fn get_conversions_dir() -> String {
 
 // ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    /// Codex P2 follow-up: ensure `extract_speakers` returns labels from a
+    /// clean (no-timestamp) transcript when it's part of an STT pair —
+    /// previously the per-file gate skipped the clean file, breaking
+    /// rename/delete sync. The set-level gate must accept the whole set
+    /// once any path looks like STT.
+    #[test]
+    fn extract_speakers_accepts_clean_paired_with_timestamped() {
+        let dir = TempDir::new().unwrap();
+        let ts_path = dir.path().join("ts.md");
+        let cl_path = dir.path().join("clean.md");
+        std::fs::write(&ts_path, "**[00:00:05] 화자A:** 안녕\n**[00:00:10] 화자B:** 반갑").unwrap();
+        // clean has the same labels but no timestamps — exact shape of
+        // remove_timestamps output
+        std::fs::write(&cl_path, "**화자A:** 안녕\n**화자B:** 반갑").unwrap();
+        let labels = extract_speakers(vec![
+            ts_path.to_string_lossy().into_owned(),
+            cl_path.to_string_lossy().into_owned(),
+        ])
+        .unwrap();
+        assert_eq!(labels, vec!["화자A", "화자B"]);
+    }
+
+    /// Sister test — when the whole set is metadata-only (no STT), gate
+    /// returns empty so the SpeakerEditor doesn't surface fake speakers.
+    #[test]
+    fn extract_speakers_skips_metadata_only_set() {
+        let dir = TempDir::new().unwrap();
+        let p = dir.path().join("notes.md");
+        std::fs::write(&p, "**일시:** 2026년 5월 28일\n**참석자:** 승우, 재문").unwrap();
+        let labels = extract_speakers(vec![p.to_string_lossy().into_owned()]).unwrap();
+        assert!(labels.is_empty(), "metadata-only doc must not yield speakers");
+    }
+
+    /// rename_speakers must update BOTH timestamped and clean files when
+    /// they're passed together — that was the original Codex regression.
+    #[test]
+    fn rename_speakers_updates_clean_in_pair() {
+        let dir = TempDir::new().unwrap();
+        let ts_path = dir.path().join("ts.md");
+        let cl_path = dir.path().join("clean.md");
+        std::fs::write(&ts_path, "**[00:00:05] 화자A:** 안녕\n").unwrap();
+        std::fs::write(&cl_path, "**화자A:** 안녕\n").unwrap();
+        rename_speakers(
+            vec![
+                ts_path.to_string_lossy().into_owned(),
+                cl_path.to_string_lossy().into_owned(),
+            ],
+            vec![("화자A".into(), "김철수".into())],
+        )
+        .unwrap();
+        let ts_after = std::fs::read_to_string(&ts_path).unwrap();
+        let cl_after = std::fs::read_to_string(&cl_path).unwrap();
+        assert!(ts_after.contains("김철수:**"), "ts file not renamed: {}", ts_after);
+        assert!(cl_after.contains("김철수:**"), "clean file not renamed: {}", cl_after);
+    }
+}
+
 /// Speaker-line patterns we accept, in priority order. LLM output isn't
 /// 100% consistent — same prompt can return any of:
 ///   1. `**[00:00:12] 화자A:**`        ← canonical bold envelope
@@ -148,25 +210,34 @@ fn has_any_timestamp(text: &str) -> bool {
 /// 4단계 fallback 패턴(see [[speaker_line_patterns]]) 으로 LLM 출력 변형을
 /// 모두 흡수. 발견된 모든 고유 라벨을 등장 순서대로 반환.
 ///
-/// **Structural gate** — 파일에 timestamp 가 한 번도 없으면 STT 결과가
-/// 아니라 판단하고 그 파일은 건너뜀. 회의록 메타 헤더 (`**일시:**`,
-/// `**참석자:**`) 가 가짜 화자로 잡히는 사고를 차단.
+/// **Set-level structural gate** — AudioTab 는 보통 (timestamped, clean)
+/// 쌍을 전달하는데 clean 파일은 `save_audio_results::remove_timestamps`
+/// 로 timestamp 가 의도적으로 제거된 상태다. 파일 *개별* 로 gate 를 걸면
+/// clean 파일이 항상 skip 되어 rename/delete 가 timestamped 한쪽에만
+/// 적용되고 두 파일 sync 가 깨진다. 따라서 paths set 중 *하나라도*
+/// timestamp 를 가지면 전체 set 이 STT job 으로 간주되어 정상 처리되고,
+/// 모든 path 가 timestamp 없으면 (= 회의록 / 손편집 마크다운으로 잘못
+/// 호출된 케이스) 전체 set 을 건너뛴다.
 #[tauri::command]
 pub fn extract_speakers(paths: Vec<String>) -> Result<Vec<String>, String> {
     use std::collections::BTreeSet;
     let patterns = speaker_line_patterns().map_err(|e| e.to_string())?;
 
+    // Read each file once, then make the gate decision on the union.
+    let contents: Vec<(String, String)> = paths
+        .iter()
+        .filter_map(|p| std::fs::read_to_string(p).ok().map(|c| (p.clone(), c)))
+        .collect();
+    let any_has_ts = contents.iter().any(|(_, c)| has_any_timestamp(c));
+    if !any_has_ts {
+        return Ok(Vec::new());
+    }
+
     let mut order: Vec<String> = Vec::new();
     let mut seen: BTreeSet<String> = BTreeSet::new();
-    for path in &paths {
-        let Ok(content) = std::fs::read_to_string(path) else {
-            continue;
-        };
-        if !has_any_timestamp(&content) {
-            continue;
-        }
+    for (_path, content) in &contents {
         for re in &patterns {
-            for cap in re.captures_iter(&content) {
+            for cap in re.captures_iter(content) {
                 if let Some(m) = cap.get(1) {
                     let label = m.as_str().trim().to_string();
                     if label.is_empty() {
@@ -320,15 +391,20 @@ pub fn rename_speakers(
         header_patterns.iter().any(|p| p.is_match(s))
     };
 
-    for path in &paths {
-        let original = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-        // Skip non-STT files defensively — extract_speakers already gates,
-        // but a stale paths reference (e.g. user opened SpeakerEditor on
-        // a hand-edited markdown) shouldn't be able to silently delete
-        // content by matching `**Label:**` metadata headers.
-        if !has_any_timestamp(&original) {
-            continue;
-        }
+    // Set-level gate — at least one path must look like STT output. The
+    // clean transcript that pairs with a timestamped one has timestamps
+    // intentionally stripped (see save_audio_results::remove_timestamps),
+    // so a per-file gate would skip the clean file and leave the two
+    // copies out of sync after rename. Read once, decide once.
+    let originals: Vec<(String, String)> = paths
+        .iter()
+        .filter_map(|p| std::fs::read_to_string(p).ok().map(|c| (p.clone(), c)))
+        .collect();
+    if !originals.iter().any(|(_, c)| has_any_timestamp(c)) {
+        return Ok(());
+    }
+
+    for (path, original) in &originals {
         let mut out = String::with_capacity(original.len());
 
         let lines: Vec<&str> = original.split_inclusive('\n').collect();
