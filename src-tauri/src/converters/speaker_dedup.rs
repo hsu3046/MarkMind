@@ -196,6 +196,12 @@ struct SpeakerSample {
 /// commands.rs::speaker_line_patterns 와 동일 4-tier fallback — 본문 시작에서
 /// 라벨을 떼낸 뒤 그 라인의 나머지 + 다음 헤더까지의 내용을 발화로 본다.
 fn extract_speaker_samples(text: &str) -> Vec<SpeakerSample> {
+    // Same 3-tier set as commands.rs::speaker_line_patterns. The
+    // `**LABEL**:` (no timestamp) shape is omitted on purpose — it would
+    // match meeting-note metadata lines (`**일시**: ...` etc.) and feed
+    // them to dedup as speaker candidates, which then poisons the LLM
+    // prompt and could cause real labels to be merged with metadata
+    // labels.
     let header_patterns = [
         Regex::new(
             r"^(?P<prefix>\*\*(?:\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)?)(?P<label>[^\*\n:]{1,40}?):\*\*\s*(?P<rest>.*)$",
@@ -207,10 +213,6 @@ fn extract_speaker_samples(text: &str) -> Vec<SpeakerSample> {
         .expect("regex compile"),
         Regex::new(
             r"^(?P<prefix>\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)(?P<label>[^\*\n:]{1,40}?):\s+(?P<rest>\S.*)$",
-        )
-        .expect("regex compile"),
-        Regex::new(
-            r"^(?P<prefix>\*\*)(?P<label>[^\*\n:]{1,40}?)\*\*\s*:\s*(?P<rest>.*)$",
         )
         .expect("regex compile"),
     ];
@@ -324,7 +326,10 @@ fn extract_json_block(raw: &str) -> Option<&str> {
     }
 }
 
-/// rename 맵 적용 — commands.rs::rename_speakers 와 같은 4-tier 패턴.
+/// rename 맵 적용 — commands.rs::rename_speakers 와 같은 3-tier 패턴.
+/// (Tier 4 `**LABEL**:` 는 메타 라인 false-positive 위험으로 제외 — 본 모듈
+/// 에서는 추출 단계에서 이미 걸러져 실제로는 도달할 일이 없지만, 안전
+/// 차원에서도 같은 set 유지.)
 fn apply_rename(text: &str, rename: &HashMap<String, String>) -> String {
     let header_patterns = [
         Regex::new(
@@ -337,10 +342,6 @@ fn apply_rename(text: &str, rename: &HashMap<String, String>) -> String {
         .expect("regex compile"),
         Regex::new(
             r"^(?P<prefix>\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)(?P<label>[^\*\n:]{1,40}?)(?P<suffix>:)\s+(?P<rest>\S.*)$",
-        )
-        .expect("regex compile"),
-        Regex::new(
-            r"^(?P<prefix>\*\*)(?P<label>[^\*\n:]{1,40}?)(?P<suffix>\*\*\s*:)\s*(?P<rest>.*)$",
         )
         .expect("regex compile"),
     ];
@@ -416,5 +417,18 @@ mod tests {
     fn json_block_handles_bare() {
         let raw = "다음과 같습니다: {\"groups\":[]} 끝.";
         assert_eq!(extract_json_block(raw), Some("{\"groups\":[]}"));
+    }
+
+    /// Regression guard for the Codex P2 false-positive: meeting-note
+    /// metadata lines (`**일시**: ...`, `**참석자**: ...`) must not be
+    /// picked up as speaker labels — they don't carry a timestamp and
+    /// would otherwise be eligible for delete/rename in the editor.
+    #[test]
+    fn skips_meeting_metadata_lines() {
+        let text = "**일시**: 2026년 5월 28일\n**장소**: 카페\n**참석자**: 승우, 재문\n\n**[00:00:05] 화자A:** 안녕하세요\n**[00:00:10] 화자B:** 반갑습니다";
+        let s = extract_speaker_samples(text);
+        let labels: Vec<&str> = s.iter().map(|s| s.label.as_str()).collect();
+        assert_eq!(labels, vec!["화자A", "화자B"]);
+        assert!(!labels.iter().any(|l| *l == "일시" || *l == "참석자" || *l == "장소"));
     }
 }

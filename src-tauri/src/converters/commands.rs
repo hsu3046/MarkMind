@@ -94,18 +94,25 @@ pub fn get_conversions_dir() -> String {
 ///   2. `**화자A:**`                   ← clean version (no timestamp)
 ///   3. `[00:00:12] **화자A**:`        ← bold around label only
 ///   4. `[00:00:12] 화자A:`            ← no bold at all
-///   5. `**화자A**:`                   ← bold around label, no timestamp
 ///
 /// `extract_last_speaker_lines` already runs a strict+loose fallback for the
 /// chunk-context use case. The extractor/renamer used to support only #1+#2
-/// which silently dropped any document the model returned in formats #3-#5.
+/// which silently dropped any document the model returned in formats #3-#4.
 /// Symptom: "감지된 화자 라벨이 없습니다" on outputs that did contain
 /// speakers.
 ///
-/// To control false positives in the no-bold paths we anchor each pattern at
-/// line start AND require either a timestamp prefix or a bold marker — so
-/// arbitrary "참고: ..." / "Title: ..." mid-document doesn't get misread
-/// as a speaker.
+/// **Why no `**LABEL**:` fallback (without timestamp)** — that shape collides
+/// with common meeting-note metadata lines (`**일시**: ...`, `**참석자**: ...`,
+/// `**결정사항**: ...`). Treating those as speakers makes the editor offer
+/// nonsense rename targets and, worse, lets the user delete "참석자" — which
+/// then strips every line up to the next *real* speaker header. So we
+/// require **either** a timestamp anchor (patterns 3, 4 below) **or** the
+/// canonical bold-envelope shape (1, 2). The clean STT output already
+/// retains the bold envelope through `remove_timestamps`, so no recall
+/// is lost in practice.
+///
+/// All patterns are line-anchored to avoid mid-paragraph "참고:" / "Title:"
+/// false matches.
 fn speaker_line_patterns() -> Result<Vec<regex::Regex>, regex::Error> {
     Ok(vec![
         // 1: **[time] LABEL:**   /   **LABEL:**          (full bold envelope)
@@ -119,10 +126,6 @@ fn speaker_line_patterns() -> Result<Vec<regex::Regex>, regex::Error> {
         // 3: [time] LABEL:       (timestamp anchored, no bold)
         regex::Regex::new(
             r"(?m)^\[\d{1,2}:\d{2}(?::\d{2})?\]\s+([^\*\n:]{1,40}?):\s+\S",
-        )?,
-        // 4: **LABEL**:          (bold around label, no timestamp — clean variant)
-        regex::Regex::new(
-            r"(?m)^\*\*([^\*\n:]{1,40}?)\*\*\s*:\s",
         )?,
     ])
 }
@@ -263,7 +266,11 @@ pub fn rename_speakers(
 
     // Each tier captures prefix / label / suffix / rest separately so the
     // rebuilt header keeps its original markup. Order matches
-    // [[speaker_line_patterns]] — strictest first.
+    // [[speaker_line_patterns]] — strictest first. Pattern 4
+    // (`**LABEL**:` with no timestamp) is INTENTIONALLY OMITTED: it would
+    // match common meeting-note metadata lines like `**일시**: ...` and
+    // let `rename_speakers` strip real content when the user deletes one
+    // of those false speakers. See speaker_line_patterns() comment.
     let header_patterns = [
         // 1: **[time] LABEL:**   or  **LABEL:**
         regex::Regex::new(
@@ -278,11 +285,6 @@ pub fn rename_speakers(
         // 3: [time] LABEL:
         regex::Regex::new(
             r"^(?P<prefix>\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)(?P<label>[^\*\n:]{1,40}?)(?P<suffix>:)\s+(?P<rest>\S.*)$",
-        )
-        .map_err(|e| e.to_string())?,
-        // 4: **LABEL**:
-        regex::Regex::new(
-            r"^(?P<prefix>\*\*)(?P<label>[^\*\n:]{1,40}?)(?P<suffix>\*\*\s*:)\s*(?P<rest>.*)$",
         )
         .map_err(|e| e.to_string())?,
     ];
