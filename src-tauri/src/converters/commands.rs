@@ -396,10 +396,19 @@ pub fn rename_speakers(
     // intentionally stripped (see save_audio_results::remove_timestamps),
     // so a per-file gate would skip the clean file and leave the two
     // copies out of sync after rename. Read once, decide once.
+    //
+    // Read errors are PROPAGATED (not silently dropped). If one file in
+    // the pair is locked / moved / permission-denied, the user gets a
+    // clear error rather than a partial rename that silently leaves the
+    // two transcripts out of sync.
     let originals: Vec<(String, String)> = paths
         .iter()
-        .filter_map(|p| std::fs::read_to_string(p).ok().map(|c| (p.clone(), c)))
-        .collect();
+        .map(|p| {
+            std::fs::read_to_string(p)
+                .map(|c| (p.clone(), c))
+                .map_err(|e| format!("{}: {}", p, e))
+        })
+        .collect::<Result<_, _>>()?;
     if !originals.iter().any(|(_, c)| has_any_timestamp(c)) {
         return Ok(());
     }

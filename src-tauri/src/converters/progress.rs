@@ -52,10 +52,28 @@ impl ProgressEmitter {
         }
     }
 
+    /// Inject the prefix AFTER the leading emoji (if any). ProgressPanel's
+    /// `iconFor` matches with `^⏳`/`^✂️`/etc. anchored at position 0; if
+    /// we just prepend the batch tag (`(2/3) ⏳ ...`) the emoji is no
+    /// longer at position 0 and every batch row loses its icon. Splitting
+    /// at the first whitespace after the emoji keeps the icon picker
+    /// happy while still surfacing the batch index.
     fn prefix_step(&self, step: String) -> String {
-        match &self.prefix {
-            Some(p) => format!("{} {}", p, step),
-            None => step,
+        let prefix = match &self.prefix {
+            Some(p) => p,
+            None => return step,
+        };
+        // Find the first space — separates the (typically emoji) head
+        // from the body. If there's no space (e.g. single-word step),
+        // fall back to leading-prefix.
+        match step.find(' ') {
+            Some(i) => {
+                let (head, tail) = step.split_at(i);
+                // tail begins with the space, so concatenating gives
+                // "<emoji> <prefix><space><body>".
+                format!("{} {}{}", head, prefix, tail)
+            }
+            None => format!("{} {}", prefix, step),
         }
     }
 

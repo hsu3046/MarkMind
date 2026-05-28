@@ -348,20 +348,26 @@ fn extract_json_block(raw: &str) -> Option<&str> {
     }
 }
 
-/// rename 맵 적용 — commands.rs::rename_speakers 와 같은 3-tier 패턴.
-/// (Tier 4 `**LABEL**:` 는 메타 라인 false-positive 위험으로 제외 — 본 모듈
-/// 에서는 추출 단계에서 이미 걸러져 실제로는 도달할 일이 없지만, 안전
-/// 차원에서도 같은 set 유지.)
+/// rename 맵 적용. **Defense-in-depth** — `dedup_speakers` 가 timestamp gate 로
+/// metadata-only 문서를 이미 걸러내지만, apply_rename 의 패턴 자체도
+/// timestamp 를 *필수* 로 요구하도록 좁혀 두면, 텍스트 안에 STT 본문 +
+/// 메타 라인이 섞여 있는 hybrid 케이스에서도 `**일시:**` 같은 라인이
+/// rename 대상으로 잘못 잡히는 일이 원천 차단된다. 모든 Tier 가
+/// `[HH:MM:SS]` 가 있는 라인에만 매치되므로, no-timestamp `**LABEL:**` 행
+/// (메타) 은 어떤 rename 매핑이 있어도 손대지 않는다.
 fn apply_rename(text: &str, rename: &HashMap<String, String>) -> String {
     let header_patterns = [
+        // 1: **[time] LABEL:**   (timestamp REQUIRED in this module)
         Regex::new(
-            r"^(?P<prefix>\*\*(?:\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)?)(?P<label>[^\*\n:]{1,40}?)(?P<suffix>:\*\*)\s*(?P<rest>.*)$",
+            r"^(?P<prefix>\*\*\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)(?P<label>[^\*\n:]{1,40}?)(?P<suffix>:\*\*)\s*(?P<rest>.*)$",
         )
         .expect("regex compile"),
+        // 2: [time] **LABEL**:
         Regex::new(
             r"^(?P<prefix>\[\d{1,2}:\d{2}(?::\d{2})?\]\s+\*\*)(?P<label>[^\*\n:]{1,40}?)(?P<suffix>\*\*\s*:)\s+(?P<rest>\S.*)$",
         )
         .expect("regex compile"),
+        // 3: [time] LABEL:
         Regex::new(
             r"^(?P<prefix>\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)(?P<label>[^\*\n:]{1,40}?)(?P<suffix>:)\s+(?P<rest>\S.*)$",
         )
