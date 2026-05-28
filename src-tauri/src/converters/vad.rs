@@ -397,15 +397,25 @@ pub async fn trim_silence(
         )),
     );
 
-    // 3) ffmpeg concat demuxer 로 trimmed mp3 생성
-    emitter.emit("✂️ 무음 잘라낸 파일 만드는 중...", None);
+    // 3) ffmpeg concat demuxer 로 trimmed mp3 생성.
+    //
+    // 이 단계는 입력 길이에 비례해 수십 초 ~ 분 단위로 길어질 수 있어서
+    // 사용자가 "멈춘 거 아닌가?" 의심하기 쉽다. ffmpeg `.output()` 은
+    // blocking 하나의 await 라 그 동안 emit 이 한 번도 안 나가는 게 원인.
+    // 해결: ffmpeg 를 spawn 한 뒤 별도 tokio task 가 2초마다 heartbeat
+    // 진행 메시지(⏳ 아이콘 + 경과 초)를 쏘게 해서 ProgressPanel 에
+    // 살아 움직이는 신호를 만든다.
+    emitter.emit(
+        "✂️ 무음 잘라낸 파일 만드는 중...",
+        Some(format!("{}개 segment 합치기", segments.len())),
+    );
     let t_trim = std::time::Instant::now();
     let trimmed_path = work_dir.join("trimmed.mp3");
     let list_script = build_concat_demuxer_list(input, &segments);
     let list_path = work_dir.join("concat.txt");
     tokio::fs::write(&list_path, &list_script).await?;
 
-    let output = Command::new(ffmpeg_path()?)
+    let mut child = Command::new(ffmpeg_path()?)
         .args([
             "-y",
             "-f",
@@ -422,9 +432,40 @@ pub async fn trim_silence(
             "error",
             trimmed_path.to_str().unwrap(),
         ])
-        .output()
-        .await
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| ConverterError::Vad(format!("ffmpeg concat spawn: {}", e)))?;
+
+    // Heartbeat task — emits an elapsed-time message every 2 seconds so the
+    // UI keeps showing fresh activity while ffmpeg processes the concat.
+    let hb_emitter = emitter.clone();
+    let hb_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let hb_done = hb_token.clone();
+    let hb_handle = tokio::spawn(async move {
+        let start = std::time::Instant::now();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            if hb_done.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            let secs = start.elapsed().as_secs();
+            hb_emitter.emit(
+                format!("⏳ 무음 잘라내는 중... ({}초 경과)", secs),
+                None,
+            );
+        }
+    });
+
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| ConverterError::Vad(format!("ffmpeg concat wait: {}", e)))?;
+    // Stop heartbeat as soon as ffmpeg exits. abort() is fine even if the
+    // task already returned via the flag — it's a no-op.
+    hb_token.store(true, std::sync::atomic::Ordering::Relaxed);
+    hb_handle.abort();
+
     if !output.status.success() {
         return Err(ConverterError::Vad(format!(
             "ffmpeg concat 실패 (exit {}): {}",
