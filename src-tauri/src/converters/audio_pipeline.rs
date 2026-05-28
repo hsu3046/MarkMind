@@ -15,6 +15,7 @@ use super::keychain::{get_key, Provider};
 use super::llm::gemini;
 use super::progress::{fmt_duration, ProgressEmitter};
 use super::templates::{build_evidence_markdown, EvidenceMeta};
+use super::speaker_dedup::dedup_speakers;
 use super::vad::{cleanup_trimmed, trim_silence, trimmed_to_original, SegmentMap, TrimResult, VadOptions};
 use super::{conversions_dir, CostSummary, EvidenceType, UsageInfo, MODEL_AUDIO};
 use base64::Engine;
@@ -42,6 +43,10 @@ const BASE_TRANSCRIBE_PROMPT: &str = "이 오디오 파일의 내용을 한국�
 4. 불확실한 부분은 (불명확) 표시를 해주세요.
 5. 위 형식의 녹취록만 출력하세요. 추가 설명은 불필요합니다.";
 
+fn default_dedup_speakers() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioJobOptions {
     pub file_path: String,
@@ -49,8 +54,21 @@ pub struct AudioJobOptions {
     pub original_name: Option<String>,
     #[serde(default, rename = "trimSilence")]
     pub trim_silence: bool,
+    /// 전사 끝난 뒤 LLM에 "이 라벨들 중 같은 사람으로 보이는 그룹이 있나"
+    /// 라고 물어보고 alias → primary 통합. 단일 모델 STT가 같은 사람을
+    /// 화자A/화자C로 흩어 놓는 케이스를 후처리로 보정. 기본 ON.
+    #[serde(default = "default_dedup_speakers", rename = "dedupSpeakers")]
+    pub dedup_speakers: bool,
     #[serde(rename = "outputDir", skip_serializing_if = "Option::is_none")]
     pub output_dir: Option<String>,
+    /// 1-based index of this file in the user's batch. `None` for single-file
+    /// jobs. When both `batch_index` and `batch_total` are set, every
+    /// progress message gets a `(i/N)` prefix so the user can tell which
+    /// file of the queue is currently being processed.
+    #[serde(default, rename = "batchIndex", skip_serializing_if = "Option::is_none")]
+    pub batch_index: Option<usize>,
+    #[serde(default, rename = "batchTotal", skip_serializing_if = "Option::is_none")]
+    pub batch_total: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +85,18 @@ pub async fn run(
     opts: AudioJobOptions,
     app: &tauri::AppHandle,
 ) -> ConverterResult<AudioJobResult> {
+    // When the caller passed a batch index + total, wrap the emitter with a
+    // "(i/N)" prefix so every progress message tells the user which file in
+    // the queue is currently running. Single-file jobs stay untouched.
+    let batch_emitter;
+    let emitter: &ProgressEmitter = match (opts.batch_index, opts.batch_total) {
+        (Some(i), Some(n)) if n > 1 => {
+            batch_emitter = emitter.with_prefix(format!("({}/{})", i, n));
+            &batch_emitter
+        }
+        _ => emitter,
+    };
+
     let api_key = get_key(Provider::Gemini)?
         .ok_or(ConverterError::MissingApiKey("Gemini"))?;
     let file_path = Path::new(&opts.file_path).to_path_buf();
@@ -117,6 +147,7 @@ pub async fn run(
         recorded_at,
         trim.as_ref(),
         opts.output_dir,
+        opts.dedup_speakers,
     )
     .await;
 
@@ -125,6 +156,37 @@ pub async fn run(
     }
 
     return result;
+}
+
+/// Optional LLM post-processing: detect mis-split speakers across chunks +
+/// merge their labels. Gated by `enabled` so the user can turn it off.
+/// On any internal failure we keep the original text and surface a warning
+/// — never break the transcript over a dedup hiccup.
+async fn maybe_dedup_speakers(
+    enabled: bool,
+    api_key: &str,
+    transcript: String,
+    emitter: &ProgressEmitter,
+    usages: &mut Vec<UsageInfo>,
+) -> String {
+    if !enabled {
+        return transcript;
+    }
+    match dedup_speakers(&transcript, api_key, emitter).await {
+        Ok(outcome) => {
+            if let Some(u) = outcome.usage {
+                usages.push(u);
+            }
+            outcome.text
+        }
+        Err(e) => {
+            emitter.emit(
+                "⚠️ 화자 라벨 검토 실패 — 원본 유지",
+                Some(e.to_string()),
+            );
+            transcript
+        }
+    }
 }
 
 async fn run_pipeline_core(
@@ -136,6 +198,7 @@ async fn run_pipeline_core(
     recorded_at: Option<String>,
     trim: Option<&TrimResult>,
     output_dir: Option<String>,
+    dedup_speakers_enabled: bool,
 ) -> ConverterResult<AudioJobResult> {
     let file_path = work_path.to_path_buf();
     let segment_map: Option<Vec<SegmentMap>> = trim.map(|t| t.segment_map.clone());
@@ -152,6 +215,7 @@ async fn run_pipeline_core(
                 recorded_at,
                 output_dir,
                 segment_map.as_deref(),
+                dedup_speakers_enabled,
             )
             .await;
         }
@@ -176,6 +240,7 @@ async fn run_pipeline_core(
             recorded_at,
             output_dir,
             segment_map.as_deref(),
+            dedup_speakers_enabled,
         )
         .await;
     }
@@ -219,6 +284,17 @@ async fn run_pipeline_core(
         merged = map_timestamps_to_original(&merged, map);
     }
 
+    // 청크 모드는 화자 분리 오류 가장 잦은 케이스 (chunk 경계마다 다시 화자A
+    // 부터 매기는 경향) — dedup 후처리 효과가 가장 큼.
+    merged = maybe_dedup_speakers(
+        dedup_speakers_enabled,
+        api_key,
+        merged,
+        emitter,
+        &mut usages,
+    )
+    .await;
+
     save_audio_results(
         emitter,
         merged,
@@ -246,6 +322,7 @@ async fn run_inline_path(
     recorded_at: Option<String>,
     output_dir: Option<String>,
     segment_map: Option<&[SegmentMap]>,
+    dedup_speakers_enabled: bool,
 ) -> ConverterResult<AudioJobResult> {
     let start = std::time::Instant::now();
     let buffer = tokio::fs::read(file_path).await?;
@@ -274,7 +351,18 @@ async fn run_inline_path(
         result.text
     };
 
-    let usages = vec![result.usage];
+    let mut usages = vec![result.usage];
+    // Inline 모드는 단일 LLM 호출이라 chunk-경계 분리 오류는 없지만, LLM이
+    // 같은 사람을 다른 라벨로 번갈아 부여하는 케이스는 inline 에서도 발생.
+    // dedup 비용이 거의 없으니 동일하게 적용.
+    let body = maybe_dedup_speakers(
+        dedup_speakers_enabled,
+        api_key,
+        body,
+        emitter,
+        &mut usages,
+    )
+    .await;
     save_audio_results(
         emitter,
         body,

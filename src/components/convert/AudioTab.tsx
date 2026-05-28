@@ -168,6 +168,12 @@ export function AudioTab({ converter, droppedFile, onConsumeDropped, onOpenResul
                 file_path: f.path,
                 originalName: f.name,
                 trimSilence,
+                // Tell the Rust pipeline which slot of the batch this is so
+                // every progress emit reads "(i/N) …" — without this the
+                // user can't distinguish "still on file 1" from "started 2"
+                // during a long silence-cut.
+                batchIndex: i + 1,
+                batchTotal: files.length,
             });
             if (!r) {
                 setBatchError(`${i + 1}/${files.length} "${f.name}" 처리 실패. 중단합니다.`);
@@ -269,7 +275,7 @@ export function AudioTab({ converter, droppedFile, onConsumeDropped, onOpenResul
                             <Plus size={14} /> 파일 추가
                         </button>
                         <span className="audio-file-summary">
-                            {files.length}개 파일 (위 → 아래 순서대로 처리 후 합쳐서 하나로 저장)
+                            {files.length}개 파일 · 정렬 순서로 변환
                         </span>
                     </div>
                 </div>

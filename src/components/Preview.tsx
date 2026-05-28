@@ -420,7 +420,13 @@ function RichEditor({
                 tightLists: true,
                 bulletListMarker: '-',
                 linkify: false, // 자동 URL → 링크 변환 끄기 (사용자 요청)
-                breaks: false,
+                // breaks=true: 본문에서 `\n` 한 개도 `<br>` 으로 렌더. CommonMark
+                // 기본은 false 라서 회의록 머리말처럼 빈 줄 없이 여러 라인을
+                // 적어둔 케이스 (`**일시:** ...\n**장소:** ...`) 가 한 단락으로
+                // 합쳐져 보이는 문제가 있었음. GFM/Notion/Slack 등 사용자가
+                // 익숙한 마크다운 환경의 다수가 이미 breaks=true 동작이라
+                // 직관에도 맞음.
+                breaks: true,
                 transformPastedText: true,
                 transformCopiedText: true,
             }),

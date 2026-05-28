@@ -88,20 +88,52 @@ pub fn get_conversions_dir() -> String {
 
 // ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────
 
+/// Speaker-line patterns we accept, in priority order. LLM output isn't
+/// 100% consistent — same prompt can return any of:
+///   1. `**[00:00:12] 화자A:**`        ← canonical bold envelope
+///   2. `**화자A:**`                   ← clean version (no timestamp)
+///   3. `[00:00:12] **화자A**:`        ← bold around label only
+///   4. `[00:00:12] 화자A:`            ← no bold at all
+///   5. `**화자A**:`                   ← bold around label, no timestamp
+///
+/// `extract_last_speaker_lines` already runs a strict+loose fallback for the
+/// chunk-context use case. The extractor/renamer used to support only #1+#2
+/// which silently dropped any document the model returned in formats #3-#5.
+/// Symptom: "감지된 화자 라벨이 없습니다" on outputs that did contain
+/// speakers.
+///
+/// To control false positives in the no-bold paths we anchor each pattern at
+/// line start AND require either a timestamp prefix or a bold marker — so
+/// arbitrary "참고: ..." / "Title: ..." mid-document doesn't get misread
+/// as a speaker.
+fn speaker_line_patterns() -> Result<Vec<regex::Regex>, regex::Error> {
+    Ok(vec![
+        // 1: **[time] LABEL:**   /   **LABEL:**          (full bold envelope)
+        regex::Regex::new(
+            r"(?m)^\*\*(?:\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)?([^\*\n:]{1,40}?):\*\*",
+        )?,
+        // 2: [time] **LABEL**:   (timestamp + label-only bold, colon outside)
+        regex::Regex::new(
+            r"(?m)^\[\d{1,2}:\d{2}(?::\d{2})?\]\s+\*\*([^\*\n:]{1,40}?)\*\*\s*:\s",
+        )?,
+        // 3: [time] LABEL:       (timestamp anchored, no bold)
+        regex::Regex::new(
+            r"(?m)^\[\d{1,2}:\d{2}(?::\d{2})?\]\s+([^\*\n:]{1,40}?):\s+\S",
+        )?,
+        // 4: **LABEL**:          (bold around label, no timestamp — clean variant)
+        regex::Regex::new(
+            r"(?m)^\*\*([^\*\n:]{1,40}?)\*\*\s*:\s",
+        )?,
+    ])
+}
+
 /// 마크다운 본문에서 화자 라벨 추출.
-/// 매칭 패턴 (우선순위):
-///   `**[HH:MM:SS] 화자A:**` / `**[MM:SS] Speaker B:**` / `[00:12] 김철수:` 등.
-/// 발견된 모든 고유 라벨을 등장 순서대로 반환.
+/// 4단계 fallback 패턴(see [[speaker_line_patterns]]) 으로 LLM 출력 변형을
+/// 모두 흡수. 발견된 모든 고유 라벨을 등장 순서대로 반환.
 #[tauri::command]
 pub fn extract_speakers(paths: Vec<String>) -> Result<Vec<String>, String> {
     use std::collections::BTreeSet;
-    // bold 마커 필수 + timestamp optional — timestamped 와 clean 두 형식 모두 매치
-    //   timestamped: `**[00:05:00] 화자A:**`
-    //   clean:       `**화자A:**`
-    let re = regex::Regex::new(
-        r"\*\*(?:\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)?([^\*\n:]+?):\*\*",
-    )
-    .map_err(|e| e.to_string())?;
+    let patterns = speaker_line_patterns().map_err(|e| e.to_string())?;
 
     let mut order: Vec<String> = Vec::new();
     let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -109,14 +141,16 @@ pub fn extract_speakers(paths: Vec<String>) -> Result<Vec<String>, String> {
         let Ok(content) = std::fs::read_to_string(path) else {
             continue;
         };
-        for cap in re.captures_iter(&content) {
-            if let Some(m) = cap.get(1) {
-                let label = m.as_str().trim().to_string();
-                if label.is_empty() {
-                    continue;
-                }
-                if seen.insert(label.clone()) {
-                    order.push(label);
+        for re in &patterns {
+            for cap in re.captures_iter(&content) {
+                if let Some(m) = cap.get(1) {
+                    let label = m.as_str().trim().to_string();
+                    if label.is_empty() {
+                        continue;
+                    }
+                    if seen.insert(label.clone()) {
+                        order.push(label);
+                    }
                 }
             }
         }
@@ -227,48 +261,92 @@ pub fn rename_speakers(
         return Ok(());
     }
 
+    // Each tier captures prefix / label / suffix / rest separately so the
+    // rebuilt header keeps its original markup. Order matches
+    // [[speaker_line_patterns]] — strictest first.
+    let header_patterns = [
+        // 1: **[time] LABEL:**   or  **LABEL:**
+        regex::Regex::new(
+            r"^(?P<prefix>\*\*(?:\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)?)(?P<label>[^\*\n:]{1,40}?)(?P<suffix>:\*\*)\s*(?P<rest>.*)$",
+        )
+        .map_err(|e| e.to_string())?,
+        // 2: [time] **LABEL**:
+        regex::Regex::new(
+            r"^(?P<prefix>\[\d{1,2}:\d{2}(?::\d{2})?\]\s+\*\*)(?P<label>[^\*\n:]{1,40}?)(?P<suffix>\*\*\s*:)\s+(?P<rest>\S.*)$",
+        )
+        .map_err(|e| e.to_string())?,
+        // 3: [time] LABEL:
+        regex::Regex::new(
+            r"^(?P<prefix>\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)(?P<label>[^\*\n:]{1,40}?)(?P<suffix>:)\s+(?P<rest>\S.*)$",
+        )
+        .map_err(|e| e.to_string())?,
+        // 4: **LABEL**:
+        regex::Regex::new(
+            r"^(?P<prefix>\*\*)(?P<label>[^\*\n:]{1,40}?)(?P<suffix>\*\*\s*:)\s*(?P<rest>.*)$",
+        )
+        .map_err(|e| e.to_string())?,
+    ];
+
+    // any_header_matches checks if a line begins with ANY of the four tiers.
+    // Defined inline (no closure) to avoid the lifetime gymnastics that come
+    // from trying to return a `regex::Captures<'_>` from a closure — the
+    // captures borrow from the input string, and proving that to the
+    // checker for a Fn(&str) -> Option<Captures<'?>> is more verbose than
+    // just inlining the loop at the call site.
+    let any_header_matches = |s: &str| -> bool {
+        header_patterns.iter().any(|p| p.is_match(s))
+    };
+
     for path in &paths {
         let original = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
         let mut out = String::with_capacity(original.len());
-
-        // 라벨 헤더 정규식 — bold 마커 필수, timestamp optional
-        //   timestamped: `**[00:05:00] 화자A:**` + 본문
-        //   clean:       `**화자A:**` + 본문
-        let header_re = regex::Regex::new(
-            r"^(?P<prefix>\*\*(?:\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)?)(?P<label>[^\*\n:]+?)(?P<suffix>:\*\*)\s*(?P<rest>.*)$",
-        )
-        .map_err(|e| e.to_string())?;
 
         let lines: Vec<&str> = original.split_inclusive('\n').collect();
         let mut i = 0;
         while i < lines.len() {
             let line = lines[i];
-            // 라인 끝 \n 제외하고 매칭
             let trimmed_line = line.trim_end_matches('\n');
-            if let Some(caps) = header_re.captures(trimmed_line) {
-                let label = caps.name("label").map(|m| m.as_str().trim()).unwrap_or("");
-                if delete.iter().any(|d| d == label) {
+
+            // Walk tiers in priority order; first match wins. We re-do this
+            // small loop per line rather than via a closure (see comment on
+            // any_header_matches) because each `captures()` borrow lives
+            // only as long as `trimmed_line`.
+            let mut matched_label: Option<String> = None;
+            let mut matched_prefix = "";
+            let mut matched_suffix = "";
+            let mut matched_rest = "";
+            for p in &header_patterns {
+                if let Some(caps) = p.captures(trimmed_line) {
+                    matched_label = caps
+                        .name("label")
+                        .map(|m| m.as_str().trim().to_string());
+                    matched_prefix = caps.name("prefix").map(|m| m.as_str()).unwrap_or("");
+                    matched_suffix = caps.name("suffix").map(|m| m.as_str()).unwrap_or("");
+                    matched_rest = caps.name("rest").map(|m| m.as_str()).unwrap_or("");
+                    break;
+                }
+            }
+
+            if let Some(label) = matched_label {
+                if delete.iter().any(|d| d == &label) {
                     // 이 화자 발화 통째로 제거 — 다음 화자 헤더 만날 때까지 skip
                     i += 1;
                     while i < lines.len() {
                         let next = lines[i].trim_end_matches('\n');
-                        if header_re.is_match(next) {
+                        if any_header_matches(next) {
                             break;
                         }
                         i += 1;
                     }
                     continue;
                 }
-                if let Some(new_label) = rename.get(label) {
-                    let prefix = caps.name("prefix").map(|m| m.as_str()).unwrap_or("");
-                    let suffix = caps.name("suffix").map(|m| m.as_str()).unwrap_or("");
-                    let rest = caps.name("rest").map(|m| m.as_str()).unwrap_or("");
-                    out.push_str(prefix);
+                if let Some(new_label) = rename.get(&label) {
+                    out.push_str(matched_prefix);
                     out.push_str(new_label);
-                    out.push_str(suffix);
-                    if !rest.is_empty() {
+                    out.push_str(matched_suffix);
+                    if !matched_rest.is_empty() {
                         out.push(' ');
-                        out.push_str(rest);
+                        out.push_str(matched_rest);
                     }
                     if line.ends_with('\n') {
                         out.push('\n');
@@ -277,6 +355,7 @@ pub fn rename_speakers(
                     continue;
                 }
             }
+
             out.push_str(line);
             i += 1;
         }

@@ -34,7 +34,23 @@ export interface AudioJobOptions {
     file_path: string;
     originalName?: string;
     trimSilence?: boolean;
+    /**
+     * Run an LLM post-processing pass that detects mis-split speaker labels
+     * (same person tagged 화자A in one chunk, 화자C in another) and merges
+     * them. Defaults to true on the Rust side — pass false to skip the
+     * extra LLM call when speaker labels are known-correct or the user
+     * prefers strict raw output.
+     */
+    dedupSpeakers?: boolean;
     outputDir?: string;
+    /**
+     * 1-based index of this file in a multi-file batch + total file count.
+     * When both are set on a multi-file job, the Rust pipeline prefixes
+     * every progress message with `(i/N)` so the user sees which file is
+     * being processed in a long queue.
+     */
+    batchIndex?: number;
+    batchTotal?: number;
 }
 
 export interface AudioJobResult {

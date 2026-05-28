@@ -25,21 +25,44 @@ pub struct ProgressStep {
 pub struct ProgressEmitter {
     app: AppHandle,
     job_id: String,
+    /// Optional fixed prefix prepended to every emitted `step`. Used by the
+    /// batch path (audio multi-file) so messages read "(2/3) ✂️ 무음 ...".
+    /// Wrapped emitters share the same job_id + app so progress still goes
+    /// to the same listener — only the step text differs.
+    prefix: Option<String>,
 }
 
 impl ProgressEmitter {
     pub fn new(app: AppHandle, job_id: String) -> Self {
-        Self { app, job_id }
+        Self { app, job_id, prefix: None }
     }
 
     pub fn job_id(&self) -> &str {
         &self.job_id
     }
 
+    /// Return a clone of this emitter with `prefix` prepended to every
+    /// future `step` message. Existing call sites stay untouched — they
+    /// emit their natural text and the prefix is applied here.
+    pub fn with_prefix(&self, prefix: impl Into<String>) -> Self {
+        Self {
+            app: self.app.clone(),
+            job_id: self.job_id.clone(),
+            prefix: Some(prefix.into()),
+        }
+    }
+
+    fn prefix_step(&self, step: String) -> String {
+        match &self.prefix {
+            Some(p) => format!("{} {}", p, step),
+            None => step,
+        }
+    }
+
     pub fn emit(&self, step: impl Into<String>, detail: Option<String>) {
         let event = ProgressStep {
             job_id: self.job_id.clone(),
-            step: step.into(),
+            step: self.prefix_step(step.into()),
             detail,
             progress: None,
         };
@@ -50,7 +73,7 @@ impl ProgressEmitter {
     pub fn emit_with_progress(&self, step: impl Into<String>, detail: Option<String>, progress: f32) {
         let event = ProgressStep {
             job_id: self.job_id.clone(),
-            step: step.into(),
+            step: self.prefix_step(step.into()),
             detail,
             progress: Some(progress),
         };
