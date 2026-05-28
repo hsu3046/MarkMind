@@ -23,6 +23,16 @@ use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
 
+/// 파일/문자열에 STT timestamp 가 한 번이라도 나오는지. STT 결과면 항상 true,
+/// 메타 / 손편집 마크다운은 false. (commands.rs::has_any_timestamp 와 동일.)
+fn has_any_timestamp(text: &str) -> bool {
+    static TS_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let re = TS_RE.get_or_init(|| {
+        Regex::new(r"\[\d{1,2}:\d{2}(?::\d{2})?\]").expect("regex compile")
+    });
+    re.is_match(text)
+}
+
 /// 후처리 dedup 에서 호출할 모델. 정확한 판단보다 latency / cost 우선이라
 /// `gemini-3.1-flash-lite` 사용 (이미 audio MODEL_AUDIO 와 동일).
 const DEDUP_MODEL: &str = "gemini-3.1-flash-lite";
@@ -88,6 +98,18 @@ pub async fn dedup_speakers(
     api_key: &str,
     emitter: &ProgressEmitter,
 ) -> ConverterResult<DedupOutcome> {
+    // Structural sanity gate — STT output always carries [HH:MM:SS]
+    // markers. If somehow this path is invoked on a metadata-only doc
+    // (notes / hand-edited), the LLM dedup prompt would receive header
+    // labels (`**일시:**`, `**참석자:**`) as speaker candidates and could
+    // collapse them into one another. Bail before any LLM call.
+    if !has_any_timestamp(transcript) {
+        return Ok(DedupOutcome {
+            text: transcript.to_string(),
+            usage: None,
+            merged_count: 0,
+        });
+    }
     let samples = extract_speaker_samples(transcript);
     if samples.len() < 3 {
         return Ok(DedupOutcome {
@@ -430,5 +452,28 @@ mod tests {
         let labels: Vec<&str> = s.iter().map(|s| s.label.as_str()).collect();
         assert_eq!(labels, vec!["화자A", "화자B"]);
         assert!(!labels.iter().any(|l| *l == "일시" || *l == "참석자" || *l == "장소"));
+    }
+
+    /// Codex follow-up P2 — Tier 1 `**LABEL:**` (colon INSIDE bold) is the
+    /// exact shape of common meeting-notes metadata (`**일시:**`,
+    /// `**참석자:**`). The user's screenshot had this verbatim. Tier 1
+    /// can't be dropped without losing canonical STT recall, so we gate
+    /// at the document level: if a doc has zero timestamps it's not an
+    /// STT transcript, skip dedup entirely.
+    #[test]
+    fn timestamp_gate_blocks_metadata_only_doc() {
+        // No timestamps → has_any_timestamp returns false → caller path
+        // should bail before extract_speaker_samples ever runs. Test the
+        // gate directly to keep the contract explicit.
+        let metadata_only = "**일시:** 2026년 5월 28일 (목)\n**장소:** 카페\n**참석자:** 승우, 재문\n**결정사항:** 다음 주 확정";
+        assert!(!has_any_timestamp(metadata_only));
+
+        let stt_like = "**[00:00:05] 화자A:** 안녕하세요";
+        assert!(has_any_timestamp(stt_like));
+
+        // Even if extract_speaker_samples is called on the metadata doc
+        // (defense-in-depth — caller's gate already short-circuits),
+        // Tier 1 will still match "일시"/"참석자". That's fine because
+        // the caller path bails before reaching here.
     }
 }

@@ -130,9 +130,27 @@ fn speaker_line_patterns() -> Result<Vec<regex::Regex>, regex::Error> {
     ])
 }
 
+/// True iff the document contains at least one `[HH:MM:SS]` / `[MM:SS]`
+/// timestamp anywhere. STT output ALWAYS contains them; meeting notes and
+/// hand-authored markdown almost never do. Used as a structural gate
+/// before running speaker extraction — without this, Tier 1's
+/// `**LABEL:**` shape would happily collect metadata headers like
+/// `**일시:**`, `**참석자:**`, `**결정사항:**` as fake speakers.
+fn has_any_timestamp(text: &str) -> bool {
+    static TS_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = TS_RE.get_or_init(|| {
+        regex::Regex::new(r"\[\d{1,2}:\d{2}(?::\d{2})?\]").expect("regex compile")
+    });
+    re.is_match(text)
+}
+
 /// 마크다운 본문에서 화자 라벨 추출.
 /// 4단계 fallback 패턴(see [[speaker_line_patterns]]) 으로 LLM 출력 변형을
 /// 모두 흡수. 발견된 모든 고유 라벨을 등장 순서대로 반환.
+///
+/// **Structural gate** — 파일에 timestamp 가 한 번도 없으면 STT 결과가
+/// 아니라 판단하고 그 파일은 건너뜀. 회의록 메타 헤더 (`**일시:**`,
+/// `**참석자:**`) 가 가짜 화자로 잡히는 사고를 차단.
 #[tauri::command]
 pub fn extract_speakers(paths: Vec<String>) -> Result<Vec<String>, String> {
     use std::collections::BTreeSet;
@@ -144,6 +162,9 @@ pub fn extract_speakers(paths: Vec<String>) -> Result<Vec<String>, String> {
         let Ok(content) = std::fs::read_to_string(path) else {
             continue;
         };
+        if !has_any_timestamp(&content) {
+            continue;
+        }
         for re in &patterns {
             for cap in re.captures_iter(&content) {
                 if let Some(m) = cap.get(1) {
@@ -301,6 +322,13 @@ pub fn rename_speakers(
 
     for path in &paths {
         let original = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        // Skip non-STT files defensively — extract_speakers already gates,
+        // but a stale paths reference (e.g. user opened SpeakerEditor on
+        // a hand-edited markdown) shouldn't be able to silently delete
+        // content by matching `**Label:**` metadata headers.
+        if !has_any_timestamp(&original) {
+            continue;
+        }
         let mut out = String::with_capacity(original.len());
 
         let lines: Vec<&str> = original.split_inclusive('\n').collect();
