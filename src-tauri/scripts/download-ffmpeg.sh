@@ -11,10 +11,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# 현재 시스템의 target triple 자동 감지 (rustc 사용)
-TARGET="$(rustc -vV | sed -n 's/^host: //p')"
+# Target triple — `FFMPEG_TARGET` 환경변수가 있으면 그걸 우선시 (CI matrix
+# 가 빌드 대상별로 정확한 target 지정 가능). 미지정 시 host triple 자동
+# 감지 (로컬 개발자 경험 유지).
+TARGET="${FFMPEG_TARGET:-}"
 if [ -z "$TARGET" ]; then
-    echo "✗ rustc target triple 감지 실패" >&2
+    TARGET="$(rustc -vV | sed -n 's/^host: //p')"
+fi
+if [ -z "$TARGET" ]; then
+    echo "✗ target triple 감지 실패 (FFMPEG_TARGET 환경변수로 지정 가능)" >&2
     exit 1
 fi
 

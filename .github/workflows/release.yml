@@ -15,8 +15,10 @@ jobs:
         include:
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
+            ffmpeg_target: 'aarch64-apple-darwin'
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
+            ffmpeg_target: 'x86_64-apple-darwin'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -40,6 +42,16 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      # Tauri 가 bundle 시 `binaries/ffmpeg-<target>` / `ffprobe-<target>` 을
+      # 요구한다. 로컬 `npm run tauri:build` 는 setup:ffmpeg → tauri build
+      # 순서로 chained 되어있지만 tauri-action 은 그 chain 을 건너뛰고 곧장
+      # `tauri build` 만 호출하므로 여기서 명시적으로 한 번 더 받아둔다.
+      # matrix.ffmpeg_target 으로 host 와 다른 cross-target 도 정확히 지정.
+      - name: Download bundled ffmpeg/ffprobe
+        env:
+          FFMPEG_TARGET: ${{ matrix.ffmpeg_target }}
+        run: npm run setup:ffmpeg
 
       - uses: tauri-apps/tauri-action@v0
         env:
