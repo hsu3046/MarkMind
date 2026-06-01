@@ -10,6 +10,7 @@
 
 pub mod audio_pipeline;
 pub mod audio_splitter;
+pub mod diarize;
 pub mod commands;
 pub mod error;
 pub mod keychain;

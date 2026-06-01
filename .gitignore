@@ -37,3 +37,6 @@ src-tauri/gen/
 
 # 빌드 시 download-ffmpeg.sh 가 채우는 sidecar binary (각 ~76MB, repo 에 commit X)
 src-tauri/binaries/
+# 빌드 시 download-diarize-models.sh 가 채우는 ONNX 모델 (~34MB, repo 에 commit X)
+src-tauri/resources/segmentation-3.0.onnx
+src-tauri/resources/wespeaker_en_voxceleb_CAM++.onnx

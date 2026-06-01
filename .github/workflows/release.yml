@@ -53,6 +53,14 @@ jobs:
           FFMPEG_TARGET: ${{ matrix.ffmpeg_target }}
         run: npm run setup:ffmpeg
 
+      # Speaker diarization ONNX 모델 (segmentation-3.0, wespeaker CAM++).
+      # tauri.conf.json 의 bundle.resources 에 등록되어 빌드 타임에 file 존재
+      # 필수 — 누락 시 .app 에 모델 없이 ship 되어 화자 분리 100% fail.
+      # setup:ffmpeg 와 동일하게 tauri-action 이 setup:all chain 우회하므로
+      # 여기서 명시 다운로드.
+      - name: Download speaker diarization models
+        run: npm run setup:diarize
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

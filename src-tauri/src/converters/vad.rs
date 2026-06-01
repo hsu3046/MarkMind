@@ -268,7 +268,8 @@ fn post_process(probs: &[f32], cfg: PostProcessConfig) -> Vec<SpeechSegment> {
 // ─── trim_silence — doc-converter trim-silence.ts:trimSilence 1:1 ───
 
 /// ffmpeg 로 input → 16kHz mono PCM (Int16Array 동치)
-async fn decode_to_16k_pcm(input: &Path) -> ConverterResult<Vec<i16>> {
+/// pub — diarize 모듈도 같은 PCM 형식 (16kHz mono i16) 사용
+pub async fn decode_to_16k_pcm(input: &Path) -> ConverterResult<Vec<i16>> {
     let output = Command::new(ffmpeg_path()?)
         .args([
             "-i",
