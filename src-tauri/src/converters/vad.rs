@@ -437,22 +437,29 @@ pub async fn trim_silence(
         .spawn()
         .map_err(|e| ConverterError::Vad(format!("ffmpeg concat spawn: {}", e)))?;
 
-    // Heartbeat task — emits an elapsed-time message every 2 seconds so the
-    // UI keeps showing fresh activity while ffmpeg processes the concat.
+    // Heartbeat task — 같은 step_id 로 in-place 갱신 (ProgressPanel 이 row replace).
+    // 1초마다 progress 추정 (elapsed / estimated, estimated = total_speech 의 1x 가정).
+    // 입력 trim 후 길이로 concat 재인코딩 속도가 ~real-time 1x 라는 경험적 추정.
     let hb_emitter = emitter.clone();
     let hb_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let hb_done = hb_token.clone();
+    let estimated_total = total_speech.max(1.0);
     let hb_handle = tokio::spawn(async move {
         let start = std::time::Instant::now();
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             if hb_done.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
             }
-            let secs = start.elapsed().as_secs();
-            hb_emitter.emit(
-                format!("⏳ 무음 잘라내는 중... ({}초 경과)", secs),
-                None,
+            let secs = start.elapsed().as_secs_f64();
+            // 95% 까지만 progress 표시 — 실제 완료 emit 이 100% 찍을 때까지 cap.
+            let ratio = (secs / estimated_total).min(0.95) as f32;
+            let pct = (ratio * 100.0).round() as u32;
+            hb_emitter.emit_update(
+                "vad-trim",
+                format!("⏳ 무음 잘라내는 중... ({}%)", pct),
+                Some(format!("{:.0}초 경과", secs)),
+                Some(ratio),
             );
         }
     });

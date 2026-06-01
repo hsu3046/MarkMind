@@ -64,11 +64,22 @@ export function ProgressPanel({ state }: ProgressPanelProps) {
                     .map((s, i) => {
                         const { icon, text } = iconFor(s.step);
                         return (
-                            <li key={state.steps.length - 1 - i} className="convert-progress-step">
+                            <li
+                                key={s.stepId ?? `${state.steps.length - 1 - i}`}
+                                className="convert-progress-step"
+                            >
                                 <div className="step-main">
                                     {icon && <span className="step-icon">{icon}</span>}
                                     <span className="step-text">{text}</span>
                                 </div>
+                                {typeof s.progress === 'number' && (
+                                    <div className="step-progress-bar">
+                                        <div
+                                            className="step-progress-fill"
+                                            style={{ width: `${Math.round(s.progress * 100)}%` }}
+                                        />
+                                    </div>
+                                )}
                                 {s.detail && <div className="step-detail">{s.detail}</div>}
                             </li>
                         );
