@@ -15,14 +15,27 @@ use super::keychain::{get_key, Provider};
 use super::llm::gemini;
 use super::progress::{fmt_duration, ProgressEmitter};
 use super::templates::{build_evidence_markdown, EvidenceMeta};
+use super::diarize::{diarize_pcm, DiarSegment};
 use super::speaker_dedup::dedup_speakers;
-use super::vad::{cleanup_trimmed, trim_silence, trimmed_to_original, SegmentMap, TrimResult, VadOptions};
+use super::vad::{cleanup_trimmed, decode_to_16k_pcm, trim_silence, trimmed_to_original, SegmentMap, TrimResult, VadOptions};
 use super::{conversions_dir, CostSummary, EvidenceType, UsageInfo, MODEL_AUDIO};
 use base64::Engine;
 use chrono::{FixedOffset, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::sync::LazyLock;
+
+// 매 호출마다 컴파일 비용 피하기 위해 정적 캐싱.
+// `화자` 다음에 한글/영문/숫자 라벨 흡수 — 다양한 Gemini 변형 대비.
+static DIAR_LABEL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(\*\*\[)(\d{1,2}):(\d{2})(?::(\d{2}))?(\]\s+)(화자[가-힣A-Za-z0-9]+)(:?\*\*)")
+        .expect("DIAR_LABEL_RE 정적 패턴 컴파일 실패 (코드 버그)")
+});
+static TS_REMAP_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]")
+        .expect("TS_REMAP_RE 정적 패턴 컴파일 실패 (코드 버그)")
+});
 
 const CHUNK_THRESHOLD_SEC: f64 = 9.0 * 60.0;
 const CHUNK_DURATION_SEC: f64 = 10.0 * 60.0;
@@ -118,6 +131,72 @@ pub async fn run(
         emitter.emit(format!("🕐 녹음 시각: {}", r), None);
     }
 
+    // ─── Speaker diarization (pyannote-rs) ───
+    // 원본 PCM 한 번에 분석 → 청크 무관 글로벌 speaker_id. 4시간 ~3분 CPU.
+    // transcription 결과의 timestamp 와 시간 정렬해 라벨 통일.
+    // 실패 시 (모델 없음 등) Gemini 자체 라벨 그대로 사용.
+    //
+    // 4시간 초과 입력은 run_pipeline_core 가 어차피 reject 하므로 여기서
+    // 미리 duration 확인하고 diarize skip — over-limit 파일이 460MB PCM
+    // 디코드 + 수분 pyannote 분석 후에야 reject 되는 낭비 회피.
+    let diar_segments: Vec<DiarSegment> = match probe_duration(&file_path).await {
+        Ok(d) if d > MAX_DURATION_SEC => {
+            emitter.emit(
+                "⚠️ 길이 초과 — 화자 분리 skip (검증은 다음 단계에서)",
+                Some(format!(
+                    "{:.1}분 > {:.0}분",
+                    d / 60.0,
+                    MAX_DURATION_SEC / 60.0
+                )),
+            );
+            Vec::new()
+        }
+        _ => {
+            emitter.emit("🎭 화자 분석 준비 중...", None);
+            match decode_to_16k_pcm(&file_path).await {
+                Ok(pcm) => {
+                    let app_clone = app.clone();
+                    emitter.emit("🎭 화자 분리 분석 중 (전체 음성)...", None);
+                    let diar = tokio::task::spawn_blocking(move || {
+                        diarize_pcm(&app_clone, &pcm, 16000, None)
+                    })
+                    .await
+                    .map_err(|e| ConverterError::Internal(format!("diarize join: {}", e)))
+                    .and_then(|r| r);
+                    match diar {
+                        Ok(segs) => {
+                            let unique: std::collections::BTreeSet<usize> =
+                                segs.iter().map(|s| s.speaker_id).collect();
+                            emitter.emit(
+                                format!(
+                                    "✅ 화자 {}명 식별 (segment {}개)",
+                                    unique.len(),
+                                    segs.len()
+                                ),
+                                None,
+                            );
+                            segs
+                        }
+                        Err(e) => {
+                            emitter.emit(
+                                "⚠️ 화자 분리 실패 — Gemini 자체 라벨로 진행",
+                                Some(e.to_string()),
+                            );
+                            Vec::new()
+                        }
+                    }
+                }
+                Err(e) => {
+                    emitter.emit(
+                        "⚠️ PCM decode 실패 — 화자 분리 skip",
+                        Some(e.to_string()),
+                    );
+                    Vec::new()
+                }
+            }
+        }
+    };
+
     // VAD 무음 제거 (옵션 ON 시)
     let mut trim: Option<TrimResult> = None;
     let mut work_path = file_path.clone();
@@ -148,6 +227,7 @@ pub async fn run(
         trim.as_ref(),
         opts.output_dir,
         opts.dedup_speakers,
+        &diar_segments,
     )
     .await;
 
@@ -199,6 +279,7 @@ async fn run_pipeline_core(
     trim: Option<&TrimResult>,
     output_dir: Option<String>,
     dedup_speakers_enabled: bool,
+    diar_segments: &[DiarSegment],
 ) -> ConverterResult<AudioJobResult> {
     let file_path = work_path.to_path_buf();
     let segment_map: Option<Vec<SegmentMap>> = trim.map(|t| t.segment_map.clone());
@@ -216,6 +297,7 @@ async fn run_pipeline_core(
                 output_dir,
                 segment_map.as_deref(),
                 dedup_speakers_enabled,
+                diar_segments,
             )
             .await;
         }
@@ -241,6 +323,7 @@ async fn run_pipeline_core(
             output_dir,
             segment_map.as_deref(),
             dedup_speakers_enabled,
+            diar_segments,
         )
         .await;
     }
@@ -284,6 +367,16 @@ async fn run_pipeline_core(
         merged = map_timestamps_to_original(&merged, map);
     }
 
+    // pyannote-rs 화자 분석으로 글로벌 라벨 통일 — chunk 경계 무관.
+    // chunk 모드는 화자 뒤죽박죽이 가장 심한 케이스라 효과 최대.
+    if !diar_segments.is_empty() {
+        emitter.emit(
+            "🎭 화자 라벨 통일 중",
+            Some(format!("{} 발화 구간", diar_segments.len())),
+        );
+        merged = apply_diar_labels(&merged, diar_segments);
+    }
+
     // 청크 모드는 화자 분리 오류 가장 잦은 케이스 (chunk 경계마다 다시 화자A
     // 부터 매기는 경향) — dedup 후처리 효과가 가장 큼.
     merged = maybe_dedup_speakers(
@@ -323,6 +416,7 @@ async fn run_inline_path(
     output_dir: Option<String>,
     segment_map: Option<&[SegmentMap]>,
     dedup_speakers_enabled: bool,
+    diar_segments: &[DiarSegment],
 ) -> ConverterResult<AudioJobResult> {
     let start = std::time::Instant::now();
     let buffer = tokio::fs::read(file_path).await?;
@@ -351,6 +445,14 @@ async fn run_inline_path(
         result.text
     };
 
+    // pyannote-rs 화자 분석 결과 적용 — chunk 경계 무관 글로벌 ID
+    let body = if !diar_segments.is_empty() {
+        emitter.emit("🎭 화자 라벨 통일 중...", None);
+        apply_diar_labels(&body, diar_segments)
+    } else {
+        body
+    };
+
     let mut usages = vec![result.usage];
     // Inline 모드는 단일 LLM 호출이라 chunk-경계 분리 오류는 없지만, LLM이
     // 같은 사람을 다른 라벨로 번갈아 부여하는 케이스는 inline 에서도 발생.
@@ -375,11 +477,63 @@ async fn run_inline_path(
     .await
 }
 
+/// pyannote-rs 가 분석한 발화 구간 (DiarSegment) 으로 Gemini 가 부여한
+/// 청크별 로컬 라벨 (화자A/B/C ...) 을 글로벌 ID 로 통일.
+///
+/// **전략**: 라인별로 [HH:MM:SS] 타임스탬프를 추출 → 해당 시각의 DiarSegment
+/// speaker_id 를 lookup → "화자{id}" 로 치환. pyannote-rs `EmbeddingManager`
+/// 가 speaker_id 를 1-indexed (1, 2, 3, ...) 로 부여하므로 그대로 사용 (shift X).
+/// 청크 경계 무관한 글로벌 일관성을 즉시 확보. pyannote-rs 의 임베딩 기반
+/// 클러스터링이 Gemini 의 텍스트 기반 라벨링보다 훨씬 신뢰도 높음.
+///
+/// **매칭 정책**: 시각이 어떤 segment 안에도 안 들어가면 (무음/효과음/배경
+/// 잡음 등 pyannote 가 발화로 안 본 영역) **원본 라벨 그대로 유지**. 인접한
+/// segment 화자로 강제 매핑하면 다른 화자의 라벨이 무음 영역에 잘못 박힐
+/// 위험 — 안전 fallback 선택.
+fn apply_diar_labels(text: &str, diar: &[DiarSegment]) -> String {
+    if diar.is_empty() {
+        return text.to_string();
+    }
+    DIAR_LABEL_RE
+        .replace_all(text, |caps: &regex::Captures| {
+            let prefix = &caps[1];
+            let ts_h = &caps[2];
+            let ts_m = &caps[3];
+            let ts_s_opt = caps.get(4).map(|m| m.as_str());
+            let bracket = &caps[5];
+            let suffix = &caps[7];
+
+            let h_or_m: f64 = ts_h.parse().unwrap_or(0.0);
+            let m_or_s: f64 = ts_m.parse().unwrap_or(0.0);
+            let s: f64 = ts_s_opt.and_then(|x| x.parse().ok()).unwrap_or(-1.0);
+            let timestamp_sec = if s >= 0.0 {
+                h_or_m * 3600.0 + m_or_s * 60.0 + s
+            } else {
+                h_or_m * 60.0 + m_or_s
+            };
+
+            // 시각을 덮는 segment 만 매칭. 없으면 원본 라벨 유지 (안전 fallback).
+            let Some(seg) = diar
+                .iter()
+                .find(|seg| timestamp_sec >= seg.start_sec && timestamp_sec <= seg.end_sec)
+            else {
+                return caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
+            };
+
+            let new_label = format!("화자{}", seg.speaker_id);
+            let ts_str = match ts_s_opt {
+                Some(sec) => format!("{}:{}:{}", ts_h, ts_m, sec),
+                None => format!("{}:{}", ts_h, ts_m),
+            };
+            format!("{}{}{}{}{}", prefix, ts_str, bracket, new_label, suffix)
+        })
+        .into_owned()
+}
+
 /// trimmed 시각 기준 [HH:MM:SS] 를 원본 시각으로 역변환.
 /// VAD trim 적용 후 Gemini 응답의 모든 timestamp 에 적용.
 fn map_timestamps_to_original(text: &str, map: &[SegmentMap]) -> String {
-    let re = Regex::new(r"\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]").unwrap();
-    re.replace_all(text, |caps: &regex::Captures| {
+    TS_REMAP_RE.replace_all(text, |caps: &regex::Captures| {
         let a: f64 = caps[1].parse().unwrap_or(0.0);
         let b: f64 = caps[2].parse().unwrap_or(0.0);
         let c: f64 = caps.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(-1.0);

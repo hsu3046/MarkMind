@@ -19,6 +19,10 @@ pub struct ProgressStep {
     /// 0.0 ~ 1.0 — 알 수 있는 경우만
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress: Option<f32>,
+    /// stable id — 같은 stepId 면 ProgressPanel 이 in-place 갱신 (heartbeat / progress 갱신용).
+    /// None 이면 새 row append (기본 동작).
+    #[serde(rename = "stepId", skip_serializing_if = "Option::is_none")]
+    pub step_id: Option<String>,
 }
 
 #[derive(Clone)]
@@ -83,6 +87,7 @@ impl ProgressEmitter {
             step: self.prefix_step(step.into()),
             detail,
             progress: None,
+            step_id: None,
         };
         let _ = self.app.emit("converter-progress", event);
     }
@@ -94,6 +99,27 @@ impl ProgressEmitter {
             step: self.prefix_step(step.into()),
             detail,
             progress: Some(progress),
+            step_id: None,
+        };
+        let _ = self.app.emit("converter-progress", event);
+    }
+
+    /// 같은 step_id 의 이전 emit 을 in-place 갱신 — heartbeat / 진행률 표시.
+    /// 첫 emit (id 미존재) 이면 append, 이후엔 같은 row 의 텍스트/progress 만 갱신.
+    /// ProgressPanel 이 stepId 매칭 시 row replace 처리.
+    pub fn emit_update(
+        &self,
+        step_id: impl Into<String>,
+        step: impl Into<String>,
+        detail: Option<String>,
+        progress: Option<f32>,
+    ) {
+        let event = ProgressStep {
+            job_id: self.job_id.clone(),
+            step: self.prefix_step(step.into()),
+            detail,
+            progress,
+            step_id: Some(step_id.into()),
         };
         let _ = self.app.emit("converter-progress", event);
     }

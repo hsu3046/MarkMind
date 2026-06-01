@@ -56,10 +56,18 @@ export function useConverter() {
                     if (!runningRef.current) return;
                     // 다른 윈도우의 동시 진행 job 또는 stale event 무시
                     if (!currentJobIdRef.current || step.jobId !== currentJobIdRef.current) return;
-                    setJobState((prev) => ({
-                        ...prev,
-                        steps: [...prev.steps, step],
-                    }));
+                    setJobState((prev) => {
+                        // stepId 있고 이전에 같은 id row 가 있으면 in-place 갱신 (heartbeat)
+                        if (step.stepId) {
+                            const idx = prev.steps.findIndex((s) => s.stepId === step.stepId);
+                            if (idx >= 0) {
+                                const next = [...prev.steps];
+                                next[idx] = step;
+                                return { ...prev, steps: next };
+                            }
+                        }
+                        return { ...prev, steps: [...prev.steps, step] };
+                    });
                 });
                 unlistenRef.current = unlisten;
             } catch (err) {

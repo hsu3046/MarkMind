@@ -388,6 +388,20 @@
     margin-top: 2px;
     margin-left: 22px;
 }
+/* step 자체에 progress bar (heartbeat row) — % 시각화 */
+.step-progress-bar {
+    margin: 4px 0 0 22px;
+    height: 4px;
+    background: var(--bg-secondary, rgba(0, 0, 0, 0.06));
+    border-radius: 2px;
+    overflow: hidden;
+}
+.step-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.4s ease;
+}
 .convert-progress-error {
     color: #f87171;
     background: rgba(248, 113, 113, 0.08);
