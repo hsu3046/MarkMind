@@ -92,6 +92,10 @@ pub fn diarize_pcm(
     .map_err(|e| ConverterError::Internal(format!("EmbeddingExtractor: {:?}", e)))?;
     let mut manager = EmbeddingManager::new(max_spk);
 
+    // pyannote-rs `EmbeddingManager` 는 speaker_id 를 1-indexed 로 부여 (1, 2, 3, ...).
+    // 에러/None 케이스의 segment 는 results 에 안 넣음 → apply_diar_labels 의 "매칭
+    // 없음 → 원본 라벨 유지" fallback 으로 자연히 떨어진다. 임의의 0 같은 sentinel
+    // ID 를 넣으면 잘못된 화자에 합쳐지는 위험.
     let mut results: Vec<DiarSegment> = Vec::new();
     for seg_res in segments_iter {
         let seg = match seg_res {
@@ -101,24 +105,22 @@ pub fn diarize_pcm(
                 continue;
             }
         };
-        let speaker_id: usize = match extractor.compute(&seg.samples) {
-            Ok(embedding) => {
-                let v: Vec<f32> = embedding.collect();
-                let label = if manager.get_all_speakers().len() == max_spk {
-                    // max 도달 — 기존 화자 중 최적 매칭
-                    manager
-                        .get_best_speaker_match(v)
-                        .map(|s| s as usize)
-                        .unwrap_or(0)
-                } else {
-                    manager
-                        .search_speaker(v, SPEAKER_THRESHOLD)
-                        .map(|s| s as usize)
-                        .unwrap_or(manager.get_all_speakers().len())
-                };
-                label
+        let embedding = match extractor.compute(&seg.samples) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("[diarize] embedding fail @ {:.1}s: {:?}", seg.start, e);
+                continue;
             }
-            Err(_) => 0,
+        };
+        let v: Vec<f32> = embedding.collect();
+        let speaker_id_opt = if manager.get_all_speakers().len() == max_spk {
+            manager.get_best_speaker_match(v).ok()
+        } else {
+            manager.search_speaker(v, SPEAKER_THRESHOLD)
+        };
+        let Some(speaker_id) = speaker_id_opt else {
+            // max 도달 + threshold 못 넘는 신규 화자 — skip (원본 라벨 유지)
+            continue;
         };
         results.push(DiarSegment {
             start_sec: seg.start as f64,

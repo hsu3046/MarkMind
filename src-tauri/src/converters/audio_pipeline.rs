@@ -135,43 +135,64 @@ pub async fn run(
     // 원본 PCM 한 번에 분석 → 청크 무관 글로벌 speaker_id. 4시간 ~3분 CPU.
     // transcription 결과의 timestamp 와 시간 정렬해 라벨 통일.
     // 실패 시 (모델 없음 등) Gemini 자체 라벨 그대로 사용.
-    let diar_segments: Vec<DiarSegment> = {
-        emitter.emit("🎭 화자 분석 준비 중...", None);
-        match decode_to_16k_pcm(&file_path).await {
-            Ok(pcm) => {
-                let app_clone = app.clone();
-                emitter.emit("🎭 화자 분리 분석 중 (전체 음성)...", None);
-                let diar = tokio::task::spawn_blocking(move || {
-                    diarize_pcm(&app_clone, &pcm, 16000, None)
-                })
-                .await
-                .map_err(|e| ConverterError::Internal(format!("diarize join: {}", e)))
-                .and_then(|r| r);
-                match diar {
-                    Ok(segs) => {
-                        let unique: std::collections::BTreeSet<usize> =
-                            segs.iter().map(|s| s.speaker_id).collect();
-                        emitter.emit(
-                            format!("✅ 화자 {}명 식별 (segment {}개)", unique.len(), segs.len()),
-                            None,
-                        );
-                        segs
-                    }
-                    Err(e) => {
-                        emitter.emit(
-                            "⚠️ 화자 분리 실패 — Gemini 자체 라벨로 진행",
-                            Some(e.to_string()),
-                        );
-                        Vec::new()
+    //
+    // 4시간 초과 입력은 run_pipeline_core 가 어차피 reject 하므로 여기서
+    // 미리 duration 확인하고 diarize skip — over-limit 파일이 460MB PCM
+    // 디코드 + 수분 pyannote 분석 후에야 reject 되는 낭비 회피.
+    let diar_segments: Vec<DiarSegment> = match probe_duration(&file_path).await {
+        Ok(d) if d > MAX_DURATION_SEC => {
+            emitter.emit(
+                "⚠️ 길이 초과 — 화자 분리 skip (검증은 다음 단계에서)",
+                Some(format!(
+                    "{:.1}분 > {:.0}분",
+                    d / 60.0,
+                    MAX_DURATION_SEC / 60.0
+                )),
+            );
+            Vec::new()
+        }
+        _ => {
+            emitter.emit("🎭 화자 분석 준비 중...", None);
+            match decode_to_16k_pcm(&file_path).await {
+                Ok(pcm) => {
+                    let app_clone = app.clone();
+                    emitter.emit("🎭 화자 분리 분석 중 (전체 음성)...", None);
+                    let diar = tokio::task::spawn_blocking(move || {
+                        diarize_pcm(&app_clone, &pcm, 16000, None)
+                    })
+                    .await
+                    .map_err(|e| ConverterError::Internal(format!("diarize join: {}", e)))
+                    .and_then(|r| r);
+                    match diar {
+                        Ok(segs) => {
+                            let unique: std::collections::BTreeSet<usize> =
+                                segs.iter().map(|s| s.speaker_id).collect();
+                            emitter.emit(
+                                format!(
+                                    "✅ 화자 {}명 식별 (segment {}개)",
+                                    unique.len(),
+                                    segs.len()
+                                ),
+                                None,
+                            );
+                            segs
+                        }
+                        Err(e) => {
+                            emitter.emit(
+                                "⚠️ 화자 분리 실패 — Gemini 자체 라벨로 진행",
+                                Some(e.to_string()),
+                            );
+                            Vec::new()
+                        }
                     }
                 }
-            }
-            Err(e) => {
-                emitter.emit(
-                    "⚠️ PCM decode 실패 — 화자 분리 skip",
-                    Some(e.to_string()),
-                );
-                Vec::new()
+                Err(e) => {
+                    emitter.emit(
+                        "⚠️ PCM decode 실패 — 화자 분리 skip",
+                        Some(e.to_string()),
+                    );
+                    Vec::new()
+                }
             }
         }
     };
@@ -460,10 +481,10 @@ async fn run_inline_path(
 /// 청크별 로컬 라벨 (화자A/B/C ...) 을 글로벌 ID 로 통일.
 ///
 /// **전략**: 라인별로 [HH:MM:SS] 타임스탬프를 추출 → 해당 시각의 DiarSegment
-/// speaker_id 를 lookup → "화자{global+1}" 로 치환 (+1 = 0-indexed → 1-indexed
-/// 사용자 친화 표시). 청크 경계 무관한 글로벌 일관성을 즉시 확보.
-/// pyannote-rs 의 임베딩 기반 클러스터링이 Gemini 의 텍스트 기반 라벨링보다
-/// 훨씬 신뢰도 높음.
+/// speaker_id 를 lookup → "화자{id}" 로 치환. pyannote-rs `EmbeddingManager`
+/// 가 speaker_id 를 1-indexed (1, 2, 3, ...) 로 부여하므로 그대로 사용 (shift X).
+/// 청크 경계 무관한 글로벌 일관성을 즉시 확보. pyannote-rs 의 임베딩 기반
+/// 클러스터링이 Gemini 의 텍스트 기반 라벨링보다 훨씬 신뢰도 높음.
 ///
 /// **매칭 정책**: 시각이 어떤 segment 안에도 안 들어가면 (무음/효과음/배경
 /// 잡음 등 pyannote 가 발화로 안 본 영역) **원본 라벨 그대로 유지**. 인접한
@@ -499,7 +520,7 @@ fn apply_diar_labels(text: &str, diar: &[DiarSegment]) -> String {
                 return caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
             };
 
-            let new_label = format!("화자{}", seg.speaker_id + 1);
+            let new_label = format!("화자{}", seg.speaker_id);
             let ts_str = match ts_s_opt {
                 Some(sec) => format!("{}:{}:{}", ts_h, ts_m, sec),
                 None => format!("{}:{}", ts_h, ts_m),
