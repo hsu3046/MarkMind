@@ -49,22 +49,46 @@ function fixEmphasis(md: string): string {
 // whitespace + `|` 시작 줄 → 공백 하나로 join. 다단계 wrap 도 loop 로 흡수.
 // ``` fence 안은 mask 후 복원.
 function joinBrokenTableRows(md: string): string {
-    // GFM fence (``` 또는 ~~~, 3개 이상) 안 markdown 은 row join 대상 제외.
-    // GFM spec 4.5 — fence 는 line 시작 + 0~3 leading spaces 만 인정. 코드 블록
-    // 내부의 inline ``` 시퀀스 (JS 문자열, 문서 예시 등) 는 fence 아님.
-    // m flag + `^...$` 로 line-anchored 매치, backreference \1 로 같은 종류·길이
-    // 종료 fence 만 닫기. NUL byte sentinel (실제 문서 등장 가능성 0) 으로 mask.
-    const fenceParts: string[] = [];
-    const masked = md.replace(
-        /^[ ]{0,3}(`{3,}|~{3,}).*$[\s\S]*?^[ ]{0,3}\1[ \t]*$/gm,
-        (m) => {
-            const placeholder = `\x00MMF${fenceParts.length}\x00`;
-            fenceParts.push(m);
-            return placeholder;
-        },
-    );
+    // CRLF → LF 통일 (Windows 파일 호환). Renderer 단 normalize 라 saved file 의
+    // line ending 영향 X (tiptap-markdown 출력은 항상 LF, ReadOnly 는 display 만).
+    const normalized = md.replace(/\r\n/g, '\n');
 
-    let result = masked;
+    // GFM fence (``` 또는 ~~~) line-by-line scan. backreference 패턴은 종료 fence
+    // 가 시작보다 긴 경우 (GFM spec 4.5 허용 — 예: ```` 시작 ``` 종료, code 안 백틱
+    // 노출용 흔한 패턴) 를 못 잡으므로 scan 으로 종료 길이 ≥ 시작 길이 dynamic
+    // 매치. line-anchored 라 inline ``` 시퀀스 (JS 문자열, 문서 예시) 는 fence
+    // 로 오인 안 됨. NUL byte sentinel 로 mask 후 복원.
+    const fenceParts: string[] = [];
+    const lines = normalized.split('\n');
+    const out: string[] = [];
+    let i = 0;
+    while (i < lines.length) {
+        const line = lines[i];
+        const openMatch = line.match(/^[ ]{0,3}(([`~])\2{2,})/);
+        if (openMatch) {
+            const fenceChar = openMatch[2];
+            const minLen = openMatch[1].length;
+            const escaped = fenceChar === '`' ? '`' : '~';
+            const closeRe = new RegExp(
+                `^[ ]{0,3}${escaped}{${minLen},}[ \\t]*$`,
+            );
+            let j = i + 1;
+            while (j < lines.length && !closeRe.test(lines[j])) j++;
+            if (j < lines.length) {
+                const block = lines.slice(i, j + 1).join('\n');
+                fenceParts.push(block);
+                out.push(`\x00MMF${fenceParts.length - 1}\x00`);
+                i = j + 1;
+                continue;
+            }
+            // 종료 fence 없음 (unterminated) → mask 안 함, 그 줄 그대로 진행
+        }
+        out.push(line);
+        i++;
+    }
+    let result = out.join('\n');
+
+    // multi-line table row join. CRLF 는 위에서 LF 로 통일됨.
     let prev: string | null = null;
     while (prev !== result) {
         prev = result;
@@ -74,7 +98,7 @@ function joinBrokenTableRows(md: string): string {
         );
     }
 
-    return result.replace(/\x00MMF(\d+)\x00/g, (_, i) => fenceParts[Number(i)]);
+    return result.replace(/\x00MMF(\d+)\x00/g, (_, idx) => fenceParts[Number(idx)]);
 }
 
 /** save 시점에 fixEmphasis 가 삽입한 zero-width 제거 */
