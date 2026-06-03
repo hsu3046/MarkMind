@@ -134,20 +134,22 @@ export const InlineCheckbox = Node.create({
                     const inListItem =
                         parentType === 'listItem' || parentType === 'taskItem';
 
-                    // Codex P2 #3 fix — paragraph prefix 가 list marker 패턴
+                    // Codex P2 fix — paragraph prefix 가 list marker 패턴
                     // (`- `, `* `, `+ `, `1. ` 등) 이면 task-item 의 wrappingInputRule
                     // 에 양보. 사용자 입력 `- [x] ` 의 마지막 space 가 trigger 일 때
                     // range.from 은 `[` 위치 (paragraph 시작 아님) — 단순 start 체크
                     // 로는 잘못된 변환. paragraph text 의 [`처음 ~ range.from`] prefix
-                    // 가 list marker 만 있으면 양보. 빈 cell/일반 텍스트 중간은 변환.
+                    // 가 list marker 만 있으면 양보 — cell 안에서도 동일 (cell 안
+                    // task-list 의도 보존).
                     const offsetInParent = range.from - $from.start();
                     const prefix = $from.parent.textContent.slice(0, offsetInParent);
                     const isTaskListMarker = /^\s*([-*+]|\d+\.)\s+$/.test(prefix);
-                    if (isTaskListMarker && !inCell && !inListItem) {
+                    if (isTaskListMarker && !inListItem) {
                         return null;
                     }
                     // paragraph 가 비어있는 시작 (`[x] ` 단독) + non-cell/non-list
-                    // 도 task-item 에 양보 (기존 동작 유지).
+                    // → task-item 에 양보. cell 안 빈 `[ ] ` 는 변환 (사용자 의도:
+                    // cell 안 inline checkbox).
                     if (prefix.length === 0 && !inCell && !inListItem) {
                         return null;
                     }
