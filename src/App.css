@@ -2894,10 +2894,27 @@ body.is-resizing .split-pane {
     overflow: visible !important;
     overflow-x: visible !important;
     margin: 0 !important;
-    padding: 6mm 8mm !important;
+    /* 좌우 padding 명시 분리 — shorthand 가 inline/inherit 와 섞일 때 비대칭
+       가능성 차단. 사용자 보고 ~15px (~4mm) 좌측 잔존 마진 fix 시도. */
+    padding-top: 6mm !important;
+    padding-right: 8mm !important;
+    padding-bottom: 6mm !important;
+    padding-left: 8mm !important;
     box-sizing: border-box !important;
     font-size: 10.5pt;
     line-height: 1.55;
+  }
+
+  /* 모든 wrapper 의 좌우 margin/padding 명시 0 — 잔존 비대칭 차단.
+     scrollbar-gutter 도 auto 로 (overflow-y: auto 의 reserve gutter 가
+     print 에서 좌우 비대칭 만드는 케이스 회피). */
+  .pane, .preview-wrapper, .markdown-body, .tiptap-rich,
+  .preview-wrapper > *, .pane > * {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    scrollbar-gutter: auto !important;
   }
 
   /* 모든 element 가 페이지 폭 안에 — explicit px width (TipTap colgroup col,
