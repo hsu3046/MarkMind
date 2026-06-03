@@ -207,6 +207,32 @@ export const InlineCheckbox = Node.create({
                         const anchor = ruleNames.includes('github-task-lists')
                             ? 'github-task-lists'
                             : 'inline';
+
+                        // CRITICAL: 이 ruler 는 반드시 `text_join` 보다 앞에서 실행
+                        // 되어야 escape sequence 보존됨. markdown-it 14.x core 룰
+                        // 순서: normalize → block → inline → linkify → replacements
+                        // → smartquotes → text_join. text_join 이 text_special →
+                        // text 변환·병합. 우리 anchor (`inline` 또는 `github-task-
+                        // lists`) 는 inline 직후 ~ text_join 직전이므로 안전.
+                        // 만약 markdown-it 가 룰 순서 바꾸거나 anchor 가 잘못되면
+                        // escape `\[x]` 가 text 로 합쳐져 잘못 checkbox 변환됨.
+                        // dev 환경에서 회귀 방지 assert.
+                        if (
+                            typeof process !== 'undefined' &&
+                            process.env?.NODE_ENV !== 'production'
+                        ) {
+                            const textJoinIdx = ruleNames.indexOf('text_join');
+                            const anchorIdx = ruleNames.indexOf(anchor);
+                            if (
+                                textJoinIdx !== -1 &&
+                                anchorIdx !== -1 &&
+                                anchorIdx >= textJoinIdx
+                            ) {
+                                console.warn(
+                                    '[InlineCheckbox] ruler anchor must precede text_join for escape preservation',
+                                );
+                            }
+                        }
                         md.core.ruler.after(
                             anchor,
                             'inline_checkbox_postprocess',
