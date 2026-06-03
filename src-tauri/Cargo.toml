@@ -90,11 +90,10 @@ objc2-app-kit = { version = "0.3", features = [
     "NSResponder",
     "NSView",
     "NSWindow",
+    "NSPrintInfo",
+    "NSPrintOperation",
 ] }
 objc2-web-kit = { version = "0.3", features = [
     "WKWebView",
-    "WKPDFConfiguration",
-    "block2",
 ] }
-objc2-foundation = { version = "0.3", features = ["NSData", "NSURL", "NSString", "NSError"] }
-block2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSURL", "NSString", "NSError", "NSDictionary"] }
