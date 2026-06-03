@@ -50,14 +50,19 @@ function fixEmphasis(md: string): string {
 // ``` fence 안은 mask 후 복원.
 function joinBrokenTableRows(md: string): string {
     // GFM fence (``` 또는 ~~~, 3개 이상) 안 markdown 은 row join 대상 제외.
-    // backreference \1 로 같은 종류·길이 종료까지 매치 (GFM spec 4.5).
-    // NUL byte sentinel (실제 문서 등장 가능성 0) 으로 mask 후 복원.
+    // GFM spec 4.5 — fence 는 line 시작 + 0~3 leading spaces 만 인정. 코드 블록
+    // 내부의 inline ``` 시퀀스 (JS 문자열, 문서 예시 등) 는 fence 아님.
+    // m flag + `^...$` 로 line-anchored 매치, backreference \1 로 같은 종류·길이
+    // 종료 fence 만 닫기. NUL byte sentinel (실제 문서 등장 가능성 0) 으로 mask.
     const fenceParts: string[] = [];
-    const masked = md.replace(/(`{3,}|~{3,})[\s\S]*?\1/g, (m) => {
-        const placeholder = `\x00MMF${fenceParts.length}\x00`;
-        fenceParts.push(m);
-        return placeholder;
-    });
+    const masked = md.replace(
+        /^[ ]{0,3}(`{3,}|~{3,}).*$[\s\S]*?^[ ]{0,3}\1[ \t]*$/gm,
+        (m) => {
+            const placeholder = `\x00MMF${fenceParts.length}\x00`;
+            fenceParts.push(m);
+            return placeholder;
+        },
+    );
 
     let result = masked;
     let prev: string | null = null;
