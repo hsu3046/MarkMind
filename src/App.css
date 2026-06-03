@@ -566,7 +566,9 @@ body {
   outline: 1.5px solid rgba(255, 140, 0, 0.9);
 }
 
-/* InlineCheckbox — table cell 등에서 동작하는 클릭 가능한 inline checkbox */
+/* InlineCheckbox wrapper — table cell 등에서 동작하는 클릭 가능한 inline checkbox.
+   input.inline-cb 의 시각 스타일 (appearance:none, 사각형, 파란 체크) 은 아래
+   `.tiptap-rich ul[data-type="taskList"] ...` 묶음에 합쳐져 TaskItem 과 통일됨. */
 .inline-cb-wrapper {
   display: inline-flex;
   align-items: center;
@@ -574,10 +576,6 @@ body {
   cursor: pointer;
   user-select: none;
   margin: 0 1px;
-}
-.inline-cb-wrapper input.inline-cb {
-  margin: 0;
-  cursor: pointer;
 }
 /* iOS Safari caret 가시성 fix — atom inline node 옆 zero-width space (TipTap docs) */
 .inline-cb-wrapper::after {
@@ -1813,7 +1811,8 @@ body.is-resizing .split-pane {
 
 /* 체크박스 (Rich Text + Preview 공통) — OS default 무시, 정사각형 + radius 0 */
 .tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"],
-.markdown-body ul li input[type="checkbox"] {
+.markdown-body ul li input[type="checkbox"],
+.inline-cb-wrapper input.inline-cb {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -1831,17 +1830,20 @@ body.is-resizing .split-pane {
   transition: background 0.12s, border-color 0.12s;
 }
 .tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"]:hover,
-.markdown-body ul li input[type="checkbox"]:hover {
+.markdown-body ul li input[type="checkbox"]:hover,
+.inline-cb-wrapper input.inline-cb:hover {
   border-color: var(--accent);
 }
 .tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"]:checked,
-.markdown-body ul li input[type="checkbox"]:checked {
+.markdown-body ul li input[type="checkbox"]:checked,
+.inline-cb-wrapper input.inline-cb:checked {
   background: var(--accent);
   border-color: var(--accent);
 }
 /* 체크마크 — 흰 ✓ */
 .tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"]:checked::after,
-.markdown-body ul li input[type="checkbox"]:checked::after {
+.markdown-body ul li input[type="checkbox"]:checked::after,
+.inline-cb-wrapper input.inline-cb:checked::after {
   content: '';
   position: absolute;
   left: 5px;
