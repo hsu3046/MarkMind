@@ -134,25 +134,31 @@ export const InlineCheckbox = Node.create({
                     const inListItem =
                         parentType === 'listItem' || parentType === 'taskItem';
 
-                    // Codex P2 fix — paragraph prefix 가 list marker 패턴
-                    // (`- `, `* `, `+ `, `1. ` 등) 이면 task-item 의 wrappingInputRule
-                    // 에 양보. 사용자 입력 `- [x] ` 의 마지막 space 가 trigger 일 때
-                    // range.from 은 `[` 위치 (paragraph 시작 아님) — 단순 start 체크
-                    // 로는 잘못된 변환. paragraph text 의 [`처음 ~ range.from`] prefix
-                    // 가 list marker 만 있으면 양보 — cell 안에서도 동일 (cell 안
-                    // task-list 의도 보존).
+                    // Codex P2 fix (누적) — paragraph prefix 검사 후 양보 판단.
+                    //
+                    // 규칙:
+                    // - prefix 가 list marker (`- `, `1. ` 등) → 양보 (어디서든)
+                    // - prefix 가 빈 + cell 밖 → 양보 (paragraph 시작 / listItem 안
+                    //   첫 paragraph 모두 task-item 변환 의도)
+                    // - prefix 가 빈 + cell 안 → 변환 (cell 안 inline checkbox 핵심)
+                    // - prefix 가 일반 텍스트 → 변환
+                    //
+                    // listItem 안 케이스: StarterKit bulletList inputRule 이 `- ` 입력
+                    // 시 먼저 paragraph → bulletList > listItem > paragraph 로 wrap.
+                    // 그 후 `[x] ` 입력 시 cursor 가 listItem 안 paragraph 시작 →
+                    // prefix empty → 양보 → TaskItem wrappingInputRule 이 listItem
+                    // 을 taskItem 으로 변환 (Codex P2 #5 fix).
                     const offsetInParent = range.from - $from.start();
                     const prefix = $from.parent.textContent.slice(0, offsetInParent);
                     const isTaskListMarker = /^\s*([-*+]|\d+\.)\s+$/.test(prefix);
-                    if (isTaskListMarker && !inListItem) {
+                    if (isTaskListMarker) {
                         return null;
                     }
-                    // paragraph 가 비어있는 시작 (`[x] ` 단독) + non-cell/non-list
-                    // → task-item 에 양보. cell 안 빈 `[ ] ` 는 변환 (사용자 의도:
-                    // cell 안 inline checkbox).
-                    if (prefix.length === 0 && !inCell && !inListItem) {
+                    if (prefix.length === 0 && !inCell) {
                         return null;
                     }
+                    // inListItem 변수는 향후 nested 케이스 분기 용이성 위해 유지
+                    void inListItem;
 
                     const checked = match[2] === 'x' || match[2] === 'X';
                     const newNode = nodeType.create({ checked });
