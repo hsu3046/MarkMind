@@ -142,6 +142,41 @@ function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<EditorHandle>(null);
 
+  // PDF export — 강제 preview 전환 후 window.print() 호출 (옵션 A).
+  // Tauri WKWebView 가 window.print 를 IPC 로 hijack → capability 의 allow-print
+  // 필요 (default.json 검증). Promise 는 dialog 닫힘 무관 즉시 resolve →
+  // afterprint event 신뢰 X, 호출 직후 동기로 viewMode 복원.
+  const prevViewModeRef = useRef<ViewMode | null>(null);
+  const handleExportPdf = useCallback(async () => {
+    if (viewMode === 'editor') {
+      prevViewModeRef.current = viewMode;
+      setViewMode('preview');
+      // TipTap/ProseMirror hydration 대기 — 2 RAF + 80ms
+      await new Promise<void>((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => r())),
+      );
+      await new Promise<void>((r) => setTimeout(r, 80));
+    }
+    window.print();
+    if (prevViewModeRef.current) {
+      setViewMode(prevViewModeRef.current);
+      prevViewModeRef.current = null;
+    }
+  }, [viewMode]);
+
+  // ⌘P / Ctrl+P 단축키 (IME 합성 중 보호)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p' && !e.shiftKey) {
+        if (e.isComposing || e.keyCode === 229) return;
+        e.preventDefault();
+        handleExportPdf();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleExportPdf]);
+
   // AI
   const ai = useAI();
   const [selectedText, setSelectedText] = useState('');
@@ -913,6 +948,7 @@ function App() {
         onOpenFile={openFile}
         onSaveFile={saveFile}
         onSaveFileAs={saveFileAs}
+        onExportPdf={handleExportPdf}
         onShowTutorial={() => setTutorialVisible(true)}
         onShowSettings={() => setSettingsVisible(true)}
         onOpenFromDrive={() => setDriveBrowserMode('open')}
