@@ -42,6 +42,66 @@ function fixEmphasis(md: string): string {
     return md.replace(/(\S)(\*{1,2})(?=[^\s*\p{P}])/gu, '$1$2​');
 }
 
+// GFM table row 는 한 줄에 시작·종료가 정상이지만, LLM 회의록 자동 생성
+// (Gemini/Claude) 이 긴 row 를 시각적 wrap 형태로 multi-line 으로 출력하면
+// GFM parser 가 첫 줄을 단일 셀 row 로, 다음 줄을 plain text 로 깨뜨림.
+// 휴리스틱: `|` 로 시작 + `|` 로 안 끝나는 줄 + (선택 빈 줄들) + leading
+// whitespace + `|` 시작 줄 → 공백 하나로 join. 다단계 wrap 도 loop 로 흡수.
+// ``` fence 안은 mask 후 복원.
+function joinBrokenTableRows(md: string): string {
+    // CRLF → LF 통일 (Windows 파일 호환). Renderer 단 normalize 라 saved file 의
+    // line ending 영향 X (tiptap-markdown 출력은 항상 LF, ReadOnly 는 display 만).
+    const normalized = md.replace(/\r\n/g, '\n');
+
+    // GFM fence (``` 또는 ~~~) line-by-line scan. backreference 패턴은 종료 fence
+    // 가 시작보다 긴 경우 (GFM spec 4.5 허용 — 예: ```` 시작 ``` 종료, code 안 백틱
+    // 노출용 흔한 패턴) 를 못 잡으므로 scan 으로 종료 길이 ≥ 시작 길이 dynamic
+    // 매치. line-anchored 라 inline ``` 시퀀스 (JS 문자열, 문서 예시) 는 fence
+    // 로 오인 안 됨. NUL byte sentinel 로 mask 후 복원.
+    const fenceParts: string[] = [];
+    const lines = normalized.split('\n');
+    const out: string[] = [];
+    let i = 0;
+    while (i < lines.length) {
+        const line = lines[i];
+        const openMatch = line.match(/^[ ]{0,3}(([`~])\2{2,})/);
+        if (openMatch) {
+            const fenceChar = openMatch[2];
+            const minLen = openMatch[1].length;
+            const escaped = fenceChar === '`' ? '`' : '~';
+            const closeRe = new RegExp(
+                `^[ ]{0,3}${escaped}{${minLen},}[ \\t]*$`,
+            );
+            let j = i + 1;
+            while (j < lines.length && !closeRe.test(lines[j])) j++;
+            // GFM/CommonMark spec: unterminated fence (j === lines.length) 는
+            // EOF 까지 code block 으로 처리. 우리도 같은 방식으로 끝까지 mask 해
+            // join 이 code 영역 침범하는 것 차단.
+            const endIdx = j < lines.length ? j + 1 : j;
+            const block = lines.slice(i, endIdx).join('\n');
+            fenceParts.push(block);
+            out.push(`\x00MMF${fenceParts.length - 1}\x00`);
+            i = endIdx;
+            continue;
+        }
+        out.push(line);
+        i++;
+    }
+    let result = out.join('\n');
+
+    // multi-line table row join. CRLF 는 위에서 LF 로 통일됨.
+    let prev: string | null = null;
+    while (prev !== result) {
+        prev = result;
+        result = result.replace(
+            /^(\|[^\n]*[^|\s])[ \t]*\n(?:[ \t]*\n)*[ \t]+(\|)/gm,
+            '$1 $2',
+        );
+    }
+
+    return result.replace(/\x00MMF(\d+)\x00/g, (_, idx) => fenceParts[Number(idx)]);
+}
+
 /** save 시점에 fixEmphasis 가 삽입한 zero-width 제거 */
 function stripDisplayHelpers(md: string): string {
     return md.replace(/​/g, '');
@@ -437,7 +497,7 @@ function RichEditor({
             // Smart typography — `->` → `→`, `--` → `—`, `(c)` → `©` 등 자동 치환
             Typography,
         ],
-        content: fixEmphasis(body), // ** 인접 bold 인식되도록 zero-width 삽입
+        content: fixEmphasis(joinBrokenTableRows(body)), // ** 인접 bold 인식되도록 zero-width 삽입 + LLM multi-line table row 정상화
         onUpdate: ({ editor }) => {
             const md: string = editor.storage.markdown?.getMarkdown() ?? '';
             // 직렬화 시 fixEmphasis 의 zero-width 제거 → 파일에는 비가시 문자 안 들어감
@@ -518,7 +578,7 @@ function RichEditor({
         // fast-path: 길이 차이 ≥ 8 면 trim 비교 skip — 큰 문서 비용 절감
         const lenDiff = Math.abs(cleanedCurrent.length - body.length);
         if (lenDiff > 8 || cleanedCurrent.trim() !== body.trim()) {
-            editor.commands.setContent(fixEmphasis(body), { emitUpdate: false });
+            editor.commands.setContent(fixEmphasis(joinBrokenTableRows(body)), { emitUpdate: false });
         }
     }, [body, editor]);
 
@@ -537,7 +597,7 @@ export function Preview({ content, fontSize = 14, onChange }: PreviewProps) {
         return {
             fields: split.fields,
             body: split.body,
-            processedBody: fixEmphasis(split.body),
+            processedBody: fixEmphasis(joinBrokenTableRows(split.body)),
             rawFrontmatter: split.rawFrontmatter,
         };
     }, [content]);
