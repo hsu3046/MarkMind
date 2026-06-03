@@ -74,14 +74,15 @@ function joinBrokenTableRows(md: string): string {
             );
             let j = i + 1;
             while (j < lines.length && !closeRe.test(lines[j])) j++;
-            if (j < lines.length) {
-                const block = lines.slice(i, j + 1).join('\n');
-                fenceParts.push(block);
-                out.push(`\x00MMF${fenceParts.length - 1}\x00`);
-                i = j + 1;
-                continue;
-            }
-            // 종료 fence 없음 (unterminated) → mask 안 함, 그 줄 그대로 진행
+            // GFM/CommonMark spec: unterminated fence (j === lines.length) 는
+            // EOF 까지 code block 으로 처리. 우리도 같은 방식으로 끝까지 mask 해
+            // join 이 code 영역 침범하는 것 차단.
+            const endIdx = j < lines.length ? j + 1 : j;
+            const block = lines.slice(i, endIdx).join('\n');
+            fenceParts.push(block);
+            out.push(`\x00MMF${fenceParts.length - 1}\x00`);
+            i = endIdx;
+            continue;
         }
         out.push(line);
         i++;
