@@ -148,7 +148,10 @@ function App() {
   // afterprint event 신뢰 X, 호출 직후 동기로 viewMode 복원.
   const prevViewModeRef = useRef<ViewMode | null>(null);
   const handleExportPdf = useCallback(async () => {
-    if (viewMode === 'editor') {
+    // editor / split 모드 모두 preview 로 강제 전환 — split 은 editor pane 의
+    // CodeMirror raw markdown 이 좌측에 자리잡아 PDF 좌측 여백 증가 / 콘텐츠
+    // 우측 치우침 원인. preview 만 print 해야 안정.
+    if (viewMode === 'editor' || viewMode === 'split') {
       prevViewModeRef.current = viewMode;
       setViewMode('preview');
       // TipTap/ProseMirror hydration 대기 — 2 RAF + 80ms

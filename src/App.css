@@ -2920,17 +2920,34 @@ body.is-resizing .split-pane {
     display: none !important;
   }
 
-  /* layout 해제 — preview content 가 전체 페이지 차지 */
+  /* split mode 의 editor pane (CodeMirror) — specificity 강화 hide.
+     `.pane.pane-editor` 로 두 class 합쳐 일반 `.pane { display: block }` 보다
+     우선 (CSS spec rule: 같은 specificity 면 늦게 정의된 게 이김. 이중 class
+     selector 로 specificity 한 단계 ↑). PDF 좌측 여백 비대칭 원인 차단. */
+  .pane.pane-editor {
+    display: none !important;
+  }
+
+  /* layout 해제 — preview content 가 전체 페이지 차지.
+     inline `style="width: 50%"` (split mode) 도 !important 로 override. */
   .app, .main-content, .split-pane, .pane,
-  .preview-wrapper, .preview-wrapper.preview-rich-mode {
+  .preview-wrapper, .preview-wrapper.preview-rich-mode,
+  .markdown-body, .tiptap-rich {
     display: block !important;
     height: auto !important;
     width: 100% !important;
+    max-width: 100% !important;
     overflow: visible !important;
     background: #fff !important;
     padding: 0 !important;
     margin: 0 !important;
     border: none !important;
+  }
+  /* preview-rich-mode 의 .tiptap-rich margin-left/right 40px override */
+  .preview-wrapper.preview-rich-mode .markdown-frontmatter,
+  .preview-wrapper.preview-rich-mode .tiptap-rich {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
   }
   * {
     position: static !important;
