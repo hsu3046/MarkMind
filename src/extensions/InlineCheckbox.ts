@@ -169,13 +169,27 @@ export const InlineCheckbox = Node.create({
                 },
                 parse: {
                     setup(this: unknown, md: MarkdownIt): void {
-                        // task-list plugin (이미 등록됨) 이 list_item 첫 [x] 를
-                        // 처리해 inline 토큰의 text 에서 제거 → 우리는 잔존 text 의
-                        // [x] / [ ] 만 후처리. core.ruler.after('inline', ...) 위치
-                        // 가 핵심 — 'inline' 룰러 통과 후, task-list (core.ruler.
-                        // after('inline', 'github-task-lists', ...)) 와 같은 위계.
+                        // task-list plugin (markdown-it-task-lists, tiptap-markdown
+                        // 의 TaskList extension 이 등록) 가 `core.ruler.after('inline',
+                        // 'github-task-lists', ...)` 위치에 있음. 우리도 같은 위치
+                        // `after('inline')` 에 등록하면 우리가 먼저 실행될 위험 →
+                        // list_item 첫 [x] 를 우리가 consume → task-list 가 처리할
+                        // 게 없어 bullet-list 안 inline checkbox 로 끝남 (Codex P2 #1).
+                        //
+                        // 해결: `after('github-task-lists', ...)` 로 task-list 직후
+                        // 등록. task-list 가 list_item 첫 [x] 를 이미 inline 토큰
+                        // 에서 제거한 상태로 우리에게 옴 → 자연 회피.
+                        //
+                        // fallback: 만약 'github-task-lists' rule 이 없으면
+                        // (TaskList extension 미등록 환경) `after('inline')` 으로.
+                        const ruleNames = md.core.ruler.__rules__?.map?.(
+                            (r: { name: string }) => r.name,
+                        ) ?? [];
+                        const anchor = ruleNames.includes('github-task-lists')
+                            ? 'github-task-lists'
+                            : 'inline';
                         md.core.ruler.after(
-                            'inline',
+                            anchor,
                             'inline_checkbox_postprocess',
                             (state: MarkdownItState) => {
                                 const RE = /\[([ xX])\]/g;
@@ -247,6 +261,8 @@ interface MarkdownIt {
                 name: string,
                 fn: (state: MarkdownItState) => void,
             ) => void;
+            // 내부 필드 — rule 등록 여부 확인용 (Codex P2 #1 fix)
+            __rules__?: { name: string }[];
         };
     };
     renderer: {
