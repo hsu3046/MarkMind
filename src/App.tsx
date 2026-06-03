@@ -142,15 +142,16 @@ function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<EditorHandle>(null);
 
-  // PDF export — 강제 preview 전환 후 window.print() 호출 (옵션 A).
-  // Tauri WKWebView 가 window.print 를 IPC 로 hijack → capability 의 allow-print
-  // 필요 (default.json 검증). Promise 는 dialog 닫힘 무관 즉시 resolve →
-  // afterprint event 신뢰 X, 호출 직후 동기로 viewMode 복원.
+  // PDF export — Rust 측 export_pdf command 호출 (옵션 A — NSPrintInfo 명시).
+  //
+  // window.print() 는 wry 의 default 사용 → NSPrintInfo sharedPrintInfo 의 paperSize
+  // / horizontallyCentered / orientation 미명시 → 시스템 default (US Letter 가능) +
+  // 좌측 정렬 → 좌측 여백 비대칭 발생 (PR #26 검증 사고). Rust command 가 NSPrintInfo
+  // new() 로 A4 + horizontallyCentered(true) + margins 4면 56.69pt 명시 후
+  // WKWebView.printOperationWithPrintInfo 직접 호출 → 안정 결과.
   const prevViewModeRef = useRef<ViewMode | null>(null);
   const handleExportPdf = useCallback(async () => {
-    // editor / split 모드 모두 preview 로 강제 전환 — split 은 editor pane 의
-    // CodeMirror raw markdown 이 좌측에 자리잡아 PDF 좌측 여백 증가 / 콘텐츠
-    // 우측 치우침 원인. preview 만 print 해야 안정.
+    // editor / split 모드 모두 preview 로 강제 전환
     if (viewMode === 'editor' || viewMode === 'split') {
       prevViewModeRef.current = viewMode;
       setViewMode('preview');
@@ -160,12 +161,20 @@ function App() {
       );
       await new Promise<void>((r) => setTimeout(r, 80));
     }
-    window.print();
-    if (prevViewModeRef.current) {
-      setViewMode(prevViewModeRef.current);
-      prevViewModeRef.current = null;
+    // 다이얼로그의 job title (= PDF 저장 default 파일명) — 현재 file 이름 사용
+    const jobTitle = (fileName || 'Untitled').replace(/\.md$/i, '');
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('export_pdf', { options: { jobTitle } });
+    } catch (err) {
+      console.error('[export_pdf] failed:', err);
+    } finally {
+      if (prevViewModeRef.current) {
+        setViewMode(prevViewModeRef.current);
+        prevViewModeRef.current = null;
+      }
     }
-  }, [viewMode]);
+  }, [viewMode, fileName]);
 
   // ⌘P / Ctrl+P 단축키 (IME 합성 중 보호)
   useEffect(() => {

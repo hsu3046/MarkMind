@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 mod converters;
 mod gdrive;
+mod print_pdf;
 mod secrets;
 
 /// 윈도우별 pending file path 저장.
@@ -139,6 +140,8 @@ pub fn run() {
             gdrive::commands::gdrive_download,
             gdrive::commands::gdrive_upload,
             gdrive::commands::gdrive_update,
+            // PDF export — macOS NSPrintInfo 명시 + WKWebView native print
+            print_pdf::export_pdf,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
