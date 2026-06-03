@@ -41,30 +41,34 @@ export function TableBubbleMenu({ editor }: Props) {
             }}
             className="table-bubble-menu"
         >
+            {/*
+              버튼 disabled 평가 제거 — row/col 삭제 직후 ProseMirror selection 이
+              일시적으로 transitional 위치로 이동해 `editor.can().X()` 가 모든
+              command 에 false 를 반환하는 사고 발생 (사용자 보고 2026-06-03).
+              shouldShow=isActive('table') 가 이미 셀 안 보장 → menu 가 보이는
+              동안 모든 command 시도 가능. invalid selection 일 때 chain 이 안전
+              하게 무시 (no-op). UX 일관성 + 사고 회피.
+            */}
             <Btn
                 onClick={() => editor.chain().focus().addRowBefore().run()}
-                disabled={!editor.can().addRowBefore()}
                 title="위 행 추가"
             >
                 ↑+
             </Btn>
             <Btn
                 onClick={() => editor.chain().focus().addRowAfter().run()}
-                disabled={!editor.can().addRowAfter()}
                 title="아래 행 추가"
             >
                 ↓+
             </Btn>
             <Btn
                 onClick={() => editor.chain().focus().addColumnBefore().run()}
-                disabled={!editor.can().addColumnBefore()}
                 title="왼쪽 열 추가"
             >
                 ←+
             </Btn>
             <Btn
                 onClick={() => editor.chain().focus().addColumnAfter().run()}
-                disabled={!editor.can().addColumnAfter()}
                 title="오른쪽 열 추가"
             >
                 →+
@@ -72,14 +76,12 @@ export function TableBubbleMenu({ editor }: Props) {
             <span className="tbm-sep" aria-hidden />
             <Btn
                 onClick={() => editor.chain().focus().deleteRow().run()}
-                disabled={!editor.can().deleteRow()}
                 title="행 삭제"
             >
                 −행
             </Btn>
             <Btn
                 onClick={() => editor.chain().focus().deleteColumn().run()}
-                disabled={!editor.can().deleteColumn()}
                 title="열 삭제"
             >
                 −열
@@ -87,14 +89,12 @@ export function TableBubbleMenu({ editor }: Props) {
             <span className="tbm-sep" aria-hidden />
             <Btn
                 onClick={() => editor.chain().focus().toggleHeaderRow().run()}
-                disabled={!editor.can().toggleHeaderRow()}
                 title="헤더 행 토글"
             >
                 H
             </Btn>
             <Btn
                 onClick={() => editor.chain().focus().mergeOrSplit().run()}
-                disabled={!editor.can().mergeOrSplit()}
                 title="셀 병합/분할"
             >
                 ⇄
@@ -102,7 +102,6 @@ export function TableBubbleMenu({ editor }: Props) {
             <span className="tbm-sep" aria-hidden />
             <Btn
                 onClick={() => editor.chain().focus().deleteTable().run()}
-                disabled={!editor.can().deleteTable()}
                 title="표 삭제"
                 className="tbm-btn tbm-danger"
             >
