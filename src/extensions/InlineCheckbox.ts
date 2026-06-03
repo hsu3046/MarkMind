@@ -216,11 +216,9 @@ export const InlineCheckbox = Node.create({
                         // lists`) 는 inline 직후 ~ text_join 직전이므로 안전.
                         // 만약 markdown-it 가 룰 순서 바꾸거나 anchor 가 잘못되면
                         // escape `\[x]` 가 text 로 합쳐져 잘못 checkbox 변환됨.
-                        // dev 환경에서 회귀 방지 assert.
-                        if (
-                            typeof process !== 'undefined' &&
-                            process.env?.NODE_ENV !== 'production'
-                        ) {
+                        // dev 환경에서 회귀 방지 assert. Vite/Tauri browser runtime
+                        // 은 `process` 글로벌 없음 → import.meta.env.DEV 사용 (Codex P3).
+                        if (import.meta.env?.DEV) {
                             const textJoinIdx = ruleNames.indexOf('text_join');
                             const anchorIdx = ruleNames.indexOf(anchor);
                             if (
