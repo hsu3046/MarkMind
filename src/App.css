@@ -2859,7 +2859,7 @@ body.is-resizing .split-pane {
    content 만 출력. 다크 모드 / 사용자 배경 → 흰 배경 강제, code/checkbox
    ink 보존, 페이지 break 자연 분할, 한글 줄바꿈 + 외부 링크 URL 노출. */
 
-@page { size: A4; margin: 18mm 16mm; }
+@page { size: A4; margin: 20mm 18mm; }
 
 @media print {
   /* 다크모드 + 사용자 배경 변수 override (light token 강제) */
@@ -2877,9 +2877,20 @@ body.is-resizing .split-pane {
     background: #fff !important;
     color: #111 !important;
     height: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
     overflow: visible !important;
-    font-size: 11pt;
-    line-height: 1.6;
+    overflow-x: visible !important;
+    font-size: 10.5pt;
+    line-height: 1.55;
+  }
+
+  /* 모든 element 가 페이지 폭 안에 — explicit px width (TipTap colgroup col,
+     fixed width 컴포넌트 등) 가 A4 width 초과 못 하게 강제. */
+  .markdown-body *,
+  .tiptap-rich * {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
   }
 
   /* UI chrome 일괄 hide */
@@ -2947,15 +2958,26 @@ body.is-resizing .split-pane {
     break-inside: avoid;
   }
 
-  /* 표 — 헤더 반복 + row 안 잘림 */
+  /* 표 — 헤더 반복 + row 안 잘림 + 폭 자동 fit (TipTap colgroup col 의 픽셀
+     width 가 A4 폭 초과하는 잘림 원인 fix). */
   table {
     border-collapse: collapse;
-    width: 100%;
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: auto !important;
+  }
+  colgroup, col {
+    width: auto !important;
   }
   thead { display: table-header-group; }
   tr {
     page-break-inside: avoid;
     break-inside: avoid;
+  }
+  td, th {
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    max-width: none !important;
   }
 
   /* 코드 — 줄바꿈 + ink 보존 (hljs 색상 살리기) */
@@ -2966,7 +2988,9 @@ body.is-resizing .split-pane {
   pre {
     white-space: pre-wrap !important;
     word-break: break-word !important;
+    overflow-wrap: anywhere !important;
     overflow: visible !important;
+    max-width: 100% !important;
     background: #f6f8fa !important;
     border: 1px solid #ddd !important;
   }
