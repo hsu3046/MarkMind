@@ -2859,7 +2859,10 @@ body.is-resizing .split-pane {
    content 만 출력. 다크 모드 / 사용자 배경 → 흰 배경 강제, code/checkbox
    ink 보존, 페이지 break 자연 분할, 한글 줄바꿈 + 외부 링크 URL 노출. */
 
-@page { size: A4; margin: 20mm 18mm; }
+/* @page margin 0 — dialog 의 NSPrintInfo margin (Standard ~12.7mm) 만 사용.
+   기존 20mm 가 dialog margin 위에 누적되어 A4 콘텐츠 영역이 ~145mm 까지 협소
+   → 표 마지막 컬럼 잘림. 우리 콘텐츠 가장자리 마진은 body padding 으로 처리. */
+@page { size: A4; margin: 0; }
 
 @media print {
   /* 다크모드 + 사용자 배경 변수 override (light token 강제) */
@@ -2873,7 +2876,7 @@ body.is-resizing .split-pane {
     --text-tertiary: #555;
     --border-primary: #d0d0d0;
   }
-  html, body, #root {
+  html {
     background: #fff !important;
     color: #111 !important;
     height: auto !important;
@@ -2881,6 +2884,18 @@ body.is-resizing .split-pane {
     max-width: 100% !important;
     overflow: visible !important;
     overflow-x: visible !important;
+  }
+  body, #root {
+    background: #fff !important;
+    color: #111 !important;
+    height: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    overflow-x: visible !important;
+    margin: 0 !important;
+    padding: 6mm 8mm !important;
+    box-sizing: border-box !important;
     font-size: 10.5pt;
     line-height: 1.55;
   }
@@ -2958,16 +2973,20 @@ body.is-resizing .split-pane {
     break-inside: avoid;
   }
 
-  /* 표 — 헤더 반복 + row 안 잘림 + 폭 자동 fit (TipTap colgroup col 의 픽셀
-     width 가 A4 폭 초과하는 잘림 원인 fix). */
+  /* 표 — 헤더 반복 + row 안 잘림 + 폭 자동 fit.
+     TipTap colgroup 이 inline `<col style="width:200px">` 부여 → CSS rule 보다
+     우선해 페이지 폭 초과. attribute selector 로 inline style 가진 col 강제
+     override. table-layout: fixed 로 균등 분배 (한국어 word-break 작동 위함). */
   table {
     border-collapse: collapse;
     width: 100% !important;
     max-width: 100% !important;
-    table-layout: auto !important;
+    table-layout: fixed !important;
   }
-  colgroup, col {
+  colgroup, col, col[style] {
     width: auto !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
   }
   thead { display: table-header-group; }
   tr {
@@ -2978,6 +2997,7 @@ body.is-resizing .split-pane {
     word-break: break-word !important;
     overflow-wrap: anywhere !important;
     max-width: none !important;
+    min-width: 0 !important;
   }
 
   /* 코드 — 줄바꿈 + ink 보존 (hljs 색상 살리기) */
