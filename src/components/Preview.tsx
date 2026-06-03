@@ -17,6 +17,7 @@ import { Markdown } from 'tiptap-markdown';
 import { SearchAndReplace } from '@sereneinserenade/tiptap-search-and-replace';
 import { Typography } from '@tiptap/extension-typography';
 import { InlineCheckbox } from '../extensions/InlineCheckbox';
+import { TableBubbleMenu } from './TableBubbleMenu';
 import {
     Bold, Italic, Strikethrough, Code,
     Heading1, Heading2, Heading3, Heading4,
@@ -591,6 +592,7 @@ function RichEditor({
         <>
             <RichToolbar editor={editor} />
             <EditorContent editor={editor} />
+            <TableBubbleMenu editor={editor} />
         </>
     );
 }

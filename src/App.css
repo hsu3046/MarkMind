@@ -566,6 +566,51 @@ body {
   outline: 1.5px solid rgba(255, 140, 0, 0.9);
 }
 
+/* TableBubbleMenu — 표 셀 안 cursor 시 floating row/col 조작 패널 */
+.table-bubble-menu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-primary, #ffffff);
+  border: 1px solid var(--text-tertiary, #d8d8d3);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  z-index: 200;
+  font-size: 13px;
+}
+.tbm-btn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tbm-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary, #f0f0eb);
+}
+.tbm-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.tbm-danger:hover:not(:disabled) {
+  background: rgba(220, 0, 0, 0.08);
+  color: #c00;
+}
+.tbm-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--text-tertiary, #d8d8d3);
+  margin: 4px 2px;
+}
+
 /* InlineCheckbox wrapper — table cell 등에서 동작하는 클릭 가능한 inline checkbox.
    input.inline-cb 의 시각 스타일 (appearance:none, 사각형, 파란 체크) 은 아래
    `.tiptap-rich ul[data-type="taskList"] ...` 묶음에 합쳐져 TaskItem 과 통일됨. */
