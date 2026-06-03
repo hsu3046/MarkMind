@@ -17,6 +17,7 @@
     "core:webview:default",
     "core:webview:allow-create-webview-window",
     "core:webview:allow-internal-toggle-devtools",
+    "core:webview:allow-print",
     "core:window:allow-start-dragging",
     "core:window:allow-start-resize-dragging",
     "core:window:allow-set-title",

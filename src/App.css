@@ -2853,3 +2853,271 @@ body.is-resizing .split-pane {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+/* ─── Print / PDF Export ───────────────────────────────────────────────
+   `window.print()` 호출 시 OS native print dialog → "Save as PDF" 흐름.
+   화면 UI (toolbar/sidebar/AI panel/floating UI 등) 모두 hide + markdown
+   content 만 출력. 다크 모드 / 사용자 배경 → 흰 배경 강제, code/checkbox
+   ink 보존, 페이지 break 자연 분할, 한글 줄바꿈 + 외부 링크 URL 노출. */
+
+/* @page margin 0 — dialog 의 NSPrintInfo margin (Standard ~12.7mm) 만 사용.
+   기존 20mm 가 dialog margin 위에 누적되어 A4 콘텐츠 영역이 ~145mm 까지 협소
+   → 표 마지막 컬럼 잘림. 우리 콘텐츠 가장자리 마진은 body padding 으로 처리. */
+@page { size: A4; margin: 0; }
+
+@media print {
+  /* 다크모드 + 사용자 배경 변수 override (light token 강제) */
+  html[data-theme='dark'], html[data-theme='light'], :root {
+    color-scheme: light only;
+    --bg-primary: #fff;
+    --bg-secondary: #fff;
+    --bg-tertiary: #f5f5f5;
+    --text-primary: #111;
+    --text-secondary: #333;
+    --text-tertiary: #555;
+    --border-primary: #d0d0d0;
+  }
+  html {
+    background: #fff !important;
+    color: #111 !important;
+    height: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    overflow-x: visible !important;
+  }
+  body, #root {
+    background: #fff !important;
+    color: #111 !important;
+    height: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    overflow-x: visible !important;
+    margin: 0 !important;
+    /* 좌우 padding 명시 분리 — shorthand 가 inline/inherit 와 섞일 때 비대칭
+       가능성 차단. 사용자 보고 ~15px (~4mm) 좌측 잔존 마진 fix 시도. */
+    padding-top: 6mm !important;
+    padding-right: 8mm !important;
+    padding-bottom: 6mm !important;
+    padding-left: 8mm !important;
+    box-sizing: border-box !important;
+    font-size: 10.5pt;
+    line-height: 1.55;
+  }
+
+  /* 모든 wrapper 의 좌우 margin/padding 명시 0 — 잔존 비대칭 차단.
+     scrollbar-gutter 도 auto 로 (overflow-y: auto 의 reserve gutter 가
+     print 에서 좌우 비대칭 만드는 케이스 회피). */
+  .pane, .preview-wrapper, .markdown-body, .tiptap-rich,
+  .preview-wrapper > *, .pane > * {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    scrollbar-gutter: auto !important;
+  }
+
+  /* 모든 element 가 페이지 폭 안에 — explicit px width (TipTap colgroup col,
+     fixed width 컴포넌트 등) 가 A4 width 초과 못 하게 강제. */
+  .markdown-body *,
+  .tiptap-rich * {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* UI chrome 일괄 hide */
+  .titlebar-drag, .toolbar, .toolbar-dropdown-menu, .search-bar,
+  .statusbar, .outline-panel, .convert-sidebar, .ai-panel,
+  .floating-ai-bar, .rich-toolbar, .table-bubble-menu,
+  .split-handle, .split-handle-area, .sync-toggle,
+  .recent-panel, .recent-panel-backdrop, .tutorial-overlay,
+  .settings-modal-backdrop, .settings-modal, .drive-browser-root,
+  .speaker-editor-root, .link-modal-root, .bg-picker-root,
+  .bg-picker-popover, .cm-panels, .empty-state {
+    display: none !important;
+  }
+
+  /* split mode 의 editor pane (CodeMirror) — specificity 강화 hide.
+     `.pane.pane-editor` 로 두 class 합쳐 일반 `.pane { display: block }` 보다
+     우선 (CSS spec rule: 같은 specificity 면 늦게 정의된 게 이김. 이중 class
+     selector 로 specificity 한 단계 ↑). PDF 좌측 여백 비대칭 원인 차단. */
+  .pane.pane-editor {
+    display: none !important;
+  }
+
+  /* layout 해제 — preview content 가 전체 페이지 차지.
+     inline `style="width: 50%"` (split mode) 도 !important 로 override. */
+  .app, .main-content, .split-pane, .pane,
+  .preview-wrapper, .preview-wrapper.preview-rich-mode,
+  .markdown-body, .tiptap-rich {
+    display: block !important;
+    height: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    background: #fff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+  }
+  /* preview-rich-mode 의 .tiptap-rich margin-left/right 40px override */
+  .preview-wrapper.preview-rich-mode .markdown-frontmatter,
+  .preview-wrapper.preview-rich-mode .tiptap-rich {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+  * {
+    position: static !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* 사용자 BackgroundPicker 의 !important 인라인 스타일 counter */
+  [data-custom-bg] .preview-wrapper,
+  [data-custom-bg] .tiptap-rich,
+  [data-custom-bg] .markdown-body,
+  [data-custom-bg] .pane {
+    background: #fff !important;
+  }
+
+  /* 본문 영역 */
+  .markdown-body, .tiptap-rich {
+    max-width: none !important;
+    width: 100% !important;
+    color: #111 !important;
+    background: #fff !important;
+  }
+
+  /* page break — heading widow/orphan + 큰 블록 안 잘림 */
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+    break-after: avoid;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    color: #000 !important;
+  }
+  h1 { page-break-before: always; break-before: page; }
+  h1:first-of-type, h1:first-child {
+    page-break-before: avoid;
+    break-before: avoid;
+  }
+  p, li, blockquote { widows: 3; orphans: 3; }
+  pre, table, img, blockquote, figure, .markdown-frontmatter {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* 표 — 헤더 반복 + row 안 잘림 + 폭 자동 fit.
+     TipTap colgroup 이 inline `<col style="width:200px">` 부여 → CSS rule 보다
+     우선해 페이지 폭 초과. attribute selector 로 inline style 가진 col 강제
+     override. table-layout: fixed 로 균등 분배 (한국어 word-break 작동 위함). */
+  table {
+    border-collapse: collapse;
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
+  }
+  colgroup, col, col[style] {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+  thead { display: table-header-group; }
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  td, th {
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    max-width: none !important;
+    min-width: 0 !important;
+  }
+
+  /* 코드 — 줄바꿈 + ink 보존 (hljs 색상 살리기) */
+  pre, code, .hljs, .hljs * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  pre {
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    overflow: visible !important;
+    max-width: 100% !important;
+    background: #f6f8fa !important;
+    border: 1px solid #ddd !important;
+  }
+
+  /* 체크박스 — 화면 CSS (appearance:none) 무시하고 print 친화 box + ✓ */
+  input[type='checkbox'], .inline-cb-wrapper input.inline-cb {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    appearance: none;
+    -webkit-appearance: none;
+    width: 1em;
+    height: 1em;
+    border: 1.5px solid #000 !important;
+    background: #fff !important;
+    border-radius: 2px !important;
+    vertical-align: -2px;
+    position: relative !important;
+    margin-right: 0.3em;
+  }
+  input[type='checkbox']:checked::before,
+  .inline-cb-wrapper input.inline-cb:checked::before {
+    content: '\2713';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95em;
+    line-height: 1;
+    color: #000;
+  }
+  /* 화면 모드의 체크 마크 (::after) 는 print 에서 숨김 (중복 방지) */
+  input[type='checkbox']:checked::after,
+  .inline-cb-wrapper input.inline-cb:checked::after {
+    display: none !important;
+  }
+
+  /* 표 stripe / blockquote 색상 보존 */
+  .markdown-body tr:nth-child(even),
+  .markdown-body th,
+  .markdown-body blockquote {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* 한글 줄바꿈 — 단어 중간 안 끊김 + 긴 영문 URL 은 anywhere */
+  :lang(ko), [lang='ko'] {
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+    line-height: 1.65;
+  }
+
+  /* 이미지 */
+  img {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  /* 링크 — 외부 URL 만 본문 뒤에 표시 (내부 anchor/mailto/javascript 제외) */
+  a, a:visited {
+    color: #000;
+    text-decoration: underline;
+  }
+  a[href^='http']::after,
+  a[href^='//']::after {
+    content: ' (' attr(href) ')';
+    font-size: 0.85em;
+    color: #555;
+    word-break: break-all;
+  }
+  a[href^='#']::after,
+  a[href^='mailto:']::after,
+  a[href^='javascript:']::after {
+    content: '';
+  }
+}

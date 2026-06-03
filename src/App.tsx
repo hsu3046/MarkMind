@@ -142,6 +142,65 @@ function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<EditorHandle>(null);
 
+  // PDF export — 옵션 B1: WKWebView.createPDFWithConfiguration 으로 dialog 없이
+  // PDF 생성 + tauri-plugin-dialog 의 save() 로 사용자 저장 위치 지정.
+  //
+  // 이전 옵션 A (NSPrintOperation modal dialog) 는 paperSize/horizontallyCentered
+  // 명시해도 사용자 환경에 따라 비대칭 잔존 + dialog UX 부담. B1 은:
+  //   1) preview 강제 + hydration 대기
+  //   2) save dialog → path
+  //   3) invoke('export_pdf', { path }) → Rust 가 WKWebView createPDF + fs write
+  //   4) viewMode 복원
+  const prevViewModeRef = useRef<ViewMode | null>(null);
+  const handleExportPdf = useCallback(async () => {
+    if (viewMode === 'editor' || viewMode === 'split') {
+      prevViewModeRef.current = viewMode;
+      setViewMode('preview');
+      await new Promise<void>((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => r())),
+      );
+      await new Promise<void>((r) => setTimeout(r, 80));
+    }
+
+    const defaultName = (fileName || 'Untitled').replace(/\.md$/i, '') + '.pdf';
+    try {
+      const [{ save }, { invoke }] = await Promise.all([
+        import('@tauri-apps/plugin-dialog'),
+        import('@tauri-apps/api/core'),
+      ]);
+      const path = await save({
+        defaultPath: defaultName,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        title: 'PDF로 내보내기',
+      });
+      if (!path) {
+        // 사용자 취소
+        return;
+      }
+      await invoke('export_pdf', { path });
+    } catch (err) {
+      console.error('[export_pdf] failed:', err);
+    } finally {
+      if (prevViewModeRef.current) {
+        setViewMode(prevViewModeRef.current);
+        prevViewModeRef.current = null;
+      }
+    }
+  }, [viewMode, fileName]);
+
+  // ⌘P / Ctrl+P 단축키 (IME 합성 중 보호)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p' && !e.shiftKey) {
+        if (e.isComposing || e.keyCode === 229) return;
+        e.preventDefault();
+        handleExportPdf();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleExportPdf]);
+
   // AI
   const ai = useAI();
   const [selectedText, setSelectedText] = useState('');
@@ -913,6 +972,7 @@ function App() {
         onOpenFile={openFile}
         onSaveFile={saveFile}
         onSaveFileAs={saveFileAs}
+        onExportPdf={handleExportPdf}
         onShowTutorial={() => setTutorialVisible(true)}
         onShowSettings={() => setSettingsVisible(true)}
         onOpenFromDrive={() => setDriveBrowserMode('open')}

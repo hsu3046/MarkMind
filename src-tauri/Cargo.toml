@@ -80,3 +80,20 @@ tiny_http = "0.12"  # OAuth redirect callback loopback server
 rand = "0.8"        # PKCE verifier / CSRF state 난수
 sha2 = "0.10"       # PKCE S256 challenge
 
+
+# macOS native print API — NSPrintInfo 명시 설정 + WKWebView.printOperationWithPrintInfo
+# 호출. window.print() 가 wry 의 default 사용 (paperSize/centered 미명시 → 좌측
+# 여백 비대칭) 회피용. PR #26 의 PDF export 정밀 제어.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = [
+    "NSResponder",
+    "NSView",
+    "NSWindow",
+    "NSPrintInfo",
+    "NSPrintOperation",
+] }
+objc2-web-kit = { version = "0.3", features = [
+    "WKWebView",
+] }
+objc2-foundation = { version = "0.3", features = ["NSURL", "NSString", "NSError", "NSDictionary"] }

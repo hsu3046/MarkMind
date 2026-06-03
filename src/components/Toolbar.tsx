@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
     Columns2, BookOpen,
-    FilePlus, FolderOpen, Save, Download,
+    FilePlus, FolderOpen, Save, Download, FileDown,
     ZoomIn, ZoomOut, List, Maximize, Clock,
     Search, ChevronRight, Sparkles, Check, X,
     Mic, ScanText, Settings,
@@ -96,6 +96,7 @@ interface ToolbarProps {
     onOpenFile: () => void;
     onSaveFile: () => void;
     onSaveFileAs: () => void;
+    onExportPdf: () => void;
     onShowTutorial: () => void;
     onFontSizeChange: (delta: number) => void;
     onFontSizeReset: () => void;
@@ -131,6 +132,7 @@ export function Toolbar({
     onOpenFile,
     onSaveFile,
     onSaveFileAs,
+    onExportPdf,
     onShowTutorial,
     onFontSizeChange,
     onFontSizeReset,
@@ -227,6 +229,11 @@ export function Toolbar({
                                 <Download size={14} strokeWidth={1.5} />
                                 <span>Save As…</span>
                                 <span className="dropdown-shortcut">⌘⇧S</span>
+                            </button>
+                            <button className="dropdown-item" onClick={() => handleMenuItem(onExportPdf)}>
+                                <FileDown size={14} strokeWidth={1.5} />
+                                <span>Export as PDF…</span>
+                                <span className="dropdown-shortcut">⌘P</span>
                             </button>
                             {driveAvailable && (
                                 <>
