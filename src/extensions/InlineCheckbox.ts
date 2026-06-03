@@ -17,10 +17,13 @@
 // Read-only ReactMarkdown 경로 (split mode preview pane) 와 별개 — 해당 경로는
 // remark-gfm 통과로 `[x]` 가 plain text 로 표시됨. Rich Text 모드 전용 기능.
 
-import { Node, mergeAttributes, nodeInputRule } from '@tiptap/core';
+import { Node, mergeAttributes, InputRule } from '@tiptap/core';
 
 export const InlineCheckbox = Node.create({
     name: 'inlineCheckbox',
+    // task-item (priority 51) 보다 높게 → cell/textmid 에서 우리가 먼저 매치.
+    // paragraph 시작 + non-cell/non-list 케이스는 handler 안에서 task-item 에 양보.
+    priority: 60,
     group: 'inline',
     inline: true,
     atom: true,
@@ -107,16 +110,48 @@ export const InlineCheckbox = Node.create({
     },
 
     addInputRules() {
-        // 즉시 변환 (A2) — 사용자가 `[x] ` 또는 `[ ] ` 타이핑하면 즉시 체크박스.
-        // 앞에 non-whitespace 필수 (`\S\s*`) → paragraph 시작은 자동 회피
-        // → @tiptap/extension-task-item 의 wrappingInputRule 와 충돌 없음.
+        // 즉시 변환 (A2 + Codex P2 fix) — 사용자가 `[x] ` 또는 `[ ] ` 타이핑하면
+        // 즉시 체크박스. nodeInputRule 대신 직접 InputRule — handler 안에서
+        // 컨텍스트 분기 (paragraph 시작 + non-cell/non-list 이면 task-item 에 양보).
+        //
+        // capture group 1 = `[x]` 만 replace (nodeInputRule 의 동일 로직):
+        // - match[0] 안에서 group 1 위치 계산
+        // - last typed char (trailing space) 보존
+        // - prefix 텍스트는 안 건드림 (Codex 진단 잘못 — 위 소스 검증)
+        //
+        // 빈 cell 안 `[ ] ` 도 정상 매치 (prefix \S 제거).
+        const nodeType = this.type;
         return [
-            nodeInputRule({
-                find: /\S\s*(\[([ xX])\])\s$/,
-                type: this.type,
-                getAttributes: (match) => ({
-                    checked: match[2] === 'x' || match[2] === 'X',
-                }),
+            new InputRule({
+                find: /(\[([ xX])\])\s$/,
+                handler: ({ state, range, match }) => {
+                    const { tr, doc } = state;
+                    const $from = doc.resolve(range.from);
+                    const parentType = $from.node(-1)?.type.name;
+                    const isParagraphStart = range.from === $from.start();
+                    const inCell =
+                        parentType === 'tableCell' ||
+                        parentType === 'tableHeader';
+                    const inListItem =
+                        parentType === 'listItem' || parentType === 'taskItem';
+
+                    // 일반 paragraph 시작 + non-cell/non-list → task-item (GFM
+                    // task-list) 에 양보. cell/list 안 또는 텍스트 중간이면 변환.
+                    if (isParagraphStart && !inCell && !inListItem) {
+                        return null;
+                    }
+
+                    const checked = match[2] === 'x' || match[2] === 'X';
+                    const newNode = nodeType.create({ checked });
+
+                    // capture group 1 (`[x]`) 만 replace + last char 보존 — nodeInputRule.ts 동일 로직
+                    const offset = match[0].lastIndexOf(match[1]);
+                    const matchStart = range.from + offset;
+                    const matchEnd = matchStart + match[1].length;
+                    const lastChar = match[0][match[0].length - 1];
+                    tr.insertText(lastChar, range.from + match[0].length - 1);
+                    tr.replaceWith(matchStart, matchEnd, newNode);
+                },
             }),
         ];
     },
