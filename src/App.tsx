@@ -142,30 +142,42 @@ function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<EditorHandle>(null);
 
-  // PDF export — Rust 측 export_pdf command 호출 (옵션 A — NSPrintInfo 명시).
+  // PDF export — 옵션 B1: WKWebView.createPDFWithConfiguration 으로 dialog 없이
+  // PDF 생성 + tauri-plugin-dialog 의 save() 로 사용자 저장 위치 지정.
   //
-  // window.print() 는 wry 의 default 사용 → NSPrintInfo sharedPrintInfo 의 paperSize
-  // / horizontallyCentered / orientation 미명시 → 시스템 default (US Letter 가능) +
-  // 좌측 정렬 → 좌측 여백 비대칭 발생 (PR #26 검증 사고). Rust command 가 NSPrintInfo
-  // new() 로 A4 + horizontallyCentered(true) + margins 4면 56.69pt 명시 후
-  // WKWebView.printOperationWithPrintInfo 직접 호출 → 안정 결과.
+  // 이전 옵션 A (NSPrintOperation modal dialog) 는 paperSize/horizontallyCentered
+  // 명시해도 사용자 환경에 따라 비대칭 잔존 + dialog UX 부담. B1 은:
+  //   1) preview 강제 + hydration 대기
+  //   2) save dialog → path
+  //   3) invoke('export_pdf', { path }) → Rust 가 WKWebView createPDF + fs write
+  //   4) viewMode 복원
   const prevViewModeRef = useRef<ViewMode | null>(null);
   const handleExportPdf = useCallback(async () => {
-    // editor / split 모드 모두 preview 로 강제 전환
     if (viewMode === 'editor' || viewMode === 'split') {
       prevViewModeRef.current = viewMode;
       setViewMode('preview');
-      // TipTap/ProseMirror hydration 대기 — 2 RAF + 80ms
       await new Promise<void>((r) =>
         requestAnimationFrame(() => requestAnimationFrame(() => r())),
       );
       await new Promise<void>((r) => setTimeout(r, 80));
     }
-    // 다이얼로그의 job title (= PDF 저장 default 파일명) — 현재 file 이름 사용
-    const jobTitle = (fileName || 'Untitled').replace(/\.md$/i, '');
+
+    const defaultName = (fileName || 'Untitled').replace(/\.md$/i, '') + '.pdf';
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('export_pdf', { options: { jobTitle } });
+      const [{ save }, { invoke }] = await Promise.all([
+        import('@tauri-apps/plugin-dialog'),
+        import('@tauri-apps/api/core'),
+      ]);
+      const path = await save({
+        defaultPath: defaultName,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        title: 'PDF로 내보내기',
+      });
+      if (!path) {
+        // 사용자 취소
+        return;
+      }
+      await invoke('export_pdf', { path });
     } catch (err) {
       console.error('[export_pdf] failed:', err);
     } finally {

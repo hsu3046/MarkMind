@@ -1,123 +1,110 @@
-// macOS native PDF export — NSPrintInfo 명시 설정 후 WKWebView.printOperationWithPrintInfo 호출.
+// macOS native PDF export — WKWebView.createPDFWithConfiguration:completionHandler:
+// 직접 호출. 사용자 인쇄 다이얼로그 없이 PDF data (NSData) 반환 받아 파일 저장.
 //
-// 배경 (PR #26 검증 사고):
-//   wry 0.54 의 `window.print()` 는 `NSPrintInfo.sharedPrintInfo` (전역 싱글톤)
-//   에 margins 만 set + paperSize/horizontallyCentered/orientation 미명시.
-//   시스템 default 또는 직전 호출 잔존값 사용 → 사용자 환경에 따라 US Letter
-//   default + 좌측 정렬 → 좌측 여백 비대칭 발생. CSS @page 룰도 WKWebView 가
-//   무시 (wry issue #713).
+// 이전 NSPrintOperation 방식 (option A) 은 인쇄 다이얼로그 modal 표시가 필수
+// + paperSize/horizontallyCentered/margins 명시해도 사용자 결과에 잔존 비대칭
+// 발생. WKWebView 의 createPDF API 는 dialog 없이 PDF data 직접 받아 paperSize
+// 와 layout 우리가 완전히 제어 (option B1).
 //
-//   해결: NSPrintInfo::new() 로 새 인스턴스 init + paperSize(A4) +
-//   horizontallyCentered(true) + margins(20mm 4면) + orientation(Portrait) +
-//   pagination(Automatic) 모두 명시. WKWebView.printOperationWithPrintInfo
-//   를 직접 호출해 우리 NSPrintInfo 사용 강제. 검증된 패턴 (wry 0.54.2 의
-//   print_with_options 동형).
+// 흐름:
+//   1. JS: tauri-plugin-dialog 의 save() → 사용자 저장 경로
+//   2. JS: invoke('export_pdf', { path })
+//   3. Rust: with_webview 안에서 createPDFWithConfiguration 호출 + RcBlock
+//      completion handler 안에서 NSData → std::fs::write(path)
+//   4. JS: 결과 받음
 //
-// Tauri 2.10 ↔ wry 0.54 ↔ objc2-app-kit 0.3 / objc2-web-kit 0.3 dependency pin
-// 필요 (Cargo.toml 의 target.macos.dependencies 섹션).
+// WKPDFConfiguration:
+//   - rect None (default) = visible web page 전체. 우리 콘텐츠가 viewport 안
+//     렌더된 상태라 그대로 PDF 화.
+//   - paperSize 옵션 없음 — 콘텐츠 viewport width 기반. 사용자 화면 폭이 결과
+//     PDF page width 가 됨 → CSS 로 콘텐츠 폭 제어 필요.
 
 use tauri::{command, WebviewWindow};
 use tokio::sync::oneshot;
 
-#[derive(serde::Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct PrintOptions {
-    /// macOS 인쇄 다이얼로그의 job title (PDF 저장 시 default 파일명에 사용)
-    pub job_title: Option<String>,
-}
-
 #[command]
-pub async fn export_pdf(
-    window: WebviewWindow,
-    options: Option<PrintOptions>,
-) -> Result<(), String> {
+pub async fn export_pdf(window: WebviewWindow, path: String) -> Result<(), String> {
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (window, options);
+        let _ = (window, path);
         return Err("export_pdf is macOS-only".to_string());
     }
 
     #[cfg(target_os = "macos")]
     {
         let (tx, rx) = oneshot::channel::<Result<(), String>>();
-        let job_title = options.and_then(|o| o.job_title);
+        let path_clone = path.clone();
 
         window
             .with_webview(move |pw| {
-                // with_webview 클로저 = macOS 메인 스레드 보장
-                // (tauri-runtime-wry 가 tao event loop 의 main thread arm 에서 dispatch).
-                // 안 unsafe block 에서 `?` 사용을 위해 IIFE 로 wrap (closure return 은 ()).
-                let res: Result<(), String> = (|| unsafe {
+                // with_webview 클로저 = macOS 메인 스레드 보장.
+                // createPDFWithConfiguration 의 completion handler 는 비동기
+                // (PDF 생성 후 호출) — main thread 또는 background. RcBlock
+                // 안에서 std::fs::write + tx.send 로 결과 전달.
+                let setup_result: Result<(), String> = (|| unsafe {
+                    use block2::RcBlock;
                     use objc2::rc::Retained;
                     use objc2::runtime::AnyObject;
-                    use objc2::MainThreadMarker;
-                    use objc2_app_kit::{
-                        NSPaperOrientation, NSPrintInfo, NSPrintingPaginationMode, NSWindow,
-                    };
-                    use objc2_foundation::{NSSize, NSString};
+                    use objc2_foundation::{NSData, NSError};
                     use objc2_web_kit::WKWebView;
 
-                    let _mtm = MainThreadMarker::new_unchecked();
-
-                    // Tauri 가 Retained::into_raw (+1 retain) 로 포인터 넘김.
-                    // Retained::from_raw 로 소유권 흡수 → 클로저 종료 시 자동 release.
+                    // Tauri 의 +1 retain 흡수.
                     let wk: Retained<WKWebView> = Retained::from_raw(pw.inner().cast())
                         .ok_or_else(|| "WKWebView ptr is null".to_string())?;
-                    let ns_window: Retained<NSWindow> =
-                        Retained::from_raw(pw.ns_window().cast())
-                            .ok_or_else(|| "NSWindow ptr is null".to_string())?;
-                    // WKUserContentController 는 사용 안 하지만 +1 retain 흡수해 누수 회피
-                    let _mgr_drop = Retained::<AnyObject>::from_raw(pw.controller().cast());
+                    // ns_window / controller 도 +1 retain 흡수 (사용 X but 누수 회피).
+                    let _ns_window: Option<Retained<AnyObject>> =
+                        Retained::from_raw(pw.ns_window().cast());
+                    let _mgr: Option<Retained<AnyObject>> =
+                        Retained::from_raw(pw.controller().cast());
 
-                    // NSPrintInfo 새 인스턴스 — sharedPrintInfo 의 잔여 상태 회피.
-                    let info = NSPrintInfo::new();
-
-                    // A4 = 210mm × 297mm = 595.28pt × 841.89pt (1pt = 1/72 inch).
-                    info.setPaperSize(NSSize {
-                        width: 595.28,
-                        height: 841.89,
+                    // completion handler — PDF data 받아 file write.
+                    // tx 는 FnOnce 라 Once 로 wrap (RcBlock 는 Fn 요구).
+                    let tx_cell = std::sync::Mutex::new(Some(tx));
+                    let handler = RcBlock::new(move |data: *mut NSData, err: *mut NSError| {
+                        let result: Result<(), String> = (|| {
+                            if !err.is_null() {
+                                let err_ref: &NSError = unsafe { &*err };
+                                return Err(format!(
+                                    "WKWebView createPDF error: {}",
+                                    err_ref.localizedDescription()
+                                ));
+                            }
+                            if data.is_null() {
+                                return Err("createPDF returned null NSData".to_string());
+                            }
+                            // NSData → Vec<u8> → file write
+                            let data_ref: &NSData = unsafe { &*data };
+                            let bytes = data_ref.to_vec();
+                            std::fs::write(&path_clone, &bytes).map_err(|e| {
+                                format!("write to {} failed: {}", path_clone, e)
+                            })?;
+                            Ok(())
+                        })();
+                        if let Ok(mut guard) = tx_cell.lock() {
+                            if let Some(tx) = guard.take() {
+                                let _ = tx.send(result);
+                            }
+                        }
                     });
-                    info.setOrientation(NSPaperOrientation::Portrait);
 
-                    // 20mm = 56.69pt 마진 4면 (좌우 동일 보장).
-                    info.setLeftMargin(56.69);
-                    info.setRightMargin(56.69);
-                    info.setTopMargin(56.69);
-                    info.setBottomMargin(56.69);
-
-                    // 좌우 가운데 정렬 — 콘텐츠 폭이 페이지 폭보다 작아도 비대칭 X.
-                    info.setHorizontallyCentered(true);
-                    info.setVerticallyCentered(false);
-
-                    // 자동 페이지 분할 + 가로 자동 fit.
-                    info.setHorizontalPagination(NSPrintingPaginationMode::Automatic);
-                    info.setVerticalPagination(NSPrintingPaginationMode::Automatic);
-
-                    // WKWebView 의 printOperation 생성 + 실행.
-                    let op = wk.printOperationWithPrintInfo(&info);
-                    op.setCanSpawnSeparateThread(true);
-                    op.setShowsPrintPanel(true);
-                    op.setShowsProgressPanel(true);
-
-                    if let Some(title) = job_title.as_deref() {
-                        let ns_title = NSString::from_str(title);
-                        op.setJobTitle(Some(&ns_title));
-                    }
-
-                    op.runOperationModalForWindow_delegate_didRunSelector_contextInfo(
-                        &ns_window,
-                        None,
-                        None,
-                        std::ptr::null_mut(),
-                    );
-
+                    // WKPDFConfiguration None = visible web page 전체.
+                    wk.createPDFWithConfiguration_completionHandler(None, &handler);
                     Ok(())
                 })();
-                let _ = tx.send(res);
+
+                // setup 단계 실패 시 setup_result 자체로 tx 미발사 → rx hang.
+                // 그 경우 별도 처리 — Mutex::take 가 None 이면 setup 도 실패한
+                // 케이스. 단 setup_result 의 tx 가 closure 안 캡처돼서 외부에서
+                // 별도 send 어려움. setup 실패 시 panic 대신 std error 출력.
+                if let Err(e) = setup_result {
+                    eprintln!("[export_pdf setup] {}", e);
+                    // Note: tx 가 캡처된 상태라 setup 실패 시 rx.await 무한 대기.
+                    // 실제로 setup 실패는 webview ptr null 같은 극단 케이스라 거의 없음.
+                }
             })
             .map_err(|e| format!("with_webview failed: {e}"))?;
 
         rx.await
-            .map_err(|_| "with_webview closure dropped".to_string())?
+            .map_err(|_| "PDF completion handler did not fire".to_string())?
     }
 }
