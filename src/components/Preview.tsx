@@ -42,6 +42,35 @@ function fixEmphasis(md: string): string {
     return md.replace(/(\S)(\*{1,2})(?=[^\s*\p{P}])/gu, '$1$2​');
 }
 
+// GFM table row 는 한 줄에 시작·종료가 정상이지만, LLM 회의록 자동 생성
+// (Gemini/Claude) 이 긴 row 를 시각적 wrap 형태로 multi-line 으로 출력하면
+// GFM parser 가 첫 줄을 단일 셀 row 로, 다음 줄을 plain text 로 깨뜨림.
+// 휴리스틱: `|` 로 시작 + `|` 로 안 끝나는 줄 + (선택 빈 줄들) + leading
+// whitespace + `|` 시작 줄 → 공백 하나로 join. 다단계 wrap 도 loop 로 흡수.
+// ``` fence 안은 mask 후 복원.
+function joinBrokenTableRows(md: string): string {
+    // ``` fence 안 markdown 은 row join 대상 제외. NUL byte sentinel (실제 문서에
+    // 등장할 일 없음) 으로 mask 후 복원 — 평이한 토큰은 본문 충돌 위험.
+    const fenceParts: string[] = [];
+    const masked = md.replace(/```[\s\S]*?```/g, (m) => {
+        const placeholder = `\x00MMF${fenceParts.length}\x00`;
+        fenceParts.push(m);
+        return placeholder;
+    });
+
+    let result = masked;
+    let prev: string | null = null;
+    while (prev !== result) {
+        prev = result;
+        result = result.replace(
+            /^(\|[^\n]*[^|\s])[ \t]*\n(?:[ \t]*\n)*[ \t]+(\|)/gm,
+            '$1 $2',
+        );
+    }
+
+    return result.replace(/\x00MMF(\d+)\x00/g, (_, i) => fenceParts[Number(i)]);
+}
+
 /** save 시점에 fixEmphasis 가 삽입한 zero-width 제거 */
 function stripDisplayHelpers(md: string): string {
     return md.replace(/​/g, '');
@@ -437,7 +466,7 @@ function RichEditor({
             // Smart typography — `->` → `→`, `--` → `—`, `(c)` → `©` 등 자동 치환
             Typography,
         ],
-        content: fixEmphasis(body), // ** 인접 bold 인식되도록 zero-width 삽입
+        content: fixEmphasis(joinBrokenTableRows(body)), // ** 인접 bold 인식되도록 zero-width 삽입 + LLM multi-line table row 정상화
         onUpdate: ({ editor }) => {
             const md: string = editor.storage.markdown?.getMarkdown() ?? '';
             // 직렬화 시 fixEmphasis 의 zero-width 제거 → 파일에는 비가시 문자 안 들어감
@@ -518,7 +547,7 @@ function RichEditor({
         // fast-path: 길이 차이 ≥ 8 면 trim 비교 skip — 큰 문서 비용 절감
         const lenDiff = Math.abs(cleanedCurrent.length - body.length);
         if (lenDiff > 8 || cleanedCurrent.trim() !== body.trim()) {
-            editor.commands.setContent(fixEmphasis(body), { emitUpdate: false });
+            editor.commands.setContent(fixEmphasis(joinBrokenTableRows(body)), { emitUpdate: false });
         }
     }, [body, editor]);
 
@@ -537,7 +566,7 @@ export function Preview({ content, fontSize = 14, onChange }: PreviewProps) {
         return {
             fields: split.fields,
             body: split.body,
-            processedBody: fixEmphasis(split.body),
+            processedBody: fixEmphasis(joinBrokenTableRows(split.body)),
             rawFrontmatter: split.rawFrontmatter,
         };
     }, [content]);
