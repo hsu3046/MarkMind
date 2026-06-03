@@ -16,6 +16,8 @@ import { TableHeader } from '@tiptap/extension-table-header';
 import { Markdown } from 'tiptap-markdown';
 import { SearchAndReplace } from '@sereneinserenade/tiptap-search-and-replace';
 import { Typography } from '@tiptap/extension-typography';
+import { InlineCheckbox } from '../extensions/InlineCheckbox';
+import { TableBubbleMenu } from './TableBubbleMenu';
 import {
     Bold, Italic, Strikethrough, Code,
     Heading1, Heading2, Heading3, Heading4,
@@ -494,6 +496,9 @@ function RichEditor({
                 searchResultClass: 'rich-search-highlight',
                 disableRegex: true,
             }),
+            // 인라인 체크박스 — table cell 안에서도 클릭 가능. Read-only ReactMarkdown
+            // 경로에는 적용 안 됨 (Rich Text 모드 전용 기능).
+            InlineCheckbox,
             // Smart typography — `->` → `→`, `--` → `—`, `(c)` → `©` 등 자동 치환
             Typography,
         ],
@@ -587,6 +592,7 @@ function RichEditor({
         <>
             <RichToolbar editor={editor} />
             <EditorContent editor={editor} />
+            <TableBubbleMenu editor={editor} />
         </>
     );
 }

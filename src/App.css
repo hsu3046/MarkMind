@@ -566,6 +566,84 @@ body {
   outline: 1.5px solid rgba(255, 140, 0, 0.9);
 }
 
+/* ProseMirror Tables — 드래그로 다중 셀 선택 시 시각화.
+   prosemirror-tables 가 Decoration 으로 td/th 에 `selectedCell` class 부여.
+   사용자가 셀을 드래그 선택 (병합 전 단계) 한 게 보이도록 accent 색 반투명 fill. */
+.tiptap-rich td.selectedCell,
+.tiptap-rich th.selectedCell {
+  position: relative;
+}
+.tiptap-rich td.selectedCell::after,
+.tiptap-rich th.selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(82, 119, 233, 0.18);
+  border: 2px solid var(--accent, #5277e9);
+  pointer-events: none;
+}
+
+/* TableBubbleMenu — 표 셀 안 cursor 시 floating row/col 조작 패널 */
+.table-bubble-menu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-primary, #ffffff);
+  border: 1px solid var(--text-tertiary, #d8d8d3);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  z-index: 200;
+  font-size: 13px;
+}
+.tbm-btn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tbm-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary, #f0f0eb);
+}
+.tbm-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.tbm-danger:hover:not(:disabled) {
+  background: rgba(220, 0, 0, 0.08);
+  color: #c00;
+}
+.tbm-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--text-tertiary, #d8d8d3);
+  margin: 4px 2px;
+}
+
+/* InlineCheckbox wrapper — table cell 등에서 동작하는 클릭 가능한 inline checkbox.
+   input.inline-cb 의 시각 스타일 (appearance:none, 사각형, 파란 체크) 은 아래
+   `.tiptap-rich ul[data-type="taskList"] ...` 묶음에 합쳐져 TaskItem 과 통일됨. */
+.inline-cb-wrapper {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -2px;
+  cursor: pointer;
+  user-select: none;
+  margin: 0 1px;
+}
+/* iOS Safari caret 가시성 fix — atom inline node 옆 zero-width space (TipTap docs) */
+.inline-cb-wrapper::after {
+  content: '\200B';
+}
+
 /* TipTap search-and-replace 의 highlight (Rich Text 모드) */
 .rich-search-highlight {
   background: rgba(255, 200, 0, 0.35);
@@ -1795,7 +1873,8 @@ body.is-resizing .split-pane {
 
 /* 체크박스 (Rich Text + Preview 공통) — OS default 무시, 정사각형 + radius 0 */
 .tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"],
-.markdown-body ul li input[type="checkbox"] {
+.markdown-body ul li input[type="checkbox"],
+.inline-cb-wrapper input.inline-cb {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -1813,17 +1892,20 @@ body.is-resizing .split-pane {
   transition: background 0.12s, border-color 0.12s;
 }
 .tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"]:hover,
-.markdown-body ul li input[type="checkbox"]:hover {
+.markdown-body ul li input[type="checkbox"]:hover,
+.inline-cb-wrapper input.inline-cb:hover {
   border-color: var(--accent);
 }
 .tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"]:checked,
-.markdown-body ul li input[type="checkbox"]:checked {
+.markdown-body ul li input[type="checkbox"]:checked,
+.inline-cb-wrapper input.inline-cb:checked {
   background: var(--accent);
   border-color: var(--accent);
 }
 /* 체크마크 — 흰 ✓ */
 .tiptap-rich ul[data-type="taskList"] li > label > input[type="checkbox"]:checked::after,
-.markdown-body ul li input[type="checkbox"]:checked::after {
+.markdown-body ul li input[type="checkbox"]:checked::after,
+.inline-cb-wrapper input.inline-cb:checked::after {
   content: '';
   position: absolute;
   left: 5px;
@@ -2083,9 +2165,8 @@ body.is-resizing .split-pane {
   font-weight: 600;
 }
 
-.markdown-body tr:nth-child(even) {
-  background: var(--preview-table-stripe);
-}
+/* 본문 row 는 흰 배경 — header 와 body 구분만으로 충분 (GFM 표준).
+   zebra stripe 는 사용자 피드백 반영해 제거 (행마다 색 달라 애매함). */
 
 .markdown-body img {
   max-width: 100%;
