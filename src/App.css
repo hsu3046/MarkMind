@@ -566,6 +566,23 @@ body {
   outline: 1.5px solid rgba(255, 140, 0, 0.9);
 }
 
+/* ProseMirror Tables — 드래그로 다중 셀 선택 시 시각화.
+   prosemirror-tables 가 Decoration 으로 td/th 에 `selectedCell` class 부여.
+   사용자가 셀을 드래그 선택 (병합 전 단계) 한 게 보이도록 accent 색 반투명 fill. */
+.tiptap-rich td.selectedCell,
+.tiptap-rich th.selectedCell {
+  position: relative;
+}
+.tiptap-rich td.selectedCell::after,
+.tiptap-rich th.selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(82, 119, 233, 0.18);
+  border: 2px solid var(--accent, #5277e9);
+  pointer-events: none;
+}
+
 /* TableBubbleMenu — 표 셀 안 cursor 시 floating row/col 조작 패널 */
 .table-bubble-menu {
   display: flex;

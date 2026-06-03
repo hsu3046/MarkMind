@@ -13,6 +13,7 @@
 import type { ButtonHTMLAttributes } from 'react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import type { Editor } from '@tiptap/react';
+import { Trash2 } from 'lucide-react';
 
 interface Props {
     editor: Editor | null;
@@ -88,16 +89,16 @@ export function TableBubbleMenu({ editor }: Props) {
             </Btn>
             <span className="tbm-sep" aria-hidden />
             <Btn
-                onClick={() => editor.chain().focus().toggleHeaderRow().run()}
-                title="헤더 행 토글"
+                onClick={() => editor.chain().focus().mergeCells().run()}
+                title="선택한 셀들을 병합 (먼저 셀 여러 개를 드래그 선택)"
             >
-                H
+                병합
             </Btn>
             <Btn
-                onClick={() => editor.chain().focus().mergeOrSplit().run()}
-                title="셀 병합/분할"
+                onClick={() => editor.chain().focus().splitCell().run()}
+                title="병합된 셀을 분리"
             >
-                ⇄
+                분리
             </Btn>
             <span className="tbm-sep" aria-hidden />
             <Btn
@@ -105,7 +106,7 @@ export function TableBubbleMenu({ editor }: Props) {
                 title="표 삭제"
                 className="tbm-btn tbm-danger"
             >
-                ✕
+                <Trash2 size={14} strokeWidth={1.6} />
             </Btn>
         </BubbleMenu>
     );
