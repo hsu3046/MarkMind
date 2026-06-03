@@ -2165,9 +2165,8 @@ body.is-resizing .split-pane {
   font-weight: 600;
 }
 
-.markdown-body tr:nth-child(even) {
-  background: var(--preview-table-stripe);
-}
+/* 본문 row 는 흰 배경 — header 와 body 구분만으로 충분 (GFM 표준).
+   zebra stripe 는 사용자 피드백 반영해 제거 (행마다 색 달라 애매함). */
 
 .markdown-body img {
   max-width: 100%;
