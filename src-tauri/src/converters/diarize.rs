@@ -176,13 +176,15 @@ fn segment_audio(
     let mut offset = frame_start;
     let mut start_offset = 0.0_f64;
 
-    // 마지막 window 를 꽉 채우도록 끝에 무음 padding (segment.rs 동일).
+    // 끝에 무음 padding (segment.rs 동일). 입력이 window 의 정확한 배수여도 항상
+    // 무음 window 하나를 더 붙인다 (배수면 pad_len == window_size). 마지막 발화가
+    // EOF 까지 silence 없이 이어질 때, 이 무음 프레임이 있어야 is_speeching → silence
+    // 전환이 일어나 마지막 화자 segment 가 마감/push 된다. `if rem != 0` 로 생략하면
+    // 배수 입력의 끝 발화를 통째로 놓친다.
     let padded_samples = {
         let mut padded = Vec::from(samples);
-        let rem = samples.len() % window_size;
-        if rem != 0 {
-            padded.extend(std::iter::repeat(0i16).take(window_size - rem));
-        }
+        let pad_len = window_size - (samples.len() % window_size);
+        padded.extend(std::iter::repeat(0i16).take(pad_len));
         padded
     };
 
