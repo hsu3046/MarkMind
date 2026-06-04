@@ -367,6 +367,11 @@ async fn run_pipeline_core(
         merged = map_timestamps_to_original(&merged, map);
     }
 
+    // 화자 라인 형식(bold/non-bold)을 canonical bold 로 통일. 산출물의 형식 혼합을
+    // 없애고, 아래 apply_diar_labels(DIAR_LABEL_RE 는 bold 형식만 매칭)가 모든 라인을
+    // 잡게 한다. diar 유무와 무관하게 항상 적용.
+    merged = normalize_speaker_lines(&merged);
+
     // pyannote-rs 화자 분석으로 글로벌 라벨 통일 — chunk 경계 무관.
     // chunk 모드는 화자 뒤죽박죽이 가장 심한 케이스라 효과 최대.
     if !diar_segments.is_empty() {
@@ -445,6 +450,9 @@ async fn run_inline_path(
         result.text
     };
 
+    // 화자 라인 형식 통일 (bold/non-bold 혼합 → canonical bold). chunk 경로와 동일.
+    let body = normalize_speaker_lines(&body);
+
     // pyannote-rs 화자 분석 결과 적용 — chunk 경계 무관 글로벌 ID
     let body = if !diar_segments.is_empty() {
         emitter.emit("🎭 화자 라벨 통일 중...", None);
@@ -475,6 +483,40 @@ async fn run_inline_path(
         output_dir,
     )
     .await
+}
+
+/// Gemini 가 청크마다(또는 한 응답 안에서도) 화자 라인을 서로 다른 형식으로 흩어
+/// 출력하는 걸 canonical bold(`**[HH:MM:SS] 화자X:**`) 로 통일한다.
+///
+/// 받아들이는 변형:
+///   - `[t] **LABEL**:`  (Tier 2) → `**[t] LABEL:**`
+///   - `[t] LABEL:`      (Tier 3) → `**[t] LABEL:**`
+///   - `**[t] LABEL:**`  (Tier 1) → 그대로 (이미 canonical — `^\[` 앵커에 안 걸림)
+///
+/// 효과 2가지: ① 최종 산출물의 bold/non-bold 형식 혼합 제거. ② apply_diar_labels 의
+/// DIAR_LABEL_RE(bold 형식만 매칭)가 모든 화자 라인을 라벨 통일 대상으로 잡게 함 —
+/// 정규화 전이라면 non-bold 라인은 글로벌 ID 통일에서 누락됐다.
+fn normalize_speaker_lines(text: &str) -> String {
+    // Tier 2: `[t] **LABEL**:` → `**[t] LABEL:**`. Tier 3 라벨 클래스가 `*` 를
+    // 제외하므로 순서 의존은 없으나, 명확성을 위해 먼저 처리.
+    let tier2 = Regex::new(r"(?m)^\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s+\*\*\s*([^\n*]+?)\s*\*\*\s*:")
+        .expect("tier2 speaker-line regex");
+    let s = tier2
+        .replace_all(text, |c: &regex::Captures| {
+            format!("**[{}] {}:**", &c[1], c[2].trim())
+        })
+        .into_owned();
+
+    // Tier 3: 남은 non-bold `[t] LABEL:` → `**[t] LABEL:**`.
+    // `^\[` 앵커라 Tier 1 의 `**[...` 라인(첫 문자가 `*`)은 매칭되지 않아 보존된다.
+    // 라벨 클래스 `[^\n*:]+?` 는 별표/콜론/줄바꿈 제외 — 발화 본문의 콜론에 안 걸림.
+    let tier3 = Regex::new(r"(?m)^\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s+([^\n*:]+?)\s*:")
+        .expect("tier3 speaker-line regex");
+    tier3
+        .replace_all(&s, |c: &regex::Captures| {
+            format!("**[{}] {}:**", &c[1], c[2].trim())
+        })
+        .into_owned()
 }
 
 /// pyannote-rs 가 분석한 발화 구간 (DiarSegment) 으로 Gemini 가 부여한
@@ -927,6 +969,33 @@ fn unique_path(dir: &Path, stem: &str, ext: &str) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// normalize_speaker_lines — bold/non-bold 혼합을 canonical bold 로 통일
+    #[test]
+    fn test_normalize_speaker_lines_mixed() {
+        let input = "**[00:05:00] 화자A:** 안녕\n[00:06:00] 화자B: 네\n[00:07:00] **화자C**: 음";
+        let out = normalize_speaker_lines(input);
+        assert_eq!(
+            out,
+            "**[00:05:00] 화자A:** 안녕\n**[00:06:00] 화자B:** 네\n**[00:07:00] 화자C:** 음"
+        );
+    }
+
+    /// normalize_speaker_lines — 라인 시작 화자 라인만 정규화. 발화 본문의 콜론은 보존.
+    #[test]
+    fn test_normalize_speaker_lines_preserves_body() {
+        let input = "[00:01:00] 화자A: 그래서 말했죠: 안돼요";
+        let out = normalize_speaker_lines(input);
+        assert_eq!(out, "**[00:01:00] 화자A:** 그래서 말했죠: 안돼요");
+    }
+
+    /// normalize_speaker_lines — [MM:SS] 단축 형식 + 이미 canonical 인 라인 보존
+    #[test]
+    fn test_normalize_speaker_lines_mmss_and_canonical() {
+        let input = "[05:30] 화자B: 발언\n**[00:10:00] 화자A:** 그대로";
+        let out = normalize_speaker_lines(input);
+        assert_eq!(out, "**[05:30] 화자B:** 발언\n**[00:10:00] 화자A:** 그대로");
+    }
 
     /// offset_timestamps — [HH:MM:SS] 에 offset 적용
     #[test]
