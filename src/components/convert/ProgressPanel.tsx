@@ -8,8 +8,9 @@
 import { ReactNode } from 'react';
 import { JobState } from '../../types/converter';
 import {
-    Upload, Clock, Volume2, CheckCircle2, Brain, Notebook, Scissors,
-    AlertTriangle, Mic, Search, BarChart3, FileText, Save, Loader2,
+    Upload, Clock, AudioLines, CheckCircle2, Binoculars, Notebook, Scissors,
+    AlertTriangle, MessagesSquare, FastForward, Combine, Waypoints,
+    HardDriveDownload, Search, BarChart3, FileText, Save, Loader2,
 } from 'lucide-react';
 
 interface ProgressPanelProps {
@@ -23,13 +24,20 @@ function iconFor(step: string): { icon: ReactNode; text: string } {
     const map: { pattern: RegExp; icon: ReactNode }[] = [
         { pattern: /^📤\s*/, icon: <Upload size={14} /> },
         { pattern: /^🕐\s*/, icon: <Clock size={14} /> },
-        { pattern: /^🔊\s*/, icon: <Volume2 size={14} /> },
+        { pattern: /^🔊\s*/, icon: <AudioLines size={14} /> },
         { pattern: /^✅\s*/, icon: <CheckCircle2 size={14} className="ok" /> },
-        { pattern: /^🧠\s*/, icon: <Brain size={14} /> },
+        { pattern: /^🧠\s*/, icon: <Binoculars size={14} /> },
         { pattern: /^📒\s*/, icon: <Notebook size={14} /> },
         { pattern: /^✂️\s*/, icon: <Scissors size={14} /> },
         { pattern: /^⚠️?\s*/, icon: <AlertTriangle size={14} className="warn" /> },
-        { pattern: /^🎙️?\s*/, icon: <Mic size={14} /> },
+        // 화자 분석/분리/라벨 통일 — 🎭 (구 🎙️ 도 호환 유지)
+        { pattern: /^🎭\s*/, icon: <MessagesSquare size={14} /> },
+        { pattern: /^🎙️?\s*/, icon: <MessagesSquare size={14} /> },
+        { pattern: /^⚡\s*/, icon: <FastForward size={14} /> },
+        { pattern: /^🔗\s*/, icon: <Combine size={14} /> },
+        { pattern: /^🔁\s*/, icon: <Waypoints size={14} /> },
+        { pattern: /^📁\s*/, icon: <HardDriveDownload size={14} /> },
+        { pattern: /^📝\s*/, icon: <FileText size={14} /> },
         { pattern: /^🔪\s*/, icon: <Scissors size={14} /> },
         { pattern: /^🔍\s*/, icon: <Search size={14} /> },
         { pattern: /^📊\s*/, icon: <BarChart3 size={14} /> },

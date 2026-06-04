@@ -486,7 +486,12 @@ pub async fn trim_silence(
     let segment_map = build_segment_map(&segments);
     let trimmed_duration = segment_map.last().map(|m| m.trimmed_end).unwrap_or(0.0);
     let saved = original_duration - trimmed_duration;
-    emitter.emit(
+    // heartbeat 가 그리던 "vad-trim" row 를 같은 step_id 로 완료 상태로 in-place 교체.
+    // 별도 emit() 으로 새 row 를 추가하면 heartbeat row 가 마지막 진행률(예: 2%)에
+    // 고정된 채 영구히 남으므로(ProgressPanel 은 stepId 매칭 시 row replace),
+    // 반드시 같은 "vad-trim" id 로 갱신해야 한다. progress: None → 진행바 제거.
+    emitter.emit_update(
+        "vad-trim",
         format!(
             "✅ 정리 완료 — {} → {}",
             fmt_duration(original_duration),
@@ -497,6 +502,7 @@ pub async fn trim_silence(
             fmt_duration(saved),
             t_trim.elapsed().as_secs_f64()
         )),
+        None,
     );
 
     Ok(TrimResult {
