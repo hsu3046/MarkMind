@@ -1965,7 +1965,7 @@ body.is-resizing .split-pane {
 .tiptap-rich table td, .tiptap-rich table th {
   border: 1px solid var(--border-primary);
   padding: 6px 10px;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 /* YAML frontmatter — Preview 상단 메타 박스 */
@@ -2158,6 +2158,7 @@ body.is-resizing .split-pane {
   border: 1px solid var(--preview-table-border);
   padding: 8px 12px;
   text-align: left;
+  vertical-align: middle;
 }
 
 .markdown-body th {
