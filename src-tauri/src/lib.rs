@@ -116,6 +116,7 @@ pub fn run() {
             converters::keychain::has_api_key,
             // 통합 vault batch (저장 다이얼로그 1회로 묶기)
             secrets::secrets_set_user_inputs,
+            secrets::get_diar_python,
             // Templates
             converters::templates::list_meeting_templates,
             converters::templates::open_user_templates_folder,

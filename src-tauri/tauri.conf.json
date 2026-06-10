@@ -35,8 +35,7 @@
     ],
     "resources": [
       "resources/silero_vad.onnx",
-      "resources/segmentation-3.0.onnx",
-      "resources/wespeaker_en_voxceleb_CAM++.onnx",
+      "resources/diarize_pyannote.py",
       "resources/meeting-templates/*.md"
     ],
     "icon": [

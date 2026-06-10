@@ -11,18 +11,20 @@
 
 import { isTauri } from './platform';
 
-export type Provider = 'gemini' | 'claude' | 'openai';
+export type Provider = 'gemini' | 'claude' | 'openai' | 'pyannoteai';
 
 const LEGACY_LOCALSTORAGE_KEYS: Record<Provider, string> = {
     gemini: 'markmind-gemini-api-key',
     claude: 'markmind-claude-api-key',
     openai: 'markmind-openai-api-key',
+    pyannoteai: 'markmind-pyannoteai-api-key',
 };
 
 const cache: Record<Provider, string | null> = {
     gemini: null,
     claude: null,
     openai: null,
+    pyannoteai: null,
 };
 
 let initialized = false;
@@ -70,14 +72,16 @@ export async function initSecureStorage(): Promise<void> {
     initPromise = (async () => {
         if (isTauri()) {
             // Tauri keychain 우선 로드
-            const [gemini, claude, openai] = await Promise.all([
+            const [gemini, claude, openai, pyannoteai] = await Promise.all([
                 loadFromTauri('gemini'),
                 loadFromTauri('claude'),
                 loadFromTauri('openai'),
+                loadFromTauri('pyannoteai'),
             ]);
             cache.gemini = gemini;
             cache.claude = claude;
             cache.openai = openai;
+            cache.pyannoteai = pyannoteai;
             // legacy localStorage 마이그레이션
             await Promise.all([
                 migrateLegacy('gemini'),
@@ -94,6 +98,7 @@ export async function initSecureStorage(): Promise<void> {
             cache.gemini = localStorage.getItem(LEGACY_LOCALSTORAGE_KEYS.gemini);
             cache.claude = localStorage.getItem(LEGACY_LOCALSTORAGE_KEYS.claude);
             cache.openai = localStorage.getItem(LEGACY_LOCALSTORAGE_KEYS.openai);
+            cache.pyannoteai = localStorage.getItem(LEGACY_LOCALSTORAGE_KEYS.pyannoteai);
         }
         initialized = true;
     })();
@@ -143,7 +148,7 @@ export async function removeKey(provider: Provider): Promise<void> {
  * - 값 → 캐시 저장
  */
 export function updateCacheAfterBatch(updates: Partial<Record<Provider, string | null | undefined>>): void {
-    for (const provider of ['gemini', 'claude', 'openai'] as Provider[]) {
+    for (const provider of ['gemini', 'claude', 'openai', 'pyannoteai'] as Provider[]) {
         if (provider in updates) {
             const val = updates[provider];
             cache[provider] = val && val.trim() ? val.trim() : null;

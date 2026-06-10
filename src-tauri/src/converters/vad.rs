@@ -270,21 +270,12 @@ fn post_process(probs: &[f32], cfg: PostProcessConfig) -> Vec<SpeechSegment> {
 /// ffmpeg 로 input → 16kHz mono PCM (Int16Array 동치)
 /// pub — diarize 모듈도 같은 PCM 형식 (16kHz mono i16) 사용
 pub async fn decode_to_16k_pcm(input: &Path) -> ConverterResult<Vec<i16>> {
+    let in_str = input
+        .to_str()
+        .ok_or_else(|| ConverterError::Vad("non-UTF8 path".into()))?;
     let output = Command::new(ffmpeg_path()?)
         .args([
-            "-i",
-            input
-                .to_str()
-                .ok_or_else(|| ConverterError::Vad("non-UTF8 path".into()))?,
-            "-ac",
-            "1",
-            "-ar",
-            "16000",
-            "-f",
-            "s16le",
-            "-loglevel",
-            "error",
-            "-",
+            "-i", in_str, "-ac", "1", "-ar", "16000", "-f", "s16le", "-loglevel", "error", "-",
         ])
         .output()
         .await

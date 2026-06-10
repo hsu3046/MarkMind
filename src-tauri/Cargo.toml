@@ -43,10 +43,8 @@ ffmpeg-sidecar = "2"
 ort = { version = "=2.0.0-rc.10", features = ["ndarray"] }
 ndarray = "0.16"
 
-# Speaker diarization (pyannote ONNX). speakrs 대신 채택 — openblas/ndarray-linalg
-# 의존 없이 ort + knf-rs (kaldi-native-fbank) 만으로 동작. macOS CoreML feature
-# 로 가속. 1시간 음성 1분 이내 CPU 처리. MIT 라이선스.
-pyannote-rs = { version = "0.3", features = ["coreml"] }
+# 화자분리(diarization)는 검증된 pyannote 로 위임 — 로컬(Python 사이드카 diarize_pyannote.py)
+# 또는 클라우드(pyannote.ai). 자작 pyannote-rs(+knf-rs/cmake) 의존은 제거됨.
 
 # Audio decoding (PCM extraction for VAD)
 hound = "3"
