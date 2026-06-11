@@ -25,6 +25,11 @@ pub struct Vault {
     #[serde(default)]
     pub openai: Option<String>,
     #[serde(default)]
+    pub pyannoteai: Option<String>,
+    /// 로컬 화자분리용 Python 인터프리터 경로 (pyannote.audio 설치됨). 설정 시 로컬 우선.
+    #[serde(default)]
+    pub diar_python: Option<String>,
+    #[serde(default)]
     pub gdrive_client_id: Option<String>,
     #[serde(default)]
     pub gdrive_client_secret: Option<String>,
@@ -93,6 +98,10 @@ pub struct SecretsUserInputs {
     #[serde(default)]
     pub openai: Option<String>,
     #[serde(default)]
+    pub pyannoteai: Option<String>,
+    #[serde(default)]
+    pub diar_python: Option<String>,
+    #[serde(default)]
     pub gdrive_client_id: Option<String>,
     #[serde(default)]
     pub gdrive_client_secret: Option<String>,
@@ -108,12 +117,20 @@ fn apply_field(target: &mut Option<String>, incoming: Option<String>) {
     };
 }
 
+/// 로컬 화자분리용 Python 경로 조회 (Settings UI 프리필용).
+#[tauri::command]
+pub fn get_diar_python() -> Option<String> {
+    load().diar_python.filter(|s| !s.trim().is_empty())
+}
+
 #[tauri::command]
 pub fn secrets_set_user_inputs(updates: SecretsUserInputs) -> Result<(), String> {
     update(|v| {
         apply_field(&mut v.gemini, updates.gemini);
         apply_field(&mut v.claude, updates.claude);
         apply_field(&mut v.openai, updates.openai);
+        apply_field(&mut v.pyannoteai, updates.pyannoteai);
+        apply_field(&mut v.diar_python, updates.diar_python);
         apply_field(&mut v.gdrive_client_id, updates.gdrive_client_id);
         apply_field(&mut v.gdrive_client_secret, updates.gdrive_client_secret);
     })
@@ -209,6 +226,8 @@ mod tests {
             gemini: Some("g".into()),
             claude: None,
             openai: Some("o".into()),
+            pyannoteai: Some("p".into()),
+            diar_python: None,
             gdrive_client_id: Some("id.apps.googleusercontent.com".into()),
             gdrive_client_secret: Some("GOCSPX-x".into()),
             gdrive_refresh_token: Some("1//x".into()),

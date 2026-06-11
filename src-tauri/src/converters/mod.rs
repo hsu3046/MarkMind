@@ -10,7 +10,9 @@
 
 pub mod audio_pipeline;
 pub mod audio_splitter;
-pub mod diarize;
+pub mod diar;
+pub mod diarize_cloud;
+pub mod diarize_local;
 pub mod commands;
 pub mod error;
 pub mod keychain;
