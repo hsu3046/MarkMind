@@ -477,11 +477,13 @@ async fn run_inline_path(
 
     // trim 적용 시 timestamp 가 trimmed 시각 기준 → 원본 시각으로 역매핑.
     // trim 이 없으면 Gemini 원본 형식([MM:SS] 등)이 그대로 남아 chunk 경로 출력
-    // ([HH:MM:SS])과 형식이 어긋나므로, offset 0 으로 canonical [HH:MM:SS] 통일.
+    // ([HH:MM:SS])과 형식이 어긋나므로 canonical [HH:MM:SS] 로 통일하되,
+    // **라인 선두의 화자 타임스탬프만** 대상 — offset_timestamps 는 텍스트 전체를
+    // 다시 써서 발화 본문 속 시각("회의는 [10:30] 에...")까지 변조한다.
     let body = if let Some(map) = segment_map {
         map_timestamps_to_original(&result.text, map)
     } else {
-        offset_timestamps(&result.text, 0.0, None)
+        normalize_lead_timestamps(&result.text)
     };
 
     // 화자 라인 형식 통일 (bold/non-bold 혼합 → canonical bold). chunk 경로와 동일.
@@ -887,6 +889,23 @@ fn offset_timestamps(text: &str, offset_sec: f64, clamp_ceiling_sec: Option<i64>
     .into_owned()
 }
 
+/// 라인 선두의 화자 타임스탬프(선택적 `**` prefix + `[MM:SS]`/`[HH:MM:SS]`)만 canonical
+/// `[HH:MM:SS]` 로 통일한다. 발화 본문 안의 타임스탬프(화자가 말한 "[10:30]" 등)는
+/// 라인 선두가 아니므로 보존 — inline(트림 없는) 경로의 형식 통일 전용.
+fn normalize_lead_timestamps(text: &str) -> String {
+    let lead = Regex::new(r"(?m)^(\*\*)?\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]")
+        .expect("lead ts normalize regex");
+    lead.replace_all(text, |caps: &regex::Captures| {
+        let bold = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+        let a: i64 = caps[2].parse().unwrap_or(0);
+        let b: i64 = caps[3].parse().unwrap_or(0);
+        let c: i64 = caps.get(4).and_then(|m| m.as_str().parse().ok()).unwrap_or(-1);
+        let total = if c >= 0 { a * 3600 + b * 60 + c } else { a * 60 + b };
+        format!("{}{}", bold, format_ts(total))
+    })
+    .into_owned()
+}
+
 /// 병합된 전사에서 화자 라인 선두 타임스탬프(`**[HH:MM:SS] ...`)가 단조 비감소가
 /// 되도록 보정한다. 직전 화자 라인보다 이른 값은 직전 값으로 끌어올린다. 발화 본문
 /// 내부의 타임스탬프(`회의는 [10:30] 에 ...`)는 라인 선두가 아니므로 건드리지 않는다.
@@ -1134,6 +1153,26 @@ mod tests {
         let text = "**[1:05:00] 화자A:** 발언";
         let result = offset_timestamps(text, 0.0, None);
         assert!(result.contains("[01:05:00]"), "got: {}", result);
+    }
+
+    /// normalize_lead_timestamps — 라인 선두만 [HH:MM:SS] 통일, 본문 속 시각은 보존
+    #[test]
+    fn test_normalize_lead_timestamps_preserves_inline() {
+        let text = "**[05:30] 화자A:** 회의는 [10:30] 에 시작했어요\n[07:10] 화자B: 네";
+        let result = normalize_lead_timestamps(text);
+        // 라인 선두(bold 유무 모두) → canonical
+        assert!(result.contains("**[00:05:30] 화자A:**"), "got: {}", result);
+        assert!(result.contains("[00:07:10] 화자B:"), "got: {}", result);
+        // 발화 본문 속 시각은 그대로
+        assert!(result.contains("회의는 [10:30] 에"), "inline ts rewritten: {}", result);
+    }
+
+    /// normalize_lead_timestamps — 이미 canonical 인 라인은 변형 없음
+    #[test]
+    fn test_normalize_lead_timestamps_idempotent() {
+        let text = "**[01:05:00] 화자A:** 발언";
+        let result = normalize_lead_timestamps(text);
+        assert!(result.contains("**[01:05:00] 화자A:**"), "got: {}", result);
     }
 
     /// enforce_monotonic_timestamps — 역행하는 화자 라인은 직전 값으로 끌어올림

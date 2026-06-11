@@ -19,6 +19,9 @@ use std::time::Duration;
 const API_BASE: &str = "https://api.pyannote.ai/v1";
 const POLL_INTERVAL_SECS: u64 = 5;
 const POLL_MAX_ATTEMPTS: u32 = 360; // 5s * 360 = 30분 상한
+/// 업로드 PUT 전용 타임아웃. 수 시간 녹음(수백 MB)은 일반 회선에서 업로드만 수 분이
+/// 걸릴 수 있어, 제어용 소요청(presign/submit/poll)의 client 전역 180s 와 분리한다.
+const UPLOAD_TIMEOUT_SECS: u64 = 1800; // 30분
 
 #[derive(Deserialize)]
 struct PresignedResp {
@@ -68,10 +71,12 @@ pub async fn diarize_cloud(
     let media_url = format!("media://markmind/{}", uuid::Uuid::new_v4().simple());
     let presigned = create_presigned(&client, api_key, &media_url).await?;
 
-    // 2) 파일 업로드 (presigned PUT — 인증 헤더 불필요)
+    // 2) 파일 업로드 (presigned PUT — 인증 헤더 불필요). per-request 타임아웃이
+    //    client 전역(180s)을 override — 대용량 파일의 느린 업로드 허용.
     let bytes = tokio::fs::read(file_path).await?;
     let put = client
         .put(&presigned)
+        .timeout(Duration::from_secs(UPLOAD_TIMEOUT_SECS))
         .body(bytes)
         .send()
         .await?;
