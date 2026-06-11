@@ -73,11 +73,17 @@ pub async fn diarize_cloud(
 
     // 2) 파일 업로드 (presigned PUT — 인증 헤더 불필요). per-request 타임아웃이
     //    client 전역(180s)을 override — 대용량 파일의 느린 업로드 허용.
-    let bytes = tokio::fs::read(file_path).await?;
+    //    스트리밍 body 로 전송해 수백 MB~1GB 녹음을 통째로 RAM 에 올리지 않는다.
+    //    presigned 스토리지(S3 류)는 chunked TE 를 거부할 수 있어 Content-Length 명시.
+    let file_len = tokio::fs::metadata(file_path).await?.len();
+    let file = tokio::fs::File::open(file_path).await?;
     let put = client
         .put(&presigned)
         .timeout(Duration::from_secs(UPLOAD_TIMEOUT_SECS))
-        .body(bytes)
+        .header(reqwest::header::CONTENT_LENGTH, file_len)
+        .body(reqwest::Body::wrap_stream(
+            tokio_util::io::ReaderStream::new(file),
+        ))
         .send()
         .await?;
     if !put.status().is_success() {
