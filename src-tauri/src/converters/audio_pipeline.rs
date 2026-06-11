@@ -15,9 +15,11 @@ use super::keychain::{get_key, Provider};
 use super::llm::gemini;
 use super::progress::{fmt_duration, ProgressEmitter};
 use super::templates::{build_evidence_markdown, EvidenceMeta};
-use super::diarize::{diarize_pcm, DiarSegment};
+use super::diar::DiarSegment;
+use super::diarize_cloud::diarize_cloud;
+use super::diarize_local::{diarize_local, local_python};
 use super::speaker_dedup::dedup_speakers;
-use super::vad::{cleanup_trimmed, decode_to_16k_pcm, trim_silence, trimmed_to_original, SegmentMap, TrimResult, VadOptions};
+use super::vad::{cleanup_trimmed, trim_silence, trimmed_to_original, SegmentMap, TrimResult, VadOptions};
 use super::{conversions_dir, CostSummary, EvidenceType, UsageInfo, MODEL_AUDIO};
 use base64::Engine;
 use chrono::{FixedOffset, Utc};
@@ -41,6 +43,14 @@ const CHUNK_THRESHOLD_SEC: f64 = 9.0 * 60.0;
 const CHUNK_DURATION_SEC: f64 = 10.0 * 60.0;
 const MAX_DURATION_SEC: f64 = 4.0 * 3600.0;
 const PREV_CONTEXT_LINES: usize = 6;
+/// 청크 길이 + 이 여유(초)를 넘는 청크-상대 타임스탬프는 Gemini의 시(hour) 자릿수
+/// 환각 등으로 보고 상한 클램프. 한 청크의 잘못된 큰 값이 offset 후 다음 청크보다
+/// 앞서 튀어 "순서가 뒤바뀐" 것처럼 보이는 증상을 막는다.
+const CHUNK_TS_CLAMP_MARGIN_SEC: i64 = 120;
+/// 화자 라벨 매칭 허용 오차(초). 포함 구간이 없을 때 이 거리 이내 최근접 발화 구간의
+/// 화자로 매핑 — Gemini 타임스탬프의 소폭 드리프트를 흡수. 너무 키우면 인접 화자
+/// 오매핑 위험이 커지므로 보수적으로 둔다.
+const DIAR_MATCH_TOLERANCE_SEC: f64 = 2.0;
 
 const BASE_TRANSCRIBE_PROMPT: &str = "이 오디오 파일의 내용을 한국어로 정확하게 녹취해주세요.
 
@@ -131,15 +141,17 @@ pub async fn run(
         emitter.emit(format!("🕐 녹음 시각: {}", r), None);
     }
 
-    // ─── Speaker diarization (pyannote-rs) ───
-    // 원본 PCM 한 번에 분석 → 청크 무관 글로벌 speaker_id. 4시간 ~3분 CPU.
-    // transcription 결과의 timestamp 와 시간 정렬해 라벨 통일.
-    // 실패 시 (모델 없음 등) Gemini 자체 라벨 그대로 사용.
+    // ─── Speaker diarization (검증된 pyannote) ───
+    // 우선순위: ① 로컬 pyannote(MARKMIND_DIAR_PYTHON 설정 시, 무료/오프라인) →
+    //          ② 클라우드 pyannote.ai(Settings 키, 유료) → ③ 없으면 Gemini 자체 라벨.
+    // 로컬 실패(stale 경로 / pyannote.audio 미설치 등) 시에도 ② 클라우드로 폴백.
+    // 받은 화자 구간을 transcription timestamp 와 시간 정렬해 라벨 통일(apply_diar_labels).
+    // 자작 pyannote-rs(구 diarize.rs)는 폐기 — 실측 52.7% → 88%+.
     //
-    // 4시간 초과 입력은 run_pipeline_core 가 어차피 reject 하므로 여기서
-    // 미리 duration 확인하고 diarize skip — over-limit 파일이 460MB PCM
-    // 디코드 + 수분 pyannote 분석 후에야 reject 되는 낭비 회피.
-    let diar_segments: Vec<DiarSegment> = match probe_duration(&file_path).await {
+    // 4시간 초과 입력은 run_pipeline_core 가 어차피 reject 하므로 여기서 미리 duration
+    // 확인하고 diarize skip — over-limit 파일이 수 분 로컬 분석 또는 유료 클라우드 잡을
+    // 다 돌고 나서야 reject 되는 낭비 회피.
+    let skip_diar = match probe_duration(&file_path).await {
         Ok(d) if d > MAX_DURATION_SEC => {
             emitter.emit(
                 "⚠️ 길이 초과 — 화자 분리 skip (검증은 다음 단계에서)",
@@ -149,53 +161,68 @@ pub async fn run(
                     MAX_DURATION_SEC / 60.0
                 )),
             );
-            Vec::new()
+            true
         }
-        _ => {
-            emitter.emit("🎭 화자 분석 준비 중...", None);
-            match decode_to_16k_pcm(&file_path).await {
-                Ok(pcm) => {
-                    let app_clone = app.clone();
-                    emitter.emit("🎭 화자 분리 분석 중 (전체 음성)...", None);
-                    let diar = tokio::task::spawn_blocking(move || {
-                        diarize_pcm(&app_clone, &pcm, 16000, None)
-                    })
-                    .await
-                    .map_err(|e| ConverterError::Internal(format!("diarize join: {}", e)))
-                    .and_then(|r| r);
-                    match diar {
-                        Ok(segs) => {
-                            let unique: std::collections::BTreeSet<usize> =
-                                segs.iter().map(|s| s.speaker_id).collect();
-                            emitter.emit(
-                                format!(
-                                    "✅ 화자 {}명 식별 (segment {}개)",
-                                    unique.len(),
-                                    segs.len()
-                                ),
-                                None,
-                            );
-                            segs
-                        }
-                        Err(e) => {
-                            emitter.emit(
-                                "⚠️ 화자 분리 실패 — Gemini 자체 라벨로 진행",
-                                Some(e.to_string()),
-                            );
-                            Vec::new()
-                        }
-                    }
+        _ => false,
+    };
+    let cloud_key = get_key(Provider::Pyannoteai)
+        .ok()
+        .flatten()
+        .filter(|k| !k.trim().is_empty());
+    let mut diar_segments: Vec<DiarSegment> = Vec::new();
+    if !skip_diar {
+        let local_py = local_python();
+        let mut diar_done = false;
+        if let Some(py) = &local_py {
+            emitter.emit("🎭 화자 분리 분석 중 (로컬 pyannote)...", None);
+            match diarize_local(app, emitter, py, &file_path, None).await {
+                Ok(segs) => {
+                    let unique: std::collections::BTreeSet<usize> =
+                        segs.iter().map(|s| s.speaker_id).collect();
+                    emitter.emit(
+                        format!("✅ 화자 {}명 식별 ({} 구간)", unique.len(), segs.len()),
+                        None,
+                    );
+                    diar_segments = segs;
+                    diar_done = true;
                 }
                 Err(e) => {
                     emitter.emit(
-                        "⚠️ PCM decode 실패 — 화자 분리 skip",
+                        "⚠️ 로컬 화자 분리 실패 — 클라우드/Gemini 폴백",
                         Some(e.to_string()),
                     );
-                    Vec::new()
                 }
             }
         }
-    };
+        if !diar_done {
+            if let Some(pk) = cloud_key {
+                emitter.emit("🎭 화자 분리 분석 중 (pyannote.ai)...", None);
+                match diarize_cloud(pk.trim(), &file_path, None).await {
+                    Ok(segs) => {
+                        let unique: std::collections::BTreeSet<usize> =
+                            segs.iter().map(|s| s.speaker_id).collect();
+                        emitter.emit(
+                            format!("✅ 화자 {}명 식별 ({} 구간)", unique.len(), segs.len()),
+                            None,
+                        );
+                        diar_segments = segs;
+                    }
+                    Err(e) => {
+                        emitter.emit(
+                            "⚠️ 화자 분리 실패 — Gemini 자체 라벨로 진행",
+                            Some(e.to_string()),
+                        );
+                    }
+                }
+            } else if local_py.is_none() {
+                emitter.emit(
+                    "ℹ️ 화자 분리 비활성 — Gemini 자체 라벨로 진행",
+                    Some("로컬: MARKMIND_DIAR_PYTHON / 클라우드: Settings 의 pyannote.ai 키".into()),
+                );
+            }
+        }
+    }
+    let diar_segments = diar_segments;
 
     // VAD 무음 제거 (옵션 ON 시)
     let mut trim: Option<TrimResult> = None;
@@ -352,9 +379,14 @@ async fn run_pipeline_core(
         Some(format!("{}조각", chunk_results.len())),
     );
 
+    let clamp_ceiling = CHUNK_DURATION_SEC as i64 + CHUNK_TS_CLAMP_MARGIN_SEC;
     let mut merged = chunk_results
         .iter()
-        .map(|r| offset_timestamps(&r.text, r.start_sec).trim().to_string())
+        .map(|r| {
+            offset_timestamps(&r.text, r.start_sec, Some(clamp_ceiling))
+                .trim()
+                .to_string()
+        })
         .collect::<Vec<_>>()
         .join("\n\n");
 
@@ -443,11 +475,15 @@ async fn run_inline_path(
         Some(format!("{:.0}초 소요", start.elapsed().as_secs_f64())),
     );
 
-    // trim 적용 시 timestamp 가 trimmed 시각 기준 → 원본 시각으로 역매핑
+    // trim 적용 시 timestamp 가 trimmed 시각 기준 → 원본 시각으로 역매핑.
+    // trim 이 없으면 Gemini 원본 형식([MM:SS] 등)이 그대로 남아 chunk 경로 출력
+    // ([HH:MM:SS])과 형식이 어긋나므로 canonical [HH:MM:SS] 로 통일하되,
+    // **라인 선두의 화자 타임스탬프만** 대상 — offset_timestamps 는 텍스트 전체를
+    // 다시 써서 발화 본문 속 시각("회의는 [10:30] 에...")까지 변조한다.
     let body = if let Some(map) = segment_map {
         map_timestamps_to_original(&result.text, map)
     } else {
-        result.text
+        normalize_lead_timestamps(&result.text)
     };
 
     // 화자 라인 형식 통일 (bold/non-bold 혼합 → canonical bold). chunk 경로와 동일.
@@ -528,10 +564,38 @@ fn normalize_speaker_lines(text: &str) -> String {
 /// 청크 경계 무관한 글로벌 일관성을 즉시 확보. pyannote-rs 의 임베딩 기반
 /// 클러스터링이 Gemini 의 텍스트 기반 라벨링보다 훨씬 신뢰도 높음.
 ///
-/// **매칭 정책**: 시각이 어떤 segment 안에도 안 들어가면 (무음/효과음/배경
-/// 잡음 등 pyannote 가 발화로 안 본 영역) **원본 라벨 그대로 유지**. 인접한
-/// segment 화자로 강제 매핑하면 다른 화자의 라벨이 무음 영역에 잘못 박힐
-/// 위험 — 안전 fallback 선택.
+/// **매칭 정책**: ① 시각을 덮는 segment 가 있으면 그 화자. ② 없으면 Gemini 타임스탬프
+/// 드리프트를 감안해 `DIAR_MATCH_TOLERANCE_SEC` 이내로 가장 가까운 segment 의 화자.
+/// ③ 그래도 없으면(진짜 무음/배경음 영역) **원본 라벨 유지** — 인접 화자로 강제 매핑해
+/// 무음 영역에 엉뚱한 라벨이 박히는 위험을 피하는 안전 fallback. 엄격 포함만 쓰면 Gemini
+/// 타임스탬프가 조금만 어긋나도 다수 라인이 매칭 실패해 diarization 효과가 사라지므로,
+/// 작은 허용 오차로 최근접 매칭을 추가한다.
+fn find_speaker_for_time(diar: &[DiarSegment], ts: f64) -> Option<usize> {
+    // ① 포함 구간 우선.
+    if let Some(seg) = diar
+        .iter()
+        .find(|seg| ts >= seg.start_sec && ts <= seg.end_sec)
+    {
+        return Some(seg.speaker_id);
+    }
+    // ② 허용 오차 이내 최근접 구간 (구간 [start,end] 까지의 거리).
+    let mut best: Option<(f64, usize)> = None;
+    for seg in diar {
+        let gap = if ts < seg.start_sec {
+            seg.start_sec - ts
+        } else {
+            ts - seg.end_sec
+        };
+        if gap <= DIAR_MATCH_TOLERANCE_SEC {
+            match best {
+                Some((bg, _)) if bg <= gap => {}
+                _ => best = Some((gap, seg.speaker_id)),
+            }
+        }
+    }
+    best.map(|(_, id)| id)
+}
+
 fn apply_diar_labels(text: &str, diar: &[DiarSegment]) -> String {
     if diar.is_empty() {
         return text.to_string();
@@ -554,15 +618,12 @@ fn apply_diar_labels(text: &str, diar: &[DiarSegment]) -> String {
                 h_or_m * 60.0 + m_or_s
             };
 
-            // 시각을 덮는 segment 만 매칭. 없으면 원본 라벨 유지 (안전 fallback).
-            let Some(seg) = diar
-                .iter()
-                .find(|seg| timestamp_sec >= seg.start_sec && timestamp_sec <= seg.end_sec)
-            else {
+            // 포함 → 허용오차 내 최근접 → 없으면 원본 라벨 유지 (안전 fallback).
+            let Some(speaker_id) = find_speaker_for_time(diar, timestamp_sec) else {
                 return caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
             };
 
-            let new_label = format!("화자{}", seg.speaker_id);
+            let new_label = format!("화자{}", speaker_id);
             let ts_str = match ts_s_opt {
                 Some(sec) => format!("{}:{}:{}", ts_h, ts_m, sec),
                 None => format!("{}:{}", ts_h, ts_m),
@@ -798,22 +859,78 @@ fn extract_last_speaker_lines(text: &str, n: usize) -> String {
     matches[take..].join("\n")
 }
 
-fn offset_timestamps(text: &str, offset_sec: f64) -> String {
+/// 텍스트의 모든 `[MM:SS]`/`[HH:MM:SS]` 를 `offset_sec` 만큼 이동하고 canonical
+/// `[HH:MM:SS]` 로 통일한다.
+///
+/// - `offset_sec == 0.0` + `clamp_ceiling_sec == None` 이면 순수 형식 통일용
+///   (inline 경로에서 Gemini 원본 형식을 chunk 경로와 맞추는 용도).
+/// - `clamp_ceiling_sec == Some(c)` 이면 offset 적용 **전** 청크-상대 값이 `c` 를
+///   넘을 경우 `c` 로 클램프 — 청크 안의 환각성 큰 타임스탬프 방어.
+fn offset_timestamps(text: &str, offset_sec: f64, clamp_ceiling_sec: Option<i64>) -> String {
     let re = Regex::new(r"\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]").unwrap();
     let offset_sec_i64 = offset_sec as i64;
     re.replace_all(text, |caps: &regex::Captures| {
         let a: i64 = caps[1].parse().unwrap_or(0);
         let b: i64 = caps[2].parse().unwrap_or(0);
         let c: i64 = caps.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(-1);
-        let total = if c >= 0 {
+        let mut total = if c >= 0 {
             a * 3600 + b * 60 + c
         } else {
             a * 60 + b
         };
+        if let Some(ceiling) = clamp_ceiling_sec {
+            if total > ceiling {
+                total = ceiling;
+            }
+        }
         let final_total = total + offset_sec_i64;
         format_ts(final_total)
     })
     .into_owned()
+}
+
+/// 라인 선두의 화자 타임스탬프(선택적 `**` prefix + `[MM:SS]`/`[HH:MM:SS]`)만 canonical
+/// `[HH:MM:SS]` 로 통일한다. 발화 본문 안의 타임스탬프(화자가 말한 "[10:30]" 등)는
+/// 라인 선두가 아니므로 보존 — inline(트림 없는) 경로의 형식 통일 전용.
+fn normalize_lead_timestamps(text: &str) -> String {
+    let lead = Regex::new(r"(?m)^(\*\*)?\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]")
+        .expect("lead ts normalize regex");
+    lead.replace_all(text, |caps: &regex::Captures| {
+        let bold = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+        let a: i64 = caps[2].parse().unwrap_or(0);
+        let b: i64 = caps[3].parse().unwrap_or(0);
+        let c: i64 = caps.get(4).and_then(|m| m.as_str().parse().ok()).unwrap_or(-1);
+        let total = if c >= 0 { a * 3600 + b * 60 + c } else { a * 60 + b };
+        format!("{}{}", bold, format_ts(total))
+    })
+    .into_owned()
+}
+
+/// 병합된 전사에서 화자 라인 선두 타임스탬프(`**[HH:MM:SS] ...`)가 단조 비감소가
+/// 되도록 보정한다. 직전 화자 라인보다 이른 값은 직전 값으로 끌어올린다. 발화 본문
+/// 내부의 타임스탬프(`회의는 [10:30] 에 ...`)는 라인 선두가 아니므로 건드리지 않는다.
+/// chunk 클램프로도 못 잡는 잔여 드리프트/역행을 산출물 직전에 방어하는 최종 안전망.
+fn enforce_monotonic_timestamps(text: &str) -> String {
+    let lead = Regex::new(r"^\*\*\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]")
+        .expect("monotonic lead regex");
+    let mut last: i64 = 0;
+    text.lines()
+        .map(|line| {
+            let Some(caps) = lead.captures(line) else {
+                return line.to_string();
+            };
+            let a: i64 = caps[1].parse().unwrap_or(0);
+            let b: i64 = caps[2].parse().unwrap_or(0);
+            let c: i64 = caps.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(-1);
+            let total = if c >= 0 { a * 3600 + b * 60 + c } else { a * 60 + b };
+            let fixed = total.max(last);
+            last = fixed;
+            // 선두 `**[..]` 만 교체 (format_ts 는 브래킷 포함 `[HH:MM:SS]` 반환).
+            lead.replace(line, |_: &regex::Captures| format!("**{}", format_ts(fixed)))
+                .into_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn format_ts(total_sec: i64) -> String {
@@ -902,6 +1019,9 @@ async fn save_audio_results(
 
     let meta = EvidenceMeta::new(EvidenceType::Transcript, file_name.clone())
         .with_recorded_at(recorded_at);
+
+    // 산출물 직전 최종 안전망 — 화자 라인 타임스탬프 단조성 보정 (inline/chunk 공통 경로).
+    let body = enforce_monotonic_timestamps(&body);
 
     emitter.emit("📝 타임스탬프 본문 생성", None);
     let timestamped_md = build_evidence_markdown(&meta, body.trim());
@@ -1001,7 +1121,7 @@ mod tests {
     #[test]
     fn test_offset_timestamps_hhmmss() {
         let text = "**[00:05:00] 화자A:** 안녕하세요";
-        let result = offset_timestamps(text, 600.0); // +10분
+        let result = offset_timestamps(text, 600.0, None); // +10분
         assert!(result.contains("[00:15:00]"));
     }
 
@@ -1009,9 +1129,110 @@ mod tests {
     #[test]
     fn test_offset_timestamps_mmss() {
         let text = "**[05:30] 화자A:** 발언";
-        let result = offset_timestamps(text, 0.0);
+        let result = offset_timestamps(text, 0.0, None);
         // [MM:SS] → [HH:MM:SS] 변환
         assert!(result.contains("[00:05:30]"));
+    }
+
+    /// offset_timestamps — clamp: 청크 범위를 넘는 환각 타임스탬프는 상한으로 클램프
+    #[test]
+    fn test_offset_timestamps_clamp_hallucination() {
+        // 첫 청크(offset 0). Gemini 가 5분 발화에 [1:05:00](3900s) 환각.
+        let text = "**[1:05:00] 화자A:** 발언\n**[00:03:00] 화자B:** 정상";
+        let ceiling = CHUNK_DURATION_SEC as i64 + CHUNK_TS_CLAMP_MARGIN_SEC; // 720
+        let result = offset_timestamps(text, 0.0, Some(ceiling));
+        // 3900 > 720 → 720 으로 클램프 → [00:12:00]
+        assert!(result.contains("[00:12:00]"), "got: {}", result);
+        // 정상 값은 그대로
+        assert!(result.contains("[00:03:00]"), "got: {}", result);
+    }
+
+    /// offset_timestamps — clamp 미적용(None) 시 큰 값도 그대로 (inline 형식 통일 경로)
+    #[test]
+    fn test_offset_timestamps_no_clamp_preserves() {
+        let text = "**[1:05:00] 화자A:** 발언";
+        let result = offset_timestamps(text, 0.0, None);
+        assert!(result.contains("[01:05:00]"), "got: {}", result);
+    }
+
+    /// normalize_lead_timestamps — 라인 선두만 [HH:MM:SS] 통일, 본문 속 시각은 보존
+    #[test]
+    fn test_normalize_lead_timestamps_preserves_inline() {
+        let text = "**[05:30] 화자A:** 회의는 [10:30] 에 시작했어요\n[07:10] 화자B: 네";
+        let result = normalize_lead_timestamps(text);
+        // 라인 선두(bold 유무 모두) → canonical
+        assert!(result.contains("**[00:05:30] 화자A:**"), "got: {}", result);
+        assert!(result.contains("[00:07:10] 화자B:"), "got: {}", result);
+        // 발화 본문 속 시각은 그대로
+        assert!(result.contains("회의는 [10:30] 에"), "inline ts rewritten: {}", result);
+    }
+
+    /// normalize_lead_timestamps — 이미 canonical 인 라인은 변형 없음
+    #[test]
+    fn test_normalize_lead_timestamps_idempotent() {
+        let text = "**[01:05:00] 화자A:** 발언";
+        let result = normalize_lead_timestamps(text);
+        assert!(result.contains("**[01:05:00] 화자A:**"), "got: {}", result);
+    }
+
+    /// enforce_monotonic_timestamps — 역행하는 화자 라인은 직전 값으로 끌어올림
+    #[test]
+    fn test_enforce_monotonic_fixes_regression() {
+        let text = "**[00:05:00] 화자A:** 첫\n**[00:02:00] 화자B:** 뒤로 튐\n**[00:07:00] 화자A:** 정상";
+        let result = enforce_monotonic_timestamps(text);
+        // 00:02:00 < 00:05:00 → 00:05:00 으로 보정
+        assert!(result.contains("**[00:05:00] 화자B:**"), "got: {}", result);
+        // 단조 증가하는 값은 보존
+        assert!(result.contains("**[00:07:00] 화자A:**"), "got: {}", result);
+        // 첫 라인 보존
+        assert!(result.contains("**[00:05:00] 화자A:**"), "got: {}", result);
+    }
+
+    /// enforce_monotonic_timestamps — 발화 본문 내부 타임스탬프는 보존(라인 선두만 대상)
+    #[test]
+    fn test_enforce_monotonic_preserves_inline() {
+        let text = "**[00:05:00] 화자A:** 회의는 [00:01] 에 시작했어요";
+        let result = enforce_monotonic_timestamps(text);
+        assert!(result.contains("[00:01]"), "inline ts lost: {}", result);
+        assert!(result.contains("**[00:05:00] 화자A:**"), "got: {}", result);
+    }
+
+    /// find_speaker_for_time — 포함 구간 매칭
+    #[test]
+    fn test_find_speaker_contained() {
+        let diar = vec![
+            DiarSegment { start_sec: 0.0, end_sec: 10.0, speaker_id: 1 },
+            DiarSegment { start_sec: 12.0, end_sec: 20.0, speaker_id: 2 },
+        ];
+        assert_eq!(find_speaker_for_time(&diar, 5.0), Some(1));
+        assert_eq!(find_speaker_for_time(&diar, 15.0), Some(2));
+    }
+
+    /// find_speaker_for_time — 허용 오차 이내 최근접 매칭 (드리프트 흡수)
+    #[test]
+    fn test_find_speaker_nearest_within_tolerance() {
+        let diar = vec![DiarSegment { start_sec: 10.0, end_sec: 20.0, speaker_id: 3 }];
+        // 8.5s: 구간 시작(10s)까지 1.5s ≤ 2.0 → 매칭
+        assert_eq!(find_speaker_for_time(&diar, 8.5), Some(3));
+        // 21.5s: 구간 끝(20s)에서 1.5s ≤ 2.0 → 매칭
+        assert_eq!(find_speaker_for_time(&diar, 21.5), Some(3));
+    }
+
+    /// find_speaker_for_time — 허용 오차 초과는 매칭 안 함 (원본 라벨 유지)
+    #[test]
+    fn test_find_speaker_beyond_tolerance_none() {
+        let diar = vec![DiarSegment { start_sec: 10.0, end_sec: 20.0, speaker_id: 3 }];
+        assert_eq!(find_speaker_for_time(&diar, 5.0), None); // 5s 거리 > 2.0
+    }
+
+    /// apply_diar_labels — 드리프트 라인도 최근접 매칭으로 글로벌 ID 적용
+    #[test]
+    fn test_apply_diar_labels_nearest() {
+        let diar = vec![DiarSegment { start_sec: 10.0, end_sec: 20.0, speaker_id: 2 }];
+        // Gemini 가 00:00:09 로 1초 일찍 찍음 → 포함은 아니지만 허용오차 내 → 화자2
+        let text = "**[00:00:09] 화자A:** 발언";
+        let out = apply_diar_labels(text, &diar);
+        assert!(out.contains("화자2"), "got: {}", out);
     }
 
     /// remove_timestamps — 모든 [HH:MM:SS] 제거

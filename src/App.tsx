@@ -366,8 +366,8 @@ function App() {
       ai.setError(null);
       ai.setIsLoading(true);
       try {
-        // selectedModel 이 openai 면 회의록 백엔드 미지원 → Claude 폴백
-        const provider = ai.selectedModel === 'openai' ? 'claude' : ai.selectedModel;
+        // 회의록 백엔드는 gemini/claude 만 지원 → 그 외(openai/pyannoteai)는 Claude 폴백
+        const provider = ai.selectedModel === 'gemini' ? 'gemini' : 'claude';
         const result = await converter.runNotes({
           transcript: runContent,
           template: ai.notesTemplate,

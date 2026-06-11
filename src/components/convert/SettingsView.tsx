@@ -58,6 +58,13 @@ const KEY_SPECS: KeySpec[] = [
         issueUrl: 'https://platform.openai.com/api-keys',
         issueLabel: 'platform.openai.com/api-keys',
     },
+    {
+        provider: 'pyannoteai',
+        label: 'pyannote.ai API 키 (화자 분리)',
+        placeholder: 'sk_...',
+        issueUrl: 'https://dashboard.pyannote.ai',
+        issueLabel: 'dashboard.pyannote.ai',
+    },
 ];
 
 function maskClientId(id: string): string {
@@ -80,24 +87,32 @@ export function SettingsView({ onDone }: SettingsViewProps) {
         gemini: '',
         claude: '',
         openai: '',
+        pyannoteai: '',
     });
     const [show, setShow] = useState<Record<Provider, boolean>>({
         gemini: false,
         claude: false,
         openai: false,
+        pyannoteai: false,
     });
     const [stored, setStored] = useState<Record<Provider, boolean>>({
         gemini: false,
         claude: false,
         openai: false,
+        pyannoteai: false,
     });
     const [validation, setValidation] = useState<Record<Provider | 'gdrive', ValidationResult | null>>({
         gemini: null,
         claude: null,
         openai: null,
+        pyannoteai: null,
         gdrive: null,
     });
     const [saving, setSaving] = useState(false);
+
+    // 로컬 화자분리 Python 경로 (vault 저장). env MARKMIND_DIAR_PYTHON 이 있으면 그게 우선.
+    const [diarPython, setDiarPython] = useState('');
+    const [diarPythonOrig, setDiarPythonOrig] = useState('');
 
     // Drive
     const [driveClientId, setDriveClientId] = useState<string | null>(null);
@@ -113,16 +128,19 @@ export function SettingsView({ onDone }: SettingsViewProps) {
             gemini: getKey('gemini') || '',
             claude: getKey('claude') || '',
             openai: getKey('openai') || '',
+            pyannoteai: getKey('pyannoteai') || '',
         });
         setStored({
             gemini: hasKey('gemini'),
             claude: hasKey('claude'),
             openai: hasKey('openai'),
+            pyannoteai: hasKey('pyannoteai'),
         });
         setValidation({
             gemini: getValidationStatus('gemini'),
             claude: getValidationStatus('claude'),
             openai: getValidationStatus('openai'),
+            pyannoteai: getValidationStatus('pyannoteai'),
             gdrive: getValidationStatus('gdrive'),
         });
         (async () => {
@@ -131,6 +149,9 @@ export function SettingsView({ onDone }: SettingsViewProps) {
             setCredsEditing(!id);
             const email = await gdrive.getStatus();
             setDriveEmail(email);
+            const dp = (await secretsBatch.getDiarPython()) || '';
+            setDiarPython(dp);
+            setDiarPythonOrig(dp);
         })();
     }, []);
 
@@ -241,17 +262,21 @@ export function SettingsView({ onDone }: SettingsViewProps) {
 
             // 2) batch 저장 — 변경된 필드만 명시적으로 전송. 미전송 필드는 보존.
             //    Keychain write 1회 = 다이얼로그 1번.
-            const anyChange = changedKeys.length > 0 || driveBoth;
+            const diarChanged = diarPython.trim() !== diarPythonOrig.trim();
+            const anyChange = changedKeys.length > 0 || driveBoth || diarChanged;
             if (anyChange) {
                 const payload: Parameters<typeof secretsBatch.setUserInputs>[0] = {};
                 if (changedKeys.includes('gemini')) payload.gemini = values.gemini.trim();
                 if (changedKeys.includes('claude')) payload.claude = values.claude.trim();
                 if (changedKeys.includes('openai')) payload.openai = values.openai.trim();
+                if (changedKeys.includes('pyannoteai')) payload.pyannoteai = values.pyannoteai.trim();
+                if (diarChanged) payload.diarPython = diarPython.trim();
                 if (driveBoth) {
                     payload.gdriveClientId = driveId;
                     payload.gdriveClientSecret = driveSecret;
                 }
                 await secretsBatch.setUserInputs(payload);
+                if (diarChanged) setDiarPythonOrig(diarPython.trim());
 
                 // 메모리 캐시 갱신
                 const cachePatch: Partial<Record<Provider, string | null>> = {};
@@ -370,6 +395,34 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                     </section>
                 );
             })}
+
+            {/* === 로컬 화자분리 (pyannote, 무료/오프라인) === */}
+            <section className="convert-settings-section">
+                <label>
+                    로컬 화자분리 — Python 경로{' '}
+                    {diarPythonOrig && <span className="badge badge-ok">설정됨</span>}
+                </label>
+                <div className="convert-key-row">
+                    <input
+                        type="text"
+                        placeholder="/path/to/venv/bin/python3 (pyannote.audio 설치된 Python)"
+                        value={diarPython}
+                        onChange={(e) => setDiarPython(e.target.value)}
+                    />
+                    <button
+                        onClick={() => setDiarPython('')}
+                        className="danger"
+                        disabled={!diarPython}
+                        title="입력 비우기"
+                    >
+                        <Trash2 size={14} />
+                    </button>
+                </div>
+                <p className="convert-key-note">
+                    입력하면 무료·오프라인 <strong>로컬 pyannote</strong> 로 화자 분리 (pyannote.ai 키보다 우선).
+                    해당 Python 에 <code>pyannote.audio</code> 가 설치돼 있어야 합니다. 비우면 클라우드 키 또는 기본 동작.
+                </p>
+            </section>
 
             {/* === Google Drive === */}
             <section className="convert-settings-section drive-section">

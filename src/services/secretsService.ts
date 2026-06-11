@@ -16,6 +16,9 @@ export interface SecretsUserInputs {
     gemini?: string;
     claude?: string;
     openai?: string;
+    pyannoteai?: string;
+    /** 로컬 화자분리용 Python 경로 (pyannote.audio 설치). */
+    diarPython?: string;
     gdriveClientId?: string;
     gdriveClientSecret?: string;
 }
@@ -26,6 +29,8 @@ function buildPayload(updates: SecretsUserInputs): Record<string, string> {
     if (updates.gemini !== undefined) out.gemini = updates.gemini;
     if (updates.claude !== undefined) out.claude = updates.claude;
     if (updates.openai !== undefined) out.openai = updates.openai;
+    if (updates.pyannoteai !== undefined) out.pyannoteai = updates.pyannoteai;
+    if (updates.diarPython !== undefined) out.diar_python = updates.diarPython;
     if (updates.gdriveClientId !== undefined) out.gdrive_client_id = updates.gdriveClientId;
     if (updates.gdriveClientSecret !== undefined) out.gdrive_client_secret = updates.gdriveClientSecret;
     return out;
@@ -37,4 +42,11 @@ export async function setUserInputs(updates: SecretsUserInputs): Promise<void> {
     }
     const { invoke } = await import('@tauri-apps/api/core');
     await invoke<void>('secrets_set_user_inputs', { updates: buildPayload(updates) });
+}
+
+/** 로컬 화자분리용 Python 경로 조회 (Settings 프리필). */
+export async function getDiarPython(): Promise<string | null> {
+    if (!isTauri()) return null;
+    const { invoke } = await import('@tauri-apps/api/core');
+    return (await invoke<string | null>('get_diar_python')) ?? null;
 }

@@ -113,6 +113,12 @@ git clone https://github.com/yuhitomi/markmind.git
 cd markmind
 npm install
 
+# Speaker diarization (optional): verified pyannote, two ways —
+#   • Local (free/offline): set MARKMIND_DIAR_PYTHON to a Python with `pyannote.audio`
+#     installed (+ a free HuggingFace token, accept the gated models once).
+#   • Cloud (paid): enter a pyannote.ai API key in Settings.
+# Without either, transcription falls back to Gemini's own speaker guesses.
+
 # Development (HMR enabled)
 npm run tauri dev
 
@@ -206,6 +212,9 @@ markmind/
 │   │       ├── audio_pipeline.rs           # Speech → text (chunking + context)
 │   │       ├── audio_splitter.rs           # ffmpeg chunk splitter
 │   │       ├── vad.rs                      # Silero VAD ONNX + ffmpeg concat demuxer
+│   │       ├── diarize_local.rs            # Speaker diarization — local pyannote (Python sidecar)
+│   │       ├── diarize_cloud.rs            # Speaker diarization — pyannote.ai cloud API
+│   │       ├── speaker_dedup.rs            # LLM merge of mis-split speaker labels
 │   │       ├── ocr_pipeline.rs             # 2-pass OCR + pdfium fallback
 │   │       ├── notes_pipeline.rs           # Meeting notes generation
 │   │       ├── pdf_extractor.rs            # PDF → PNG via pdfium-render
@@ -214,6 +223,7 @@ markmind/
 │   │           └── anthropic.rs            # Claude messages API + retry
 │   ├── resources/
 │   │   ├── silero_vad.onnx                 # VAD model (2.2 MB, bundled)
+│   │   ├── diarize_pyannote.py             # Local diarization sidecar (pyannote.audio)
 │   │   └── meeting-templates/              # Built-in templates (general/detailed/team-sync)
 │   ├── capabilities/default.json           # Tauri v2 ACL (windows + event + fs scope)
 │   └── tauri.conf.json                     # Bundle config
@@ -270,6 +280,8 @@ Contributions welcome:
 This project is licensed under the [GNU General Public License v3.0](LICENSE).
 
 The Silero VAD model (silero_vad.onnx) is included under the [MIT license](https://github.com/snakers4/silero-vad).
+
+Speaker diarization uses [pyannote](https://github.com/pyannote/pyannote-audio) — locally via the `pyannote.audio` Python package, or via the [pyannote.ai](https://pyannote.ai) cloud API. Models are gated on HuggingFace (free, accept once).
 
 ---
 
