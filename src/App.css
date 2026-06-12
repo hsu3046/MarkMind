@@ -1902,20 +1902,22 @@ body.is-resizing .split-pane {
   font-size: 0.92em;
 }
 
+/* 코드 블록 — 본문(거의 흰 배경)과 명확히 구분되도록 GitHub 표준 색 채택.
+   회색 배경 + 뚜렷한 경계선 + 둥근 모서리 + 넉넉한 padding (WCAG 대비 충족). */
 [data-theme="light"] .markdown-body pre,
 [data-theme="light"] .tiptap-rich pre {
-  background: rgba(0, 0, 0, 0.05);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 6px;
-  padding: 1em;
+  background: #f6f8fa;
+  border: 1px solid #d1d9e0;
+  border-radius: 8px;
+  padding: 14px 16px;
   overflow-x: auto;
 }
 [data-theme="dark"] .markdown-body pre,
 [data-theme="dark"] .tiptap-rich pre {
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  padding: 1em;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 14px 16px;
   overflow-x: auto;
 }
 
@@ -2024,15 +2026,22 @@ body.is-resizing .split-pane {
   /* baseline 보정 — flex container 안에서 첫 줄 정중앙 */
   margin-top: 0.15em;
 }
+/* table-layout: auto + width: auto → 컬럼이 content 폭에 맞춰 유연하게.
+   숫자(#)처럼 글자수 적은 컬럼은 좁게, 긴 컬럼은 넓게. max-width 100% 로
+   넘칠 때만 채움 폭 제한 (이전 fixed+100% 는 모든 컬럼 균등 분배라 # 컬럼이
+   과도하게 넓었음). */
 .tiptap-rich table {
   border-collapse: collapse;
-  table-layout: fixed;
-  width: 100%;
+  table-layout: auto;
+  width: auto;
+  max-width: 100%;
 }
 .tiptap-rich table td, .tiptap-rich table th {
   border: 1px solid var(--border-primary);
   padding: 6px 10px;
   vertical-align: middle;
+  /* 빈/짧은 셀이 너무 좁아 편집 클릭이 어려워지는 것 방지 */
+  min-width: 2.5em;
 }
 
 /* YAML frontmatter — Preview 상단 메타 박스 */
@@ -2214,7 +2223,10 @@ body.is-resizing .split-pane {
 }
 
 .markdown-body table {
-  width: 100%;
+  /* content 기반 폭 — 짧은 컬럼은 좁게, 길면 max-width 까지 (Rich Text 와 동일 정책) */
+  width: auto;
+  max-width: 100%;
+  table-layout: auto;
   border-collapse: collapse;
   margin: 1em 0;
   font-size: var(--text-sm);
