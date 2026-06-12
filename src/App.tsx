@@ -458,10 +458,20 @@ function App() {
         if (label === 'main') return; // main 은 useFileSystem 의 get_pending_file 흐름이 처리
         const path = await invoke<string | null>('take_pending_file', { label });
         if (!path) return;
-        const { readTextFile } = await import('@tauri-apps/plugin-fs');
-        const content = await readTextFile(path);
-        const name = path.split('/').pop() || 'Untitled.md';
-        openFromRecent(path, content, name);
+        try {
+          const { readTextFile } = await import('@tauri-apps/plugin-fs');
+          const content = await readTextFile(path);
+          const name = path.split('/').pop() || 'Untitled.md';
+          openFromRecent(path, content, name);
+        } catch (readErr) {
+          // 실패가 console 에만 남으면 새 윈도우가 "빈 페이지" 로만 보임 — 다이얼로그로 표시
+          console.error('Failed to load pending file:', readErr);
+          const { message } = await import('@tauri-apps/plugin-dialog');
+          await message(`파일을 열 수 없습니다.\n\n${path}\n\n${String(readErr)}`, {
+            title: 'MarkMind',
+            kind: 'error',
+          });
+        }
       } catch (err) {
         console.error('Failed to load pending file:', err);
       }

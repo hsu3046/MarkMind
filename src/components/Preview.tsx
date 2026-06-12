@@ -9,7 +9,6 @@ import { StarterKit } from '@tiptap/starter-kit';
 import { Link } from '@tiptap/extension-link';
 import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
-import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
@@ -17,6 +16,7 @@ import { Markdown } from 'tiptap-markdown';
 import { SearchAndReplace } from '@sereneinserenade/tiptap-search-and-replace';
 import { Typography } from '@tiptap/extension-typography';
 import { InlineCheckbox } from '../extensions/InlineCheckbox';
+import { MarkdownTable } from '../extensions/MarkdownTable';
 import { TableBubbleMenu } from './TableBubbleMenu';
 import {
     Bold, Italic, Strikethrough, Code,
@@ -141,6 +141,121 @@ function splitFrontmatter(md: string): FrontmatterParts {
     return { fields, body, rawFrontmatter };
 }
 
+// ─── HTML 테이블 블록 (병합 셀 — MarkdownTable 확장이 직렬화) 분리 ───
+// react-markdown 은 rehype-raw 없이는 raw HTML 을 리터럴 텍스트로 표시하므로,
+// 읽기 전용 뷰에서는 <table>…</table> 블록만 분리해 sanitize 후 직접 렌더.
+// code fence 안의 <table> 예시는 분리 대상에서 제외 (line scan 으로 fence 추적).
+interface BodySegment {
+    kind: 'md' | 'table';
+    text: string;
+}
+
+function splitHtmlTableBlocks(md: string): BodySegment[] {
+    const lines = md.replace(/\r\n/g, '\n').split('\n');
+    const segments: BodySegment[] = [];
+    let buf: string[] = [];
+    let fenceClose: RegExp | null = null;
+
+    const flush = () => {
+        if (buf.length) {
+            segments.push({ kind: 'md', text: buf.join('\n') });
+            buf = [];
+        }
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (fenceClose) {
+            buf.push(line);
+            if (fenceClose.test(line)) fenceClose = null;
+            continue;
+        }
+        const fenceOpen = line.match(/^[ ]{0,3}(([`~])\2{2,})/);
+        if (fenceOpen) {
+            const ch = fenceOpen[2] === '`' ? '`' : '~';
+            fenceClose = new RegExp(`^[ ]{0,3}${ch}{${fenceOpen[1].length},}[ \\t]*$`);
+            buf.push(line);
+            continue;
+        }
+        if (/^[ \t]*<table[\s>]/i.test(line)) {
+            let closeLine = -1;
+            for (let j = i; j < lines.length; j++) {
+                if (/<\/table>[ \t]*$/i.test(lines[j])) {
+                    closeLine = j;
+                    break;
+                }
+            }
+            if (closeLine !== -1) {
+                flush();
+                segments.push({ kind: 'table', text: lines.slice(i, closeLine + 1).join('\n') });
+                i = closeLine;
+                continue;
+            }
+        }
+        buf.push(line);
+    }
+    flush();
+    return segments;
+}
+
+// dangerouslySetInnerHTML 에 넣기 전 allowlist sanitize.
+// 허용 태그 외 요소는 textContent 로 치환, 허용 외 속성은 제거,
+// href/src 는 안전한 스킴만 통과 — 외부 의존성 없이 DOMParser 로 처리.
+const TABLE_ALLOWED_TAGS = new Set([
+    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
+    'p', 'br', 'hr', 'strong', 'b', 'em', 'i', 's', 'del', 'u', 'code', 'span', 'a',
+    'ul', 'ol', 'li', 'input', 'label', 'img', 'blockquote', 'pre',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+]);
+const TABLE_ALLOWED_ATTRS = new Set([
+    'colspan', 'rowspan', 'href', 'src', 'alt', 'type', 'checked', 'disabled', 'start',
+]);
+
+function isSafeUrl(value: string): boolean {
+    const trimmed = value.trim();
+    if (trimmed.startsWith('#')) return true;
+    try {
+        const url = new URL(trimmed, 'https://local.invalid/');
+        return ['http:', 'https:', 'mailto:'].includes(url.protocol);
+    } catch {
+        return false;
+    }
+}
+
+function sanitizeTableHtml(html: string): string {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+    const sanitizeElement = (el: Element) => {
+        // 자식 먼저 처리 (치환 시 하위 순회 불필요해지도록 복사본 순회)
+        for (const child of Array.from(el.children)) {
+            sanitizeElement(child);
+        }
+        if (!TABLE_ALLOWED_TAGS.has(el.tagName.toLowerCase())) {
+            el.replaceWith(doc.createTextNode(el.textContent ?? ''));
+            return;
+        }
+        for (const attr of Array.from(el.attributes)) {
+            const name = attr.name.toLowerCase();
+            if (!TABLE_ALLOWED_ATTRS.has(name)) {
+                el.removeAttribute(attr.name);
+                continue;
+            }
+            if ((name === 'href' || name === 'src') && !isSafeUrl(attr.value)) {
+                el.removeAttribute(attr.name);
+            }
+        }
+        // 읽기 전용 뷰 — 체크박스는 비활성으로
+        if (el.tagName.toLowerCase() === 'input') {
+            el.setAttribute('disabled', '');
+        }
+    };
+
+    for (const child of Array.from(doc.body.children)) {
+        sanitizeElement(child);
+    }
+    return doc.body.innerHTML;
+}
+
 // ─── 읽기 전용 마크다운 렌더 (기존 react-markdown 흐름) ───
 function ReadOnlyView({
     fields,
@@ -151,6 +266,9 @@ function ReadOnlyView({
     body: string;
     fontSize: number;
 }) {
+    // 병합 셀 테이블 (HTML 직렬화분) 은 react-markdown 이 리터럴 텍스트로
+    // 보여주므로 블록 단위로 분리해 sanitize 후 직접 렌더
+    const segments = useMemo(() => splitHtmlTableBlocks(body), [body]);
     return (
         <div
             className="markdown-body fade-in"
@@ -168,15 +286,26 @@ function ReadOnlyView({
                     </dl>
                 </aside>
             )}
-            <ReactMarkdown
-                remarkPlugins={[
-                    remarkFrontmatter,
-                    [remarkGfm, { singleTilde: false }],
-                ]}
-                rehypePlugins={[rehypeHighlight]}
-            >
-                {body}
-            </ReactMarkdown>
+            {segments.map((seg, i) =>
+                seg.kind === 'table' ? (
+                    <div
+                        key={i}
+                        // eslint-disable-next-line react/no-danger
+                        dangerouslySetInnerHTML={{ __html: sanitizeTableHtml(seg.text) }}
+                    />
+                ) : (
+                    <ReactMarkdown
+                        key={i}
+                        remarkPlugins={[
+                            remarkFrontmatter,
+                            [remarkGfm, { singleTilde: false }],
+                        ]}
+                        rehypePlugins={[rehypeHighlight]}
+                    >
+                        {seg.text}
+                    </ReactMarkdown>
+                ),
+            )}
         </div>
     );
 }
@@ -473,7 +602,8 @@ function RichEditor({
             Link.configure({ openOnClick: false, autolink: false }),
             TaskList,
             TaskItem.configure({ nested: true }),
-            Table.configure({ resizable: false }),
+            // 병합 셀 테이블을 HTML 로 직렬화/복원하는 보강판 (기본 Table 확장)
+            MarkdownTable.configure({ resizable: false }),
             TableRow,
             TableHeader,
             TableCell,

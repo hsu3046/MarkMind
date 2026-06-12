@@ -151,6 +151,17 @@ pub fn run() {
             if let tauri::RunEvent::Opened { urls } = &event {
                 for url in urls {
                     if let Ok(path) = url.to_file_path() {
+                        // OS 더블클릭으로 전달된 파일 = 사용자가 의도한 파일.
+                        // capabilities 의 정적 fs scope ($HOME/** 등) 밖 경로
+                        // (외장 드라이브 /Volumes, 숨김 .폴더 포함 경로 — macOS 는
+                        // require_literal_leading_dot 기본 true) 는 readTextFile 이
+                        // 조용히 거부돼 빈 페이지가 됐음 → 런타임 scope 허용.
+                        {
+                            use tauri_plugin_fs::FsExt;
+                            if let Err(e) = app.fs_scope().allow_file(&path) {
+                                eprintln!("[open-file] fs scope allow_file 실패: {e}");
+                            }
+                        }
                         if let Some(path_str) = path.to_str() {
                             let path_string = path_str.to_string();
 

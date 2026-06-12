@@ -81,6 +81,16 @@ export function useFileSystem(onFileOpened?: () => void) {
           }
         } catch (err) {
           console.error('Failed to open file:', err);
+          // 실패가 console 에만 남으면 사용자에겐 "빈 페이지" 로만 보임 — 다이얼로그로 표시
+          try {
+            const { message } = await import('@tauri-apps/plugin-dialog');
+            await message(`파일을 열 수 없습니다.\n\n${path}\n\n${String(err)}`, {
+              title: 'MarkMind',
+              kind: 'error',
+            });
+          } catch {
+            // dialog 자체 실패 시엔 console 로그만 유지
+          }
         }
       };
 
