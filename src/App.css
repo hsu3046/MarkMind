@@ -1782,7 +1782,7 @@ body.is-resizing .split-pane {
   background: var(--user-bg) !important;
   filter: brightness(0.95);
 }
-[data-theme="dark"][data-custom-bg] .cm-activeLineGutter {
+[data-theme="dark"] [data-custom-bg] .cm-activeLineGutter {
   filter: brightness(1.15);
 }
 
@@ -1809,62 +1809,62 @@ body.is-resizing .split-pane {
    ─────────────────────────────────────────────────────────────── */
 
 /* 테이블 헤더(th) — 고정 stripe(#F8F8F8) 대신 배경 위 약간 진한 톤 */
-[data-theme="light"][data-custom-bg] .markdown-body th,
-[data-theme="light"][data-custom-bg] .tiptap-rich th {
+[data-theme="light"] [data-custom-bg] .markdown-body th,
+[data-theme="light"] [data-custom-bg] .tiptap-rich th {
   background: rgba(0, 0, 0, 0.06);
 }
-[data-theme="dark"][data-custom-bg] .markdown-body th,
-[data-theme="dark"][data-custom-bg] .tiptap-rich th {
+[data-theme="dark"] [data-custom-bg] .markdown-body th,
+[data-theme="dark"] [data-custom-bg] .tiptap-rich th {
   background: rgba(255, 255, 255, 0.08);
 }
 
 /* 테이블 border(td·th) — 고정 회색(#E0E0E0 / --border-primary) 대신 반투명 */
-[data-theme="light"][data-custom-bg] .markdown-body th,
-[data-theme="light"][data-custom-bg] .markdown-body td,
-[data-theme="light"][data-custom-bg] .tiptap-rich th,
-[data-theme="light"][data-custom-bg] .tiptap-rich td {
+[data-theme="light"] [data-custom-bg] .markdown-body th,
+[data-theme="light"] [data-custom-bg] .markdown-body td,
+[data-theme="light"] [data-custom-bg] .tiptap-rich th,
+[data-theme="light"] [data-custom-bg] .tiptap-rich td {
   border-color: rgba(0, 0, 0, 0.18);
 }
-[data-theme="dark"][data-custom-bg] .markdown-body th,
-[data-theme="dark"][data-custom-bg] .markdown-body td,
-[data-theme="dark"][data-custom-bg] .tiptap-rich th,
-[data-theme="dark"][data-custom-bg] .tiptap-rich td {
+[data-theme="dark"] [data-custom-bg] .markdown-body th,
+[data-theme="dark"] [data-custom-bg] .markdown-body td,
+[data-theme="dark"] [data-custom-bg] .tiptap-rich th,
+[data-theme="dark"] [data-custom-bg] .tiptap-rich td {
   border-color: rgba(255, 255, 255, 0.20);
 }
 
 /* bullet/번호 ::marker — 중립 회색(--text-secondary) 대신 반투명(배경 비침) */
-[data-theme="light"][data-custom-bg] .markdown-body ul:not([data-type="taskList"]) li::marker,
-[data-theme="light"][data-custom-bg] .markdown-body ol li::marker,
-[data-theme="light"][data-custom-bg] .tiptap-rich ul:not([data-type="taskList"]) li::marker,
-[data-theme="light"][data-custom-bg] .tiptap-rich ol li::marker {
+[data-theme="light"] [data-custom-bg] .markdown-body ul:not([data-type="taskList"]) li::marker,
+[data-theme="light"] [data-custom-bg] .markdown-body ol li::marker,
+[data-theme="light"] [data-custom-bg] .tiptap-rich ul:not([data-type="taskList"]) li::marker,
+[data-theme="light"] [data-custom-bg] .tiptap-rich ol li::marker {
   color: rgba(0, 0, 0, 0.55);
 }
-[data-theme="dark"][data-custom-bg] .markdown-body ul:not([data-type="taskList"]) li::marker,
-[data-theme="dark"][data-custom-bg] .markdown-body ol li::marker,
-[data-theme="dark"][data-custom-bg] .tiptap-rich ul:not([data-type="taskList"]) li::marker,
-[data-theme="dark"][data-custom-bg] .tiptap-rich ol li::marker {
+[data-theme="dark"] [data-custom-bg] .markdown-body ul:not([data-type="taskList"]) li::marker,
+[data-theme="dark"] [data-custom-bg] .markdown-body ol li::marker,
+[data-theme="dark"] [data-custom-bg] .tiptap-rich ul:not([data-type="taskList"]) li::marker,
+[data-theme="dark"] [data-custom-bg] .tiptap-rich ol li::marker {
   color: rgba(255, 255, 255, 0.60);
 }
 
 /* code block(pre) — custom 배경일 때 배경 hue 가 더 분명히 드러나게 농도 보정 + 반투명 border */
-[data-theme="light"][data-custom-bg] .markdown-body pre,
-[data-theme="light"][data-custom-bg] .tiptap-rich pre {
+[data-theme="light"] [data-custom-bg] .markdown-body pre,
+[data-theme="light"] [data-custom-bg] .tiptap-rich pre {
   background: rgba(0, 0, 0, 0.07);
   border-color: rgba(0, 0, 0, 0.12);
 }
-[data-theme="dark"][data-custom-bg] .markdown-body pre,
-[data-theme="dark"][data-custom-bg] .tiptap-rich pre {
+[data-theme="dark"] [data-custom-bg] .markdown-body pre,
+[data-theme="dark"] [data-custom-bg] .tiptap-rich pre {
   background: rgba(255, 255, 255, 0.10);
   border-color: rgba(255, 255, 255, 0.14);
 }
 
 /* inline code — 배경 hue 가 드러나게 농도 보정 (텍스트 강조색은 syntax 의미라 유지) */
-[data-theme="light"][data-custom-bg] .markdown-body code:not(pre code),
-[data-theme="light"][data-custom-bg] .tiptap-rich code:not(pre code) {
+[data-theme="light"] [data-custom-bg] .markdown-body code:not(pre code),
+[data-theme="light"] [data-custom-bg] .tiptap-rich code:not(pre code) {
   background: rgba(0, 0, 0, 0.08);
 }
-[data-theme="dark"][data-custom-bg] .markdown-body code:not(pre code),
-[data-theme="dark"][data-custom-bg] .tiptap-rich code:not(pre code) {
+[data-theme="dark"] [data-custom-bg] .markdown-body code:not(pre code),
+[data-theme="dark"] [data-custom-bg] .tiptap-rich code:not(pre code) {
   background: rgba(255, 255, 255, 0.12);
 }
 
