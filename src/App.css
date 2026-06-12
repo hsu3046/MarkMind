@@ -2337,7 +2337,11 @@ body.is-resizing .split-pane {
 }
 
 /* ---------- Highlight.js Override ---------- */
-.hljs {
+/* hljs 토큰 컨테이너(code)만 배경/패딩 제거 — pre 의 배경·패딩(코드 블록 스타일)은 보존.
+   ⚠️ 리치텍스트 코드블록은 <pre class="hljs"> 구조라, .hljs 로 두면 pre 의 배경·패딩까지
+   !important 로 죽여 코드 블록 구분이 사라졌음. code.hljs 로 한정해 pre 스타일을 살린다.
+   (읽기 전용은 <pre><code class="hljs"> 라 code 에 hljs → 동일하게 처리됨) */
+code.hljs {
   background: transparent !important;
   padding: 0 !important;
 }
