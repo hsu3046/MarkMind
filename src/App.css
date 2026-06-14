@@ -583,14 +583,12 @@ body {
   pointer-events: none;
 }
 
-/* 테이블 도구 — 리치 toolbar 우측 빈 공간에 정렬 (이전 floating bubble menu 대체).
-   margin-left:auto 로 toolbar 의 나머지 버튼을 왼쪽에 두고 우측 끝으로 밀착. */
+/* 테이블 도구 — insert table 버튼 바로 옆에 divider + 도구들 (이전 floating
+   bubble menu 대체). 셀 안에 cursor 가 있을 때만 RichToolbar 안에 표시. */
 .rich-table-tools {
-  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding-left: 8px;
   font-size: 13px;
 }
 .tbm-btn {

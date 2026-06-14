@@ -25,6 +25,8 @@ export function TableTools({ editor }: Props) {
 
     return (
         <div className="rich-table-tools" role="group" aria-label="표 편집">
+            {/* insert table 버튼과 구분 — 같은 toolbar divider 재사용 */}
+            <span className="rich-tool-divider" aria-hidden />
             <Btn
                 onClick={() => editor.chain().focus().addRowBefore().run()}
                 title="위 행 추가"
