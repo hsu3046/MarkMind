@@ -5,9 +5,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 mod converters;
 mod gdrive;
+mod lan_server;
 mod mcp;
 mod print_pdf;
 mod secrets;
+mod share;
 
 use std::sync::Arc;
 
@@ -244,6 +246,7 @@ pub fn run() {
         .manage(pending)
         .manage(pending_content)
         .manage(mcp_state)
+        .manage(lan_server::LanState::default())
         .on_window_event(|window, event| {
             // 포커스된 윈도우 = MCP "현재 문서". 윈도우 종료 시 목록에서 제거.
             match event {
@@ -269,6 +272,12 @@ pub fn run() {
             open_new_window,
             mcp_sync_document,
             mcp_apply_edit_result,
+            // LAN 파일 공유 서버 (아이폰 등 — Connect 시에만 0.0.0.0 bind)
+            lan_server::lan_start,
+            lan_server::lan_stop,
+            lan_server::lan_status,
+            // macOS AirDrop 공유 (LAN 접속 URL 을 아이폰으로)
+            share::share_url_airdrop,
             // Keychain
             converters::keychain::get_api_key,
             converters::keychain::set_api_key,
