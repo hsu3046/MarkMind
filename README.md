@@ -54,6 +54,7 @@ MarkMindは、手書きのメモ、音声録音、スキャンされたPDFなど
 - **Image → Text (이미지 인식)** — 2-pass OCR (Gemini Flash extraction → Gemini Pro refinement) for handwriting, screenshots, and PDFs up to 250MB. Auto-fallback to pdfium rasterization for stubborn PDFs.
 - **Inline OCR drag-drop** — Drop an image directly into the editor (when no sidebar active) → OCR result inserted at cursor.
 - **Sidebar drag-drop** — Drop audio/PDF/image files into the active sidebar → file auto-attached by extension.
+- **Speaker diarization (화자 분리)** — Verified **pyannote**, two ways: local (free/offline `pyannote.audio` Python sidecar) or cloud (pyannote.ai API). Post-transcription speaker rename/merge; falls back to Gemini's own speaker guesses if neither is configured.
 
 ### Editor Experience
 
@@ -63,12 +64,28 @@ MarkMindは、手書きのメモ、音声録音、スキャンされたPDFなど
 - **Opens multiple windows** — Cascade-positioned, `⌘N` shortcut, recent files in File menu, Finder file association for `.md`.
 - **Searches everywhere** — CodeMirror search in the editor (Korean UI, `⌘F`) plus DOM-based highlight in preview mode.
 - **Switches themes instantly** — Dark and light with Pretendard CJK-optimized typography.
+- **Custom editor background** — Pick a custom background color per preference (BackgroundPicker), preserved across light/dark.
+- **Rich table editing** — Table bubble menu, merged-cell rendering, and column-width control for Markdown tables.
 
 ### Security & Settings
 
 - **Unified Settings modal** — One place for Gemini, Claude, OpenAI keys (File → Settings).
 - **macOS Keychain storage** — All API keys live in the OS Keychain (`space.knowai.markmind`), never in localStorage on the desktop app.
 - **Legacy migration** — First launch auto-migrates any old `localStorage` keys to Keychain.
+
+### Claude Integration (MCP) — new in 0.4.0
+
+- **Reads & edits your open documents from Claude** — An in-process **MCP server** (Streamable HTTP, `127.0.0.1:8417`) lets Claude Desktop / Claude Code see the documents you have open (live editor content, including unsaved changes) and modify them.
+- **Read tools** — list open documents, current (focused) document, heading outline, the user's current text selection.
+- **Edit tools** — surgical `str_replace`, full rewrite, replace selection, insert at cursor/end. Changes apply to the **live editor and are left unsaved** (you save) — preserving undo where possible.
+- **`propose_edit`** — Claude proposes a rewrite shown as a **diff you must accept or reject**; nothing changes unless you accept.
+- **`create_document` / `save_document`** — open a Claude-drafted document in a new window; persist to disk on request.
+- **Local & isolated** — binds `127.0.0.1` only; one-line setup via `mcp-remote` (see in-app Tutorial § 7).
+
+### Cloud Sync & Export
+
+- **Google Drive sync** — Bring-your-own OAuth client; saved files auto-upload to a `MarkMind` Drive folder, and you can browse/open documents from Drive across machines.
+- **PDF export** — Native macOS WKWebView print pipeline (`NSPrintInfo`) → PDF of the rendered document.
 
 ---
 
@@ -82,7 +99,10 @@ MarkMindは、手書きのメモ、音声録音、スキャンされたPDFなど
 | Markdown | react-markdown + remark-gfm + remark-frontmatter + rehype-highlight |
 | AI (LLM) | Google Gemini SDK · Anthropic Claude REST · OpenAI |
 | AI (Audio) | **Silero VAD v5** ([ort](https://crates.io/crates/ort) 2.0) + **ffmpeg-sidecar** auto-download |
+| AI (Diarization) | **pyannote** — local (`pyannote.audio` Python sidecar) or [pyannote.ai](https://pyannote.ai) cloud |
 | AI (PDF fallback) | [pdfium-render](https://crates.io/crates/pdfium-render) |
+| MCP server | [rmcp](https://crates.io/crates/rmcp) 1.7 (Streamable HTTP) + [axum](https://crates.io/crates/axum) 0.8 |
+| Cloud / Export | Google Drive API (OAuth) · macOS WKWebView print → PDF |
 | Secrets | macOS Keychain via [keyring](https://crates.io/crates/keyring) crate |
 | Icons | Lucide React |
 | Build | Vite 7 + Tauri CLI |
@@ -183,6 +203,10 @@ markmind/
 │   │   ├── Preview.tsx                     # Markdown + frontmatter renderer
 │   │   ├── Toolbar.tsx                     # File ▾ · Outline · Search · 음성 인식 · 이미지 인식 · AI 에이전트
 │   │   ├── InlineDiffView.tsx              # Block-level accept/reject diff
+│   │   ├── McpProposalView.tsx             # MCP propose_edit diff preview (accept/reject)
+│   │   ├── DriveBrowser.tsx                # Google Drive open/save browser
+│   │   ├── BackgroundPicker.tsx            # Custom editor background color
+│   │   ├── TableBubbleMenu.tsx             # Inline table editing menu
 │   │   ├── FloatingAIBar.tsx               # Selection popup for AI actions
 │   │   ├── OutlinePanel.tsx                # H1–H6 navigator
 │   │   ├── RecentFilesPanel.tsx            # Recent file list (also in File menu submenu)
@@ -201,7 +225,11 @@ markmind/
 │   └── types/                              # AI modes, converter types
 ├── src-tauri/                              # Rust backend
 │   ├── src/
-│   │   ├── lib.rs                          # Window mgmt + invoke handlers
+│   │   ├── lib.rs                          # Window mgmt + invoke handlers + MCP wiring
+│   │   ├── mcp/mod.rs                      # MCP server (rmcp + axum) — read/edit open docs
+│   │   ├── gdrive/                         # Google Drive OAuth + sync commands
+│   │   ├── secrets.rs                      # Unified Keychain vault (batch save)
+│   │   ├── print_pdf.rs                    # macOS WKWebView print → PDF export
 │   │   └── converters/                     # doc-converter integration (Rust port)
 │   │       ├── mod.rs                      # Model IDs, pricing, common types
 │   │       ├── error.rs                    # ConverterError enum
@@ -243,9 +271,11 @@ markmind/
 - [x] **Phase 3.5**: UX polish — Lucide icons, inline file rename, version display
 - [x] **Phase 4**: Multimodal — Speech-to-text with VAD, image/PDF OCR, meeting notes (Claude/Gemini)
 - [x] **Phase 4.5**: Integration — Unified settings, Keychain storage, multi-LLM selector (Gemini/Claude/OpenAI)
-- [ ] **Phase 5**: Speaker management UI (rename/merge speakers post-transcription)
-- [ ] **Phase 6**: Export — PDF, Google Docs, PPTX conversion
-- [ ] **Phase 7**: Cloud sync — Google Drive, share links
+- [x] **Phase 5**: Speaker diarization — verified pyannote (local/cloud), speaker rename/merge
+- [x] **Phase 6 (partial)**: Export — PDF (native WKWebView print). Google Docs / PPTX still planned.
+- [x] **Phase 7 (partial)**: Cloud sync — Google Drive (auto-upload + browse). Share links still planned.
+- [x] **Phase 8**: Claude integration — in-process MCP server (read + edit open documents, diff-gated proposals)
+- [ ] **Next**: MCPB bundle (Claude Desktop icon/one-click install), Google Docs / PPTX export, share links
 
 See [docs/TODO.md](docs/TODO.md) for the detailed roadmap.
 
