@@ -52,6 +52,118 @@ export function useFileSystem(onFileOpened?: () => void) {
     fileNameRef.current = fileState.fileName;
   }, [fileState]);
 
+  // ─── MCP 읽기 전용 서버에 현재 문서 스냅샷 동기화 ───
+  // 각 윈도우가 자기 fileState 를 Rust 공유 상태에 push → Claude Code 등이
+  // MCP tool 로 "열린 문서"를 읽음. 매 키 입력마다 전체 content 를 IPC 로
+  // 보내면 큰 문서에서 비용이 크므로 600ms 디바운스. 읽기 전용이라 약간의
+  // stale 은 허용. web 모드(비-Tauri)는 no-op.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const timer = setTimeout(() => {
+      (async () => {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('mcp_sync_document', {
+            content: fileState.content,
+            filePath: fileState.filePath,
+            fileName: fileState.fileName,
+            isDirty: fileState.isDirty,
+          });
+        } catch {
+          // MCP 서버 미기동/포트 충돌 등 — 본 편집 기능과 무관하므로 무시
+        }
+      })();
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [fileState]);
+
+  // ─── MCP 쓰기 요청 처리 ───
+  // Claude 가 edit_document / set_document_content tool 을 호출하면 Rust 가
+  // 대상 윈도우로 `mcp-apply-edit` event 를 emit 한다. 이 리스너가 라이브
+  // 에디터 content 를 갱신(isDirty=true, 저장은 사용자)하고 결과를
+  // `mcp_apply_edit_result` 로 ack → 대기 중인 tool 이 응답한다.
+  // emit_to(label) 이라 대상 윈도우의 리스너만 발동. web 모드는 no-op.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+
+    (async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      const { invoke } = await import('@tauri-apps/api/core');
+      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const myLabel = getCurrentWebviewWindow().label;
+
+      const u = await listen<{
+        requestId: string;
+        windowLabel: string;
+        op: string;
+        oldStr?: string | null;
+        newStr?: string | null;
+        content?: string | null;
+      }>('mcp-apply-edit', async (event) => {
+        const { requestId, windowLabel, op, oldStr, newStr, content } = event.payload;
+        // emit_to 로 타게팅되지만, 멀티윈도우 안전을 위해 자기 창만 처리.
+        if (windowLabel !== myLabel) return;
+        let ok = false;
+        let error: string | null = null;
+        let charCount: number | null = null;
+
+        try {
+          const cur = contentRef.current;
+          let next: string | null = null;
+
+          if (op === 'set_content') {
+            next = content ?? '';
+          } else if (op === 'str_replace') {
+            const needle = oldStr ?? '';
+            if (needle.length === 0) {
+              error = 'old_str 가 비어 있습니다';
+            } else {
+              const first = cur.indexOf(needle);
+              if (first === -1) {
+                error = 'old_str 를 문서에서 찾을 수 없습니다';
+              } else if (cur.indexOf(needle, first + needle.length) !== -1) {
+                error = 'old_str 가 여러 번 나타납니다 (고유해야 함)';
+              } else {
+                next = cur.slice(0, first) + (newStr ?? '') + cur.slice(first + needle.length);
+              }
+            }
+          } else {
+            error = `알 수 없는 op: ${op}`;
+          }
+
+          if (next !== null) {
+            const applied = next;
+            // contentRef 를 동기 갱신 — 같은 tick 에 도착한 다음 edit 이
+            // stale 한 옛 content 로 계산해 이 edit 을 덮어쓰는 경합 방지
+            // (contentRef 는 원래 useEffect 로 렌더 후 비동기 갱신됨).
+            contentRef.current = applied;
+            setFileState((prev) => ({ ...prev, content: applied, isDirty: true }));
+            ok = true;
+            charCount = [...applied].length; // code point 수 (Rust chars().count() 와 일치)
+          }
+        } catch (e) {
+          error = String(e);
+        }
+
+        try {
+          await invoke('mcp_apply_edit_result', { requestId, ok, error, charCount });
+        } catch {
+          // ack 실패 시 tool 쪽 timeout 으로 정리됨 — 본 편집과 무관
+        }
+      });
+
+      if (cancelled) u();
+      else unlisten = u;
+    })();
+
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
   // Listen for file open events from Tauri backend (double-click, drag, etc.)
   // Only runs in Tauri environment
   useEffect(() => {
@@ -154,6 +266,10 @@ export function useFileSystem(onFileOpened?: () => void) {
   }, []);
 
   const updateContent = useCallback((newContent: string) => {
+    // contentRef 동기 갱신 — editor-action(replace_selection/insert_text)이
+    // updateContent 경유로 content 를 바꾼 직후 도착하는 str_replace 가 stale 한
+    // 옛 content 로 계산하지 않도록(단일 content 소스 동기화). useEffect 갱신은 비동기.
+    contentRef.current = newContent;
     setFileState((prev) => ({ ...prev, content: newContent, isDirty: true }));
   }, []);
 
@@ -207,36 +323,42 @@ export function useFileSystem(onFileOpened?: () => void) {
   }, [confirmUnsavedChanges]);
 
   // ─── Save File ───
-  const saveFile = useCallback(async () => {
+  // 결과를 반환한다: 'saved'(디스크 저장됨) | 'cancelled'(다이얼로그 취소) | 'failed'(쓰기 실패).
+  // MCP save_document tool 이 이 결과로 정직하게 ack 하도록(성공 오보 방지).
+  // filePath/fileName 은 ref 로 읽어 closure stale(이름변경 경합)을 피하고 deps 를 [] 로.
+  const saveFile = useCallback(async (): Promise<'saved' | 'cancelled' | 'failed'> => {
     try {
       if (!isTauri()) {
         // Web mode
         const savedName = await webSaveFile(contentRef.current, fileNameRef.current, false);
         if (savedName) {
           setFileState((prev) => ({ ...prev, fileName: savedName, isDirty: false }));
+          return 'saved';
         }
-        return;
+        return 'cancelled';
       }
 
       // Tauri mode
-      let path = fileState.filePath;
+      let path = filePathRef.current;
       if (!path) {
         const save = await tauriSave();
         const selected = await save({
           filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
-          defaultPath: fileState.fileName,
+          defaultPath: fileNameRef.current,
         });
-        if (!selected) return;
+        if (!selected) return 'cancelled';
         path = selected;
       }
       const writeTextFile = await tauriWriteTextFile();
       await writeTextFile(path, contentRef.current);
       const name = path.split('/').pop() || 'Untitled.md';
       setFileState((prev) => ({ ...prev, filePath: path, fileName: name, isDirty: false }));
+      return 'saved';
     } catch (err) {
       console.error('Failed to save file:', err);
+      return 'failed';
     }
-  }, [fileState.filePath, fileState.fileName]);
+  }, []);
 
   // ─── Save File As ───
   const saveFileAs = useCallback(async () => {

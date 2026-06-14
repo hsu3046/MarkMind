@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { AIMode } from './types/ai';
+import { AIMode, DiffChunk } from './types/ai';
 import { Editor, EditorHandle } from './components/Editor';
+import { McpProposalView } from './components/McpProposalView';
+import { generateDiff } from './services/aiService';
 import { Preview } from './components/Preview';
 import { Toolbar, ViewMode } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
@@ -207,6 +209,34 @@ function App() {
   const [selectionCoords, setSelectionCoords] = useState<{ top: number; left: number } | null>(null);
   const aiSelectionRef = useRef<{ fullContent: string; selectedText: string } | null>(null);
 
+  // MCP propose_edit — Claude 수정 제안을 diff 로 보여주고 사용자가 수락/거절.
+  const [mcpProposal, setMcpProposal] = useState<{
+    requestId: string;
+    chunks: DiffChunk[];
+    newContent: string;
+    description?: string;
+    // 제안 생성 시점의 문서 내용 — 수락 시 그 사이 변경(lost update) 감지용.
+    baseContent: string;
+  } | null>(null);
+  // 리스너 클로저가 항상 최신 content 로 diff 를 만들도록 ref 로 추적(렌더마다 동기 갱신).
+  const latestContentRef = useRef(content);
+  latestContentRef.current = content;
+  // 리스너(deps []) 가 stale 없이 쓰도록 ref 로 최신값 추적.
+  const mcpProposalRef = useRef(mcpProposal);
+  mcpProposalRef.current = mcpProposal;
+  // MCP 리스너가 저장·AI diff 정리를 stale 없이 호출하도록 ref 경유.
+  const saveFileRef = useRef(saveFile);
+  saveFileRef.current = saveFile;
+  const clearAiDiffRef = useRef<() => void>(() => {});
+  clearAiDiffRef.current = () => {
+    if (ai.response) ai.setResponse(null);
+    aiSelectionRef.current = null;
+  };
+  // 아래 ackMcpProposal 정의 후 .current 가 채워진다(listener deps [] 경유 호출용).
+  const ackMcpProposalRef = useRef<(rid: string, accepted: boolean, cc: number | null) => void>(
+    () => {},
+  );
+
   // Convert (음성/이미지) 사이드바 — AI Agent 와 mutex
   // (회의록 작성은 AI Agent의 'meeting-notes' 모드로 병합됨)
   const converter = useConverter();
@@ -386,9 +416,48 @@ function App() {
   }, [ai, converter, fileName]);
 
   const handleSelectionChange = useCallback((text: string, coords: { top: number; left: number } | null) => {
+    // FloatingAIBar(선택 시 AI 액션 팝업) 용 — selection 텍스트/좌표 추적.
     setSelectedText(text);
     setSelectionCoords(coords);
   }, []);
+
+  // MCP propose_edit 수락/거절 결과를 백엔드 tool 에 ack.
+  const ackMcpProposal = useCallback((requestId: string, accepted: boolean, charCount: number | null) => {
+    import('@tauri-apps/api/core')
+      .then(({ invoke }) =>
+        invoke('mcp_apply_edit_result', {
+          requestId,
+          ok: accepted,
+          error: accepted ? null : '사용자가 제안을 거절했습니다',
+          charCount,
+        }),
+      )
+      .catch(() => {});
+  }, []);
+  ackMcpProposalRef.current = ackMcpProposal;
+
+  // MCP propose_edit 수락 — lost update(B) 방지: 제안 생성 이후 문서가 바뀌었으면
+  // 그 변경분을 전체 교체로 덮어쓰기 전에 사용자에게 확인한다.
+  const acceptMcpProposal = useCallback(async () => {
+    const p = mcpProposalRef.current;
+    if (!p) return;
+    if (latestContentRef.current !== p.baseContent) {
+      const ok = await confirmAction(
+        '제안을 만든 이후 문서가 변경되었습니다. 그래도 제안 내용으로 전체 교체할까요? (그 사이 변경분이 사라집니다)',
+      );
+      if (!ok) return; // 모달 유지 — 사용자가 거절 버튼으로 명시적으로 닫게 함
+    }
+    updateContent(p.newContent);
+    ackMcpProposal(p.requestId, true, [...p.newContent].length);
+    setMcpProposal(null);
+  }, [ackMcpProposal, updateContent]);
+
+  const rejectMcpProposal = useCallback(() => {
+    const p = mcpProposalRef.current;
+    if (!p) return;
+    ackMcpProposal(p.requestId, false, null);
+    setMcpProposal(null);
+  }, [ackMcpProposal]);
 
   // Outline panel: jump to heading in editor or preview depending on current mode
   const handleOutlineClick = useCallback((id: string, line: number) => {
@@ -445,6 +514,117 @@ function App() {
     }
   }, [filePath, addRecentFile]);
 
+  // ─── MCP editor-action 처리 (replace_selection / insert_text / save) ───
+  // content 변경(str_replace/set_content)은 useFileSystem 이 'mcp-apply-edit' 로
+  // 처리하고, 에디터 view 접근이 필요한 액션은 여기서 'mcp-editor-action' 으로
+  // 처리한다(editorRef / saveFile 접근). emit_to 타게팅 + windowLabel 가드.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+    const unlistens: Array<() => void> = [];
+
+    (async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      const { invoke } = await import('@tauri-apps/api/core');
+      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const myLabel = getCurrentWebviewWindow().label;
+
+      // propose_edit — diff 미리보기를 띄우고 사용자 결정을 기다린다(ack 는
+      // McpProposalView 의 수락/거절 핸들러에서). 편집 모드로 전환해 보이게 한다.
+      const uPropose = await listen<{
+        requestId: string;
+        windowLabel: string;
+        content?: string | null;
+        description?: string | null;
+      }>('mcp-propose-edit', (event) => {
+        const { requestId, windowLabel, content: newContent, description } = event.payload;
+        if (windowLabel !== myLabel) return;
+        // 클로버 방지(A): 이미 검토 중인 제안이 있으면 그 요청을 먼저 거절-ack 해
+        // orphan(5분 timeout)을 막고 새 제안으로 교체.
+        const prev = mcpProposalRef.current;
+        if (prev) ackMcpProposalRef.current(prev.requestId, false, null);
+        // 슬롯 충돌 방지(L): 진행 중 AI diff 가 있으면 정리(같은 pane 공유).
+        clearAiDiffRef.current();
+        const base = latestContentRef.current;
+        const chunks = generateDiff(base, newContent ?? '');
+        setViewMode('editor');
+        setReadingMode(false);
+        setMcpProposal({
+          requestId,
+          chunks,
+          newContent: newContent ?? '',
+          description: description ?? undefined,
+          baseContent: base,
+        });
+      });
+
+      const u = await listen<{
+        requestId: string;
+        windowLabel: string;
+        op: string;
+        content?: string | null;
+        position?: string | null;
+      }>('mcp-editor-action', async (event) => {
+        const { requestId, windowLabel, op, content, position } = event.payload;
+        if (windowLabel !== myLabel) return;
+
+        let ok = false;
+        let error: string | null = null;
+        try {
+          const ed = editorRef.current;
+          // 에디터가 언마운트된 이유를 구분(E): 제안/ AI diff 검토 중이면 그 사실을 알림.
+          const unmountReason = mcpProposalRef.current
+            ? '제안(diff)을 검토 중이라 편집할 수 없습니다 — 먼저 수락/거절하세요'
+            : '에디터가 편집 모드가 아닙니다 (preview/reading 모드일 수 있음)';
+          if (op === 'insert_text') {
+            if (ed) {
+              if ((position ?? 'cursor') === 'end') ed.insertAtEnd(content ?? '');
+              else ed.insertAtCursor(content ?? '');
+              ok = true;
+            } else if ((position ?? 'cursor') === 'end' && !mcpProposalRef.current) {
+              // 에디터 없어도 '문서 끝 삽입'은 content op 로 fallback(커서 삽입은 위치 불명이라 불가).
+              updateContent(latestContentRef.current + (content ?? ''));
+              ok = true;
+            } else {
+              error = unmountReason;
+            }
+          } else if (op === 'save') {
+            const r = await saveFileRef.current();
+            ok = r === 'saved';
+            if (r === 'cancelled') error = '사용자가 저장을 취소했습니다';
+            else if (r === 'failed') error = '디스크 저장 실패';
+          } else {
+            error = `알 수 없는 op: ${op}`;
+          }
+        } catch (e) {
+          error = String(e);
+        }
+
+        try {
+          await invoke('mcp_apply_edit_result', { requestId, ok, error, charCount: null });
+        } catch {
+          // ack 실패 시 tool 쪽 timeout 으로 정리
+        }
+      });
+
+      if (cancelled) {
+        uPropose();
+        u();
+      } else {
+        unlistens.push(uPropose, u);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unlistens.forEach((fn) => fn());
+    };
+    // deps [] — saveFile/ai/mcpProposal 등은 모두 ref 경유로 최신값을 읽으므로
+    // 마운트 1회만 등록(저장·이름변경마다 teardown→재등록되어 그 사이 이벤트가
+    // 유실되던 문제 방지). useFileSystem 의 mcp-apply-edit 패턴과 통일.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 새로 spawn 된 윈도우는 자기 label 로 take_pending_file 호출 → path 로드.
   // URL 쿼리 (?file=...) 방식은 macOS WKWebView 의 URL 길이 + 한글 인코딩 누락 버그로 폐기.
   useEffect(() => {
@@ -457,7 +637,15 @@ function App() {
         // 'main' 윈도우의 OS file association path 도 같은 명령으로 받음
         if (label === 'main') return; // main 은 useFileSystem 의 get_pending_file 흐름이 처리
         const path = await invoke<string | null>('take_pending_file', { label });
-        if (!path) return;
+        if (!path) {
+          // MCP create_document 로 생성된 창 — content 를 직접 로드
+          const pc = await invoke<[string, string] | null>('take_pending_content', { label });
+          if (pc) {
+            const [contentText, name] = pc;
+            loadFromMemory(contentText, name);
+          }
+          return;
+        }
         try {
           const { readTextFile } = await import('@tauri-apps/plugin-fs');
           const content = await readTextFile(path);
@@ -1069,7 +1257,14 @@ function App() {
                 width: viewMode === 'split' ? `${splitRatio * 100}%` : '100%',
               }}
             >
-              {ai.response && !ai.isLoading ? (
+              {mcpProposal ? (
+                <McpProposalView
+                  chunks={mcpProposal.chunks}
+                  description={mcpProposal.description}
+                  onAccept={acceptMcpProposal}
+                  onReject={rejectMcpProposal}
+                />
+              ) : ai.response && !ai.isLoading ? (
                 <InlineDiffView
                   chunks={ai.response.chunks}
                   onAcceptChunk={ai.acceptChunk}
