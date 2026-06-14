@@ -1,6 +1,6 @@
 [package]
 name = "markmind"
-version = "0.1.0"
+version = "0.4.0"
 description = "Minimal Markdown Editor for macOS"
 authors = ["you"]
 edition = "2021"
@@ -77,6 +77,12 @@ url = "2"
 tiny_http = "0.12"  # OAuth redirect callback loopback server
 rand = "0.8"        # PKCE verifier / CSRF state 난수
 sha2 = "0.10"       # PKCE S256 challenge
+
+# === MCP 서버 (읽기 전용) — Claude Code/Desktop 이 열린 문서를 읽도록 노출 ===
+# 공식 Rust SDK. transport-streamable-http-server 는 tower Service 만 노출(axum 미포함)
+# 이라 serve 용 axum 을 별도 추가. http 1.x 기반이라 rmcp 와 호환.
+rmcp = { version = "1.7", features = ["server", "macros", "transport-streamable-http-server"] }
+axum = "0.8"
 
 
 # macOS native print API — NSPrintInfo 명시 설정 + WKWebView.printOperationWithPrintInfo

@@ -2136,6 +2136,16 @@ body.is-resizing .split-pane {
   margin-bottom: 1em;
 }
 
+/* 표 셀 안의 문단은 margin 제거 — 셀은 vertical-align: middle 이지만 셀 내부
+   <p> 의 margin-bottom(1em) 이 콘텐츠 박스를 아래로 키워 텍스트가 위로 쏠리는
+   (상단 정렬처럼 보이는) 문제 방지. 읽기 표(병합셀 HTML 포함) + 편집 표 공통. */
+.markdown-body td p,
+.markdown-body th p,
+.tiptap-rich table td p,
+.tiptap-rich table th p {
+  margin: 0;
+}
+
 .markdown-body a {
   color: var(--text-link);
   text-decoration: none;
