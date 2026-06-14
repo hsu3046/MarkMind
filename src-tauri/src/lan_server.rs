@@ -17,7 +17,6 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    body::Bytes,
     extract::{Query, State},
     http::{header, StatusCode, Uri},
     middleware::{self, Next},
@@ -49,6 +48,9 @@ struct Frontend;
 /// 기동 중인 서버 핸들 — graceful shutdown 채널 + 표시용 메타.
 struct RunningServer {
     shutdown: oneshot::Sender<()>,
+    /// mDNS(Bonjour) 호스트네임(예: `My-Mac.local`). IP 와 달리 고정 — IP 가
+    /// DHCP 로 바뀌어도 같은 주소로 접속. macOS 가 기본 광고(시스템 무수정).
+    host: Option<String>,
     addr: String,
     port: u16,
     root: String,
@@ -71,9 +73,30 @@ struct Ctx {
 #[derive(Serialize, Clone)]
 pub struct LanInfo {
     pub running: bool,
+    /// mDNS 호스트네임(`*.local`) — 고정 주소(권장). 못 구하면 None.
+    pub host: Option<String>,
+    /// 현재 LAN IP — DHCP 라 바뀔 수 있음(폴백).
     pub addr: Option<String>,
     pub port: Option<u16>,
     pub root: Option<String>,
+}
+
+/// Bonjour 가 광고하는 LocalHostName(`*.local`)을 읽는다(읽기 전용 — 시스템
+/// 무수정). macOS 의 `scutil --get LocalHostName` 결과에 `.local` 을 붙인다.
+fn local_hostname() -> Option<String> {
+    let out = std::process::Command::new("scutil")
+        .args(["--get", "LocalHostName"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if name.is_empty() {
+        None
+    } else {
+        Some(format!("{name}.local"))
+    }
 }
 
 // ─── 경로 가드 ───
@@ -343,6 +366,8 @@ pub fn start(state: &LanState, root: String, token: String) -> Result<LanInfo, S
     let lan_ip = local_ip_address::local_ip()
         .map(|ip| ip.to_string())
         .unwrap_or_else(|_| "<이 맥의 IP>".into());
+    // 고정 mDNS 호스트네임(있으면) — IP 가 바뀌어도 같은 주소.
+    let host = local_hostname();
 
     let addr = SocketAddr::from(([0, 0, 0, 0], LAN_PORT));
     // 동기 bind 로 포트 충돌을 즉시 알린다.
@@ -381,6 +406,7 @@ pub fn start(state: &LanState, root: String, token: String) -> Result<LanInfo, S
 
     guard.replace(RunningServer {
         shutdown: tx,
+        host: host.clone(),
         addr: lan_ip.clone(),
         port: LAN_PORT,
         root: root.clone(),
@@ -388,6 +414,7 @@ pub fn start(state: &LanState, root: String, token: String) -> Result<LanInfo, S
 
     Ok(LanInfo {
         running: true,
+        host,
         addr: Some(lan_ip),
         port: Some(LAN_PORT),
         root: Some(root),
@@ -409,12 +436,14 @@ pub fn status(state: &LanState) -> LanInfo {
         Ok(g) => match &*g {
             Some(s) => LanInfo {
                 running: true,
+                host: s.host.clone(),
                 addr: Some(s.addr.clone()),
                 port: Some(s.port),
                 root: Some(s.root.clone()),
             },
             None => LanInfo {
                 running: false,
+                host: None,
                 addr: None,
                 port: None,
                 root: None,
@@ -422,6 +451,7 @@ pub fn status(state: &LanState) -> LanInfo {
         },
         Err(_) => LanInfo {
             running: false,
+            host: None,
             addr: None,
             port: None,
             root: None,

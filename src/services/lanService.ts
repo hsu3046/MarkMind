@@ -13,6 +13,9 @@ import { invoke } from '@tauri-apps/api/core';
 
 export interface LanInfo {
     running: boolean;
+    /** mDNS 호스트네임(*.local) — IP 가 바뀌어도 고정(권장). 못 구하면 null. */
+    host: string | null;
+    /** 현재 LAN IP — DHCP 라 바뀔 수 있음(폴백). */
     addr: string | null;
     port: number | null;
     root: string | null;
@@ -56,8 +59,12 @@ export async function lanStatus(): Promise<LanInfo> {
     return invoke<LanInfo>('lan_status');
 }
 
-/** 아이폰이 접속할 전체 URL(토큰 포함). */
-export function connectUrl(info: LanInfo, token: string): string {
-    if (!info.addr || !info.port) return '';
-    return `http://${info.addr}:${info.port}/?token=${encodeURIComponent(token)}`;
+/** 호스트(또는 IP) + 포트 + 토큰으로 아이폰 접속 URL 생성. */
+export function urlFor(hostOrIp: string, port: number, token: string): string {
+    return `http://${hostOrIp}:${port}/?token=${encodeURIComponent(token)}`;
+}
+
+/** macOS AirDrop 으로 접속 URL 전송(시스템 수신자 선택 창). */
+export async function shareAirdrop(url: string): Promise<void> {
+    await invoke('share_url_airdrop', { url });
 }

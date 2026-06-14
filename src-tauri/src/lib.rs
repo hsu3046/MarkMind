@@ -9,6 +9,7 @@ mod lan_server;
 mod mcp;
 mod print_pdf;
 mod secrets;
+mod share;
 
 use std::sync::Arc;
 
@@ -275,6 +276,8 @@ pub fn run() {
             lan_server::lan_start,
             lan_server::lan_stop,
             lan_server::lan_status,
+            // macOS AirDrop 공유 (LAN 접속 URL 을 아이폰으로)
+            share::share_url_airdrop,
             // Keychain
             converters::keychain::get_api_key,
             converters::keychain::set_api_key,

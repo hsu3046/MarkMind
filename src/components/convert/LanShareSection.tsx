@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Wifi, WifiOff, FolderOpen, Copy, RefreshCw, Check } from 'lucide-react';
+import { Wifi, WifiOff, FolderOpen, Copy, RefreshCw, Check, Share2 } from 'lucide-react';
 import {
     LanInfo,
     lanStart,
@@ -17,16 +17,17 @@ import {
     setSavedRoot,
     getOrCreateToken,
     regenerateToken,
-    connectUrl,
+    urlFor,
+    shareAirdrop,
 } from '../../services/lanService';
 
 export function LanShareSection() {
     const [root, setRoot] = useState('');
     const [token, setToken] = useState('');
-    const [info, setInfo] = useState<LanInfo>({ running: false, addr: null, port: null, root: null });
+    const [info, setInfo] = useState<LanInfo>({ running: false, host: null, addr: null, port: null, root: null });
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [copied, setCopied] = useState(false);
+    const [copied, setCopied] = useState<'host' | 'ip' | null>(null);
 
     useEffect(() => {
         setRoot(getSavedRoot());
@@ -72,7 +73,7 @@ export function LanShareSection() {
         setError(null);
         try {
             await lanStop();
-            setInfo({ running: false, addr: null, port: null, root: null });
+            setInfo({ running: false, host: null, addr: null, port: null, root: null });
         } catch (err) {
             setError(String(err));
         } finally {
@@ -86,15 +87,26 @@ export function LanShareSection() {
         setToken(regenerateToken());
     };
 
-    const url = connectUrl(info, token);
-    const handleCopy = async () => {
+    const port = info.port ?? 0;
+    const hostUrl = info.host && port ? urlFor(info.host, port, token) : '';
+    const ipUrl = info.addr && port ? urlFor(info.addr, port, token) : '';
+    const handleCopy = async (which: 'host' | 'ip', url: string) => {
         if (!url) return;
         try {
             await navigator.clipboard.writeText(url);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
+            setCopied(which);
+            setTimeout(() => setCopied(null), 1500);
         } catch {
             // 클립보드 불가 — 무시(주소는 화면에 표시됨)
+        }
+    };
+
+    const handleShare = async (url: string) => {
+        if (!url) return;
+        try {
+            await shareAirdrop(url);
+        } catch (err) {
+            setError(String(err));
         }
     };
 
@@ -150,18 +162,56 @@ export function LanShareSection() {
                 )}
             </div>
 
-            {/* 접속 주소 */}
-            {info.running && url && (
+            {/* 접속 주소 — 고정 .local(권장) + IP(폴백) */}
+            {info.running && (hostUrl || ipUrl) && (
                 <div className="lan-connect-info" style={{ marginTop: 8 }}>
                     <p className="convert-key-note" style={{ marginBottom: 4 }}>
                         아이폰 Safari 에서 같은 Wi-Fi 로 접속:
                     </p>
-                    <div className="convert-key-row">
-                        <input type="text" value={url} readOnly onFocus={(e) => e.target.select()} />
-                        <button onClick={handleCopy} title="주소 복사">
-                            {copied ? <Check size={14} /> : <Copy size={14} />}
-                        </button>
-                    </div>
+
+                    {hostUrl && (
+                        <>
+                            <div className="convert-key-row">
+                                <input
+                                    type="text"
+                                    value={hostUrl}
+                                    readOnly
+                                    onFocus={(e) => e.target.select()}
+                                />
+                                <button onClick={() => handleCopy('host', hostUrl)} title="주소 복사">
+                                    {copied === 'host' ? <Check size={14} /> : <Copy size={14} />}
+                                </button>
+                                <button onClick={() => handleShare(hostUrl)} title="AirDrop 으로 공유">
+                                    <Share2 size={14} />
+                                </button>
+                            </div>
+                            <p className="convert-key-note" style={{ margin: '2px 0 6px' }}>
+                                고정 주소 — IP 가 바뀌어도 그대로 (권장)
+                            </p>
+                        </>
+                    )}
+
+                    {ipUrl && (
+                        <>
+                            <div className="convert-key-row">
+                                <input
+                                    type="text"
+                                    value={ipUrl}
+                                    readOnly
+                                    onFocus={(e) => e.target.select()}
+                                />
+                                <button onClick={() => handleCopy('ip', ipUrl)} title="주소 복사">
+                                    {copied === 'ip' ? <Check size={14} /> : <Copy size={14} />}
+                                </button>
+                                <button onClick={() => handleShare(ipUrl)} title="AirDrop 으로 공유">
+                                    <Share2 size={14} />
+                                </button>
+                            </div>
+                            <p className="convert-key-note" style={{ margin: '2px 0 0' }}>
+                                IP 주소 — 위 고정 주소가 안 될 때 폴백
+                            </p>
+                        </>
+                    )}
                 </div>
             )}
 

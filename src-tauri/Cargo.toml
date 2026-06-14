@@ -104,8 +104,9 @@ objc2-app-kit = { version = "0.3", features = [
     "NSWindow",
     "NSPrintInfo",
     "NSPrintOperation",
+    "NSSharingService",
 ] }
 objc2-web-kit = { version = "0.3", features = [
     "WKWebView",
 ] }
-objc2-foundation = { version = "0.3", features = ["NSURL", "NSString", "NSError", "NSDictionary"] }
+objc2-foundation = { version = "0.3", features = ["NSURL", "NSString", "NSError", "NSDictionary", "NSArray"] }
