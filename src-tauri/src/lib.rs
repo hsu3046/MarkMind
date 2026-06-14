@@ -19,9 +19,93 @@ use std::sync::Arc;
 /// PendingFiles.insert("main", path) 로 저장.
 struct PendingFiles(Mutex<HashMap<String, String>>);
 
+/// MCP `create_document` 가 새 창에 넣을 (content, file_name) 보관.
+/// 새 창 mount 시 `take_pending_content(label)` 로 가져가 loadFromMemory.
+struct PendingContent(Mutex<HashMap<String, (String, String)>>);
+
 #[tauri::command]
 fn take_pending_file(state: tauri::State<'_, PendingFiles>, label: String) -> Option<String> {
     state.0.lock().ok().and_then(|mut m| m.remove(&label))
+}
+
+#[tauri::command]
+fn take_pending_content(
+    state: tauri::State<'_, PendingContent>,
+    label: String,
+) -> Option<(String, String)> {
+    state.0.lock().ok().and_then(|mut m| m.remove(&label))
+}
+
+/// MCP `create_document` 로 동시에 열 수 있는 창 상한(로컬 프로세스 창 폭주 방지).
+const MAX_OPEN_WINDOWS: usize = 24;
+
+/// MCP `create_document` — content 를 담은 새 윈도우를 연다(메인 스레드에서 빌드).
+/// 새 label 을 PendingContent 에 저장 후 창 생성 → 그 창이 mount 시 가져간다.
+/// 블로킹 recv 를 쓰므로 async tool 에서는 `spawn_blocking` 으로 호출할 것.
+pub(crate) fn create_content_window(
+    app: &tauri::AppHandle,
+    content: String,
+    file_name: String,
+) -> Result<String, String> {
+    // DoS 방어 — 열린 창 수 상한.
+    if app.webview_windows().len() >= MAX_OPEN_WINDOWS {
+        return Err(format!("열린 창이 너무 많습니다 (상한 {MAX_OPEN_WINDOWS})"));
+    }
+    let label = format!("mcp-{}", uuid::Uuid::new_v4());
+    // PendingContent + McpState 낙관적 등록(반환 직후 read tool 이 새 창을 보도록).
+    {
+        let state: tauri::State<'_, PendingContent> = app.state();
+        if let Ok(mut m) = state.0.lock() {
+            m.insert(label.clone(), (content.clone(), file_name.clone()));
+        };
+    }
+    {
+        let mcp_state: tauri::State<'_, Arc<mcp::McpState>> = app.state();
+        mcp_state.set_document(
+            label.clone(),
+            mcp::DocSnapshot {
+                content,
+                file_path: None,
+                file_name,
+                is_dirty: false,
+            },
+        );
+    }
+    let offset = app.webview_windows().len() as f64 * 30.0;
+    let app2 = app.clone();
+    let label2 = label.clone();
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    app.run_on_main_thread(move || {
+        let r = WebviewWindowBuilder::new(&app2, &label2, WebviewUrl::App("index.html".into()))
+            .title("MarkMind")
+            .inner_size(1200.0, 800.0)
+            .min_inner_size(600.0, 400.0)
+            .position(100.0 + offset, 100.0 + offset)
+            .decorations(true)
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
+            .build();
+        let _ = tx.send(r.map(|_| ()).map_err(|e| e.to_string()));
+    })
+    .map_err(|e| e.to_string())?;
+
+    // build 결과 회수(메인 스레드에서 곧 옴). 실패 시 낙관적 등록을 되돌린다.
+    let build_result = rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .map_err(|_| "윈도우 생성 응답 없음(timeout)".to_string());
+    match build_result {
+        Ok(Ok(())) => Ok(label),
+        Ok(Err(e)) | Err(e) => {
+            // 누수 정리 — PendingContent + McpState 낙관 등록 제거.
+            let pc: tauri::State<'_, PendingContent> = app.state();
+            if let Ok(mut m) = pc.0.lock() {
+                m.remove(&label);
+            };
+            let mcp_state: tauri::State<'_, Arc<mcp::McpState>> = app.state();
+            mcp_state.remove_document(&label);
+            Err(format!("윈도우 생성 실패: {e}"))
+        }
+    }
 }
 
 /// (deprecated) 하위 호환 — 'main' label 로 위임.
@@ -53,6 +137,27 @@ fn mcp_sync_document(
         },
     );
 }
+
+/// 프론트가 MCP 쓰기 요청(`mcp-apply-edit`)을 처리한 결과를 ack.
+/// request_id 로 해당 oneshot 채널을 resolve → 대기 중인 쓰기 tool 이 응답한다.
+#[tauri::command]
+fn mcp_apply_edit_result(
+    state: tauri::State<'_, Arc<mcp::McpState>>,
+    request_id: String,
+    ok: bool,
+    error: Option<String>,
+    char_count: Option<usize>,
+) {
+    state.resolve_pending(
+        &request_id,
+        mcp::EditOutcome {
+            ok,
+            error,
+            char_count,
+        },
+    );
+}
+
 
 /// PendingFiles HashMap 에 label → path 저장. 비async 헬퍼 — borrow checker 의
 /// async fn 안 MutexGuard 수명 추론 이슈 회피.
@@ -120,6 +225,7 @@ fn spawn_window_for_file(app: &tauri::AppHandle, path: &str) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let pending = PendingFiles(Mutex::new(HashMap::new()));
+    let pending_content = PendingContent(Mutex::new(HashMap::new()));
     let mcp_state: Arc<mcp::McpState> = Arc::new(mcp::McpState::default());
 
     tauri::Builder::default()
@@ -129,12 +235,14 @@ pub fn run() {
         .setup(|app| {
             // 기존 entry 7개를 통합 vault 로 1회 마이그레이션 (있을 때만).
             secrets::migrate_legacy_once();
-            // MCP 읽기 전용 서버 기동 — bind 실패해도 내부에서 로그만 (앱 정상).
+            // MCP 서버 기동 — bind 실패해도 내부에서 로그만 (앱 정상).
+            // 쓰기 tool 이 윈도우로 event emit 하므로 AppHandle 도 전달.
             let st = app.state::<Arc<mcp::McpState>>().inner().clone();
-            tauri::async_runtime::spawn(mcp::start(st));
+            tauri::async_runtime::spawn(mcp::start(st, app.handle().clone()));
             Ok(())
         })
         .manage(pending)
+        .manage(pending_content)
         .manage(mcp_state)
         .on_window_event(|window, event| {
             // 포커스된 윈도우 = MCP "현재 문서". 윈도우 종료 시 목록에서 제거.
@@ -147,6 +255,8 @@ pub fn run() {
                 tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed => {
                     if let Some(st) = window.try_state::<Arc<mcp::McpState>>() {
                         st.remove_document(window.label());
+                        // 닫힌 창의 미해결 쓰기 요청을 즉시 취소(timeout 대기 방지).
+                        st.cancel_window_pending(window.label());
                     }
                 }
                 _ => {}
@@ -155,8 +265,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_pending_file,
             take_pending_file,
+            take_pending_content,
             open_new_window,
             mcp_sync_document,
+            mcp_apply_edit_result,
             // Keychain
             converters::keychain::get_api_key,
             converters::keychain::set_api_key,

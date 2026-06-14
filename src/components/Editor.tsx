@@ -38,10 +38,11 @@ export interface EditorHandle {
     /** 검색 panel 토글 — 열려있으면 닫고, 닫혀있으면 엶 */
     toggleSearch: () => void;
     isSearchOpen: () => boolean;
-    getSelectedText: () => string;
     scrollToLine: (line: number) => void;
-    /** 현재 커서 위치에 텍스트 삽입 (인라인 OCR 결과 삽입용) */
+    /** 현재 커서 위치에 텍스트 삽입 (인라인 OCR 결과 / MCP insert_text cursor) */
     insertAtCursor: (text: string) => void;
+    /** 문서 끝에 텍스트 삽입 (MCP insert_text position=end) */
+    insertAtEnd: (text: string) => void;
 }
 
 const lightTheme = EditorView.theme({
@@ -162,12 +163,6 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                 if (!view) return false;
                 return !!view.dom.querySelector('.cm-search.cm-panel');
             },
-            getSelectedText: () => {
-                const view = cmRef.current?.view;
-                if (!view) return '';
-                const { from, to } = view.state.selection.main;
-                return view.state.sliceDoc(from, to);
-            },
             scrollToLine: (line: number) => {
                 const view = cmRef.current?.view;
                 if (!view) return;
@@ -186,6 +181,17 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                 view.dispatch({
                     changes: { from, to, insert: text },
                     selection: { anchor: from + text.length },
+                });
+                view.focus();
+            },
+            insertAtEnd: (text: string) => {
+                const view = cmRef.current?.view;
+                if (!view) return;
+                const end = view.state.doc.length;
+                view.dispatch({
+                    changes: { from: end, insert: text },
+                    selection: { anchor: end + text.length },
+                    effects: EditorView.scrollIntoView(end + text.length, { y: 'center' }),
                 });
                 view.focus();
             },
