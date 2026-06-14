@@ -15,6 +15,8 @@ import { getKey, hasKey, Provider, removeKey, updateCacheAfterBatch } from '../.
 import * as gdrive from '../../services/gdriveService';
 import * as secretsBatch from '../../services/secretsService';
 import { confirmAction } from '../../services/dialogService';
+import { isTauri } from '../../services/platform';
+import { LanShareSection } from './LanShareSection';
 import {
     ValidationResult,
     validateProvider,
@@ -554,6 +556,9 @@ export function SettingsView({ onDone }: SettingsViewProps) {
 
                 {driveError && <p className="drive-error">{driveError}</p>}
             </section>
+
+            {/* === 아이폰 연결 (LAN 파일 공유) — 데스크탑 앱 전용 === */}
+            {isTauri() && <LanShareSection />}
 
             {postSaveWarn && <p className="convert-key-note warn">{postSaveWarn}</p>}
 

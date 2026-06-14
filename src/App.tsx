@@ -14,6 +14,8 @@ import { InlineDiffView } from './components/InlineDiffView';
 import { AuthCallback } from './components/AuthCallback';
 import { SettingsModal } from './components/SettingsModal';
 import { DriveBrowser } from './components/DriveBrowser';
+import { LanFileBrowser } from './components/LanFileBrowser';
+import { hasLanServer, lanReadFile } from './services/webFileSystem';
 import type { DriveFile } from './services/gdriveService';
 import { confirmAction } from './services/dialogService';
 import { useFileSystem } from './hooks/useFileSystem';
@@ -130,6 +132,8 @@ function App() {
   const [tutorialVisible, setTutorialVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [driveBrowserMode, setDriveBrowserMode] = useState<'open' | 'save' | null>(null);
+  // LAN 서버 모드(아이폰 브라우저 등)에서 공유 폴더 파일 목록 브라우저
+  const [lanBrowserVisible, setLanBrowserVisible] = useState(false);
   const [recentPanelVisible, setRecentPanelVisible] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -941,6 +945,40 @@ function App() {
     [openFromRecent],
   );
 
+  // 파일 열기 — 웹 모드 + LAN 서버면 공유 폴더 브라우저, 아니면 기존 흐름
+  // (Tauri 네이티브 다이얼로그 / 브라우저 input).
+  const handleOpenFile = useCallback(() => {
+    if (!isTauri() && hasLanServer()) {
+      setLanBrowserVisible(true);
+    } else {
+      openFile();
+    }
+  }, [openFile]);
+
+  // LAN 브라우저에서 파일 선택 → 내용 읽어 로드. filePath 를 서버 상대경로로
+  // 유지(openFromRecent) → 저장이 원본을 in-place 덮어쓴다.
+  const handleLanSelect = useCallback(
+    async (relPath: string) => {
+      if (isDirty) {
+        const ok = await confirmAction(
+          '현재 문서에 저장되지 않은 변경사항이 있습니다.\n' +
+            '다른 파일을 열면 변경사항이 사라집니다. 계속할까요?',
+        );
+        if (!ok) return;
+      }
+      try {
+        const { content: text, path } = await lanReadFile(relPath);
+        const name = relPath.split('/').pop() || relPath;
+        openFromRecent(path, text, name);
+        setLanBrowserVisible(false);
+      } catch (err) {
+        console.error('[App] LAN 파일 열기 실패:', err);
+        alert('파일을 열지 못했습니다: ' + err);
+      }
+    },
+    [isDirty, openFromRecent],
+  );
+
   /** File 메뉴 submenu 에서 path 만으로 열기 — content 는 자체적으로 읽음 */
   const handleOpenRecentByPath = useCallback(
     async (path: string) => {
@@ -980,7 +1018,7 @@ function App() {
             break;
           case 'o':
             e.preventDefault();
-            openFile();
+            handleOpenFile();
             break;
           case 'n':
             e.preventDefault();
@@ -1034,7 +1072,7 @@ function App() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [
-    saveFile, saveFileAs, openFile, newFile, toggleSearch,
+    saveFile, saveFileAs, handleOpenFile, newFile, toggleSearch,
     handleFontSizeChange, resetFontSize, readingMode, recentPanelVisible,
     searchVisible, viewMode, handleToggleAI, tutorialVisible, settingsVisible,
   ]);
@@ -1167,7 +1205,7 @@ function App() {
         outlineVisible={outlineVisible}
         onViewModeChange={setViewMode}
         onNewFile={newFile}
-        onOpenFile={openFile}
+        onOpenFile={handleOpenFile}
         onSaveFile={saveFile}
         onSaveFileAs={saveFileAs}
         onExportPdf={handleExportPdf}
@@ -1440,6 +1478,13 @@ function App() {
 
       {/* 통합 Settings 모달 — STT/OCR/AI 에이전트 API 키 */}
       <SettingsModal visible={settingsVisible} onClose={() => setSettingsVisible(false)} />
+
+      {/* LAN 서버 모드(아이폰 등) — 공유 폴더 파일 브라우저 */}
+      <LanFileBrowser
+        visible={lanBrowserVisible}
+        onClose={() => setLanBrowserVisible(false)}
+        onSelect={handleLanSelect}
+      />
 
       {/* Google Drive 파일 브라우저 (Open from / Save to) */}
       <DriveBrowser

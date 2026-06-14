@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { isTauri } from '../services/platform';
-import { webOpenFile, webSaveFile, webConfirmUnsavedChanges } from '../services/webFileSystem';
+import { webOpenFile, webSaveFile, webConfirmUnsavedChanges, hasLanServer, lanWriteFile } from '../services/webFileSystem';
 
 interface FileState {
   content: string;
@@ -329,7 +329,19 @@ export function useFileSystem(onFileOpened?: () => void) {
   const saveFile = useCallback(async (): Promise<'saved' | 'cancelled' | 'failed'> => {
     try {
       if (!isTauri()) {
-        // Web mode
+        // LAN 서버 모드 — filePath(서버 루트 기준 상대경로)가 있으면 원본을
+        // in-place 로 덮어쓴다(다운로드 사본 아님). 아이폰 등에서 핵심 흐름.
+        if (hasLanServer() && filePathRef.current) {
+          try {
+            await lanWriteFile(filePathRef.current, contentRef.current);
+            setFileState((prev) => ({ ...prev, isDirty: false }));
+            return 'saved';
+          } catch (err) {
+            console.error('Failed to save to LAN server:', err);
+            return 'failed';
+          }
+        }
+        // Web mode (브라우저 다운로드 fallback)
         const savedName = await webSaveFile(contentRef.current, fileNameRef.current, false);
         if (savedName) {
           setFileState((prev) => ({ ...prev, fileName: savedName, isDirty: false }));

@@ -84,6 +84,14 @@ sha2 = "0.10"       # PKCE S256 challenge
 rmcp = { version = "1.7", features = ["server", "macros", "transport-streamable-http-server"] }
 axum = "0.8"
 
+# === LAN 파일 공유 서버 — 같은 Wi-Fi 의 기기(아이폰 등)가 문서를 읽고 편집 ===
+# 빌드된 프론트(dist)를 바이너리에 임베드해 정적 서빙 + 파일 API.
+# MCP(127.0.0.1 고정)와 달리 설정창에서 Connect 할 때만 0.0.0.0 에 bind(토글).
+# debug 빌드는 런타임에 dist 를 파일시스템에서 읽음(debug-embed 미사용) → dev 중
+# `npm run build` 후 최신 UI 반영. release 는 컴파일 타임 임베드.
+rust-embed = "8"
+local-ip-address = "0.6"
+
 
 # macOS native print API — NSPrintInfo 명시 설정 + WKWebView.printOperationWithPrintInfo
 # 호출. window.print() 가 wry 의 default 사용 (paperSize/centered 미명시 → 좌측
