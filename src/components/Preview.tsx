@@ -17,7 +17,7 @@ import { SearchAndReplace } from '@sereneinserenade/tiptap-search-and-replace';
 import { Typography } from '@tiptap/extension-typography';
 import { InlineCheckbox } from '../extensions/InlineCheckbox';
 import { MarkdownTable } from '../extensions/MarkdownTable';
-import { TableBubbleMenu } from './TableBubbleMenu';
+import { TableTools } from './TableTools';
 import {
     Bold, Italic, Strikethrough, Code,
     Heading1, Heading2, Heading3, Heading4,
@@ -575,6 +575,8 @@ function RichToolbar({ editor }: { editor: Editor }) {
                 icon={<TableIcon size={14} />}
                 title="Insert table"
             />
+            {/* 셀 안에 cursor 가 있을 때만 우측 빈 공간에 표시 (margin-left:auto) */}
+            <TableTools editor={editor} />
         </div>
     );
 }
@@ -722,7 +724,6 @@ function RichEditor({
         <>
             <RichToolbar editor={editor} />
             <EditorContent editor={editor} />
-            <TableBubbleMenu editor={editor} />
         </>
     );
 }
