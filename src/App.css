@@ -583,17 +583,12 @@ body {
   pointer-events: none;
 }
 
-/* TableBubbleMenu — 표 셀 안 cursor 시 floating row/col 조작 패널 */
-.table-bubble-menu {
+/* 테이블 도구 — insert table 버튼 바로 옆에 divider + 도구들 (이전 floating
+   bubble menu 대체). 셀 안에 cursor 가 있을 때만 RichToolbar 안에 표시. */
+.rich-table-tools {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 4px;
-  background: var(--bg-primary, #ffffff);
-  border: 1px solid var(--text-tertiary, #d8d8d3);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-  z-index: 200;
   font-size: 13px;
 }
 .tbm-btn {
@@ -3022,7 +3017,7 @@ code.hljs {
   /* UI chrome 일괄 hide */
   .titlebar-drag, .toolbar, .toolbar-dropdown-menu, .search-bar,
   .statusbar, .outline-panel, .convert-sidebar, .ai-panel,
-  .floating-ai-bar, .rich-toolbar, .table-bubble-menu,
+  .floating-ai-bar, .rich-toolbar,
   .split-handle, .split-handle-area, .sync-toggle,
   .recent-panel, .recent-panel-backdrop, .tutorial-overlay,
   .settings-modal-backdrop, .settings-modal, .drive-browser-root,
