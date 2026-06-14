@@ -5,8 +5,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 mod converters;
 mod gdrive;
+mod mcp;
 mod print_pdf;
 mod secrets;
+
+use std::sync::Arc;
 
 /// 윈도우별 pending file path 저장.
 /// URL 쿼리 (`?file=...`) 로 path 전달하면 macOS WKWebView 의 URL 길이 한계 +
@@ -26,6 +29,29 @@ fn take_pending_file(state: tauri::State<'_, PendingFiles>, label: String) -> Op
 #[tauri::command]
 fn get_pending_file(state: tauri::State<'_, PendingFiles>) -> Option<String> {
     state.0.lock().ok().and_then(|mut m| m.remove("main"))
+}
+
+/// 프론트(각 윈도우)가 자기 문서 상태를 MCP 공유 상태에 동기화.
+/// content 변경마다 프론트에서 디바운스되어 호출됨 — 읽기 전용 MCP 노출용.
+/// `window.label()` 로 어느 윈도우인지 식별(멀티윈도우 독립).
+#[tauri::command]
+fn mcp_sync_document(
+    window: tauri::Window,
+    state: tauri::State<'_, Arc<mcp::McpState>>,
+    content: String,
+    file_path: Option<String>,
+    file_name: String,
+    is_dirty: bool,
+) {
+    state.set_document(
+        window.label().to_string(),
+        mcp::DocSnapshot {
+            content,
+            file_path,
+            file_name,
+            is_dirty,
+        },
+    );
 }
 
 /// PendingFiles HashMap 에 label → path 저장. 비async 헬퍼 — borrow checker 의
@@ -94,21 +120,43 @@ fn spawn_window_for_file(app: &tauri::AppHandle, path: &str) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let pending = PendingFiles(Mutex::new(HashMap::new()));
+    let mcp_state: Arc<mcp::McpState> = Arc::new(mcp::McpState::default());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .setup(|_app| {
+        .setup(|app| {
             // 기존 entry 7개를 통합 vault 로 1회 마이그레이션 (있을 때만).
             secrets::migrate_legacy_once();
+            // MCP 읽기 전용 서버 기동 — bind 실패해도 내부에서 로그만 (앱 정상).
+            let st = app.state::<Arc<mcp::McpState>>().inner().clone();
+            tauri::async_runtime::spawn(mcp::start(st));
             Ok(())
         })
         .manage(pending)
+        .manage(mcp_state)
+        .on_window_event(|window, event| {
+            // 포커스된 윈도우 = MCP "현재 문서". 윈도우 종료 시 목록에서 제거.
+            match event {
+                tauri::WindowEvent::Focused(true) => {
+                    if let Some(st) = window.try_state::<Arc<mcp::McpState>>() {
+                        st.set_current(window.label().to_string());
+                    }
+                }
+                tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed => {
+                    if let Some(st) = window.try_state::<Arc<mcp::McpState>>() {
+                        st.remove_document(window.label());
+                    }
+                }
+                _ => {}
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_pending_file,
             take_pending_file,
             open_new_window,
+            mcp_sync_document,
             // Keychain
             converters::keychain::get_api_key,
             converters::keychain::set_api_key,

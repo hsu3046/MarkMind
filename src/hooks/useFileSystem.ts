@@ -52,6 +52,31 @@ export function useFileSystem(onFileOpened?: () => void) {
     fileNameRef.current = fileState.fileName;
   }, [fileState]);
 
+  // ─── MCP 읽기 전용 서버에 현재 문서 스냅샷 동기화 ───
+  // 각 윈도우가 자기 fileState 를 Rust 공유 상태에 push → Claude Code 등이
+  // MCP tool 로 "열린 문서"를 읽음. 매 키 입력마다 전체 content 를 IPC 로
+  // 보내면 큰 문서에서 비용이 크므로 600ms 디바운스. 읽기 전용이라 약간의
+  // stale 은 허용. web 모드(비-Tauri)는 no-op.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const timer = setTimeout(() => {
+      (async () => {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('mcp_sync_document', {
+            content: fileState.content,
+            filePath: fileState.filePath,
+            fileName: fileState.fileName,
+            isDirty: fileState.isDirty,
+          });
+        } catch {
+          // MCP 서버 미기동/포트 충돌 등 — 본 편집 기능과 무관하므로 무시
+        }
+      })();
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [fileState]);
+
   // Listen for file open events from Tauri backend (double-click, drag, etc.)
   // Only runs in Tauri environment
   useEffect(() => {
