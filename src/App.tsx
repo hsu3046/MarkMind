@@ -967,9 +967,9 @@ function App() {
         if (!ok) return;
       }
       try {
-        const { content: text, path } = await lanReadFile(relPath);
+        const { content: text, path, modified } = await lanReadFile(relPath);
         const name = relPath.split('/').pop() || relPath;
-        openFromRecent(path, text, name);
+        openFromRecent(path, text, name, modified);
         setLanBrowserVisible(false);
       } catch (err) {
         console.error('[App] LAN 파일 열기 실패:', err);

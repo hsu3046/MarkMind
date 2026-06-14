@@ -36,6 +36,15 @@ export function LanShareSection() {
         lanStatus().then(setInfo).catch(() => {});
     }, []);
 
+    // P3c: 다른 윈도우에서 연결/해제해도 이 설정창이 stale 하지 않도록 주기 동기화.
+    // 작업 중(busy)에는 건너뛰어 사용자 액션 결과를 덮어쓰지 않는다.
+    useEffect(() => {
+        const id = setInterval(() => {
+            if (!busy) lanStatus().then(setInfo).catch(() => {});
+        }, 3000);
+        return () => clearInterval(id);
+    }, [busy]);
+
     const pickFolder = async () => {
         try {
             const { open } = await import('@tauri-apps/plugin-dialog');

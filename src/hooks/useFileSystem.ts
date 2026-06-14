@@ -1,12 +1,14 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { isTauri } from '../services/platform';
-import { webOpenFile, webSaveFile, webConfirmUnsavedChanges, hasLanServer, lanWriteFile } from '../services/webFileSystem';
+import { webOpenFile, webSaveFile, webConfirmUnsavedChanges, hasLanServer, lanWriteFile, type LanWriteError } from '../services/webFileSystem';
 
 interface FileState {
   content: string;
   filePath: string | null;
   fileName: string;
   isDirty: boolean;
+  /** LAN 서버로 연 파일의 base mtime(epoch ms) — 저장 시 충돌 감지(P2). */
+  lanModified?: number;
 }
 
 
@@ -44,12 +46,14 @@ export function useFileSystem(onFileOpened?: () => void) {
   const isDirtyRef = useRef(fileState.isDirty);
   const filePathRef = useRef(fileState.filePath);
   const fileNameRef = useRef(fileState.fileName);
+  const lanModifiedRef = useRef(fileState.lanModified);
 
   useEffect(() => {
     contentRef.current = fileState.content;
     isDirtyRef.current = fileState.isDirty;
     filePathRef.current = fileState.filePath;
     fileNameRef.current = fileState.fileName;
+    lanModifiedRef.current = fileState.lanModified;
   }, [fileState]);
 
   // ─── MCP 읽기 전용 서버에 현재 문서 스냅샷 동기화 ───
@@ -331,12 +335,30 @@ export function useFileSystem(onFileOpened?: () => void) {
       if (!isTauri()) {
         // LAN 서버 모드 — filePath(서버 루트 기준 상대경로)가 있으면 원본을
         // in-place 로 덮어쓴다(다운로드 사본 아님). 아이폰 등에서 핵심 흐름.
+        // base mtime 을 보내 외부 변경(맥에서 같은 파일 편집 등) 시 409 → 사용자
+        // 확인 후에만 강제 덮어쓰기(P2 lost update 방지).
         if (hasLanServer() && filePathRef.current) {
+          const path = filePathRef.current;
           try {
-            await lanWriteFile(filePathRef.current, contentRef.current);
-            setFileState((prev) => ({ ...prev, isDirty: false }));
+            const res = await lanWriteFile(path, contentRef.current, lanModifiedRef.current);
+            setFileState((prev) => ({ ...prev, isDirty: false, lanModified: res.modified }));
             return 'saved';
           } catch (err) {
+            if ((err as LanWriteError).conflict) {
+              const ok = window.confirm(
+                '이 파일이 다른 곳에서 변경되었습니다.\n현재 편집 내용으로 덮어쓸까요? (외부 변경분이 사라집니다)',
+              );
+              if (!ok) return 'cancelled';
+              try {
+                // 강제 저장 — base 생략으로 충돌 검사 우회
+                const res2 = await lanWriteFile(path, contentRef.current);
+                setFileState((prev) => ({ ...prev, isDirty: false, lanModified: res2.modified }));
+                return 'saved';
+              } catch (err2) {
+                console.error('Failed to force-save to LAN server:', err2);
+                return 'failed';
+              }
+            }
             console.error('Failed to save to LAN server:', err);
             return 'failed';
           }
@@ -422,11 +444,15 @@ export function useFileSystem(onFileOpened?: () => void) {
 
 
 
-  // Open file directly from path and content (for recent files — Tauri only)
-  const openFromRecent = useCallback((path: string, content: string, name: string) => {
-    setFileState({ content, filePath: path, fileName: name, isDirty: false });
-    onFileOpened?.();
-  }, [onFileOpened]);
+  // Open file directly from path and content (recent files — Tauri; LAN browser).
+  // lanModified 를 주면(LAN 모드) 저장 시 충돌 감지의 base 로 보관.
+  const openFromRecent = useCallback(
+    (path: string, content: string, name: string, lanModified?: number) => {
+      setFileState({ content, filePath: path, fileName: name, isDirty: false, lanModified });
+      onFileOpened?.();
+    },
+    [onFileOpened],
+  );
 
   // 메모리(예: Google Drive 다운로드)에서 가져온 내용을 새 가상 파일로 로드.
   // filePath 는 null — 사용자가 Save 누르면 Save As 다이얼로그.

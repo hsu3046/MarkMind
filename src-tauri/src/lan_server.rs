@@ -131,6 +131,28 @@ fn ext_allowed(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// 파일 수정 시각(epoch ms). 못 구하면 0.
+fn mtime_ms(meta: &std::fs::Metadata) -> u64 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// 대상의 부모 디렉토리가 루트 하위인지 canonicalize 로 검증한다(P1).
+/// `resolve` 의 canonicalize 는 **존재하는 경로**에만 동작하므로, 새 파일 쓰기는
+/// 부모(항상 존재)를 따로 해소해 심볼릭 링크로 루트를 탈출하지 못하게 막는다.
+fn parent_within_root(root: &Path, abs: &Path) -> Result<(), StatusCode> {
+    let parent = abs.parent().ok_or(StatusCode::BAD_REQUEST)?;
+    let parent_canon = parent.canonicalize().map_err(|_| StatusCode::BAD_REQUEST)?;
+    if parent_canon.starts_with(root) {
+        Ok(())
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
 // ─── 토큰 인증 미들웨어 (/api/* 에만 적용) ───
 
 async fn auth(
@@ -205,17 +227,11 @@ async fn list_files(State(ctx): State<Ctx>) -> Result<Json<ListResp>, StatusCode
             Ok(m) => m,
             Err(_) => continue,
         };
-        let modified = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
         files.push(FileEntry {
             path: rel.to_string_lossy().replace('\\', "/"),
             name: entry.file_name().to_string_lossy().to_string(),
             size: meta.len(),
-            modified,
+            modified: mtime_ms(&meta),
         });
     }
     // 최근 수정 우선(모바일에서 방금 본 문서 찾기 쉽게).
@@ -239,6 +255,8 @@ struct PathQuery {
 struct ReadResp {
     path: String,
     content: String,
+    /// 수정 시각(epoch ms) — 저장 시 낙관적 동시성 비교(base_modified)에 사용.
+    modified: u64,
 }
 
 /// GET /api/file?path=rel — 파일 내용.
@@ -250,10 +268,23 @@ async fn read_file(
     if !ext_allowed(&abs) {
         return Err(StatusCode::FORBIDDEN);
     }
-    let content = std::fs::read_to_string(&abs).map_err(|_| StatusCode::NOT_FOUND)?;
+    let meta = std::fs::metadata(&abs).map_err(|_| StatusCode::NOT_FOUND)?;
+    // P3d: 거대 파일 메모리 보호 — write 와 같은 상한.
+    if meta.len() as usize > MAX_CONTENT_BYTES {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    // P4a: 비-UTF8 은 "없음"이 아니라 415 로 구분(원인 혼동 방지).
+    let content = match std::fs::read_to_string(&abs) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        }
+        Err(_) => return Err(StatusCode::NOT_FOUND),
+    };
     Ok(Json(ReadResp {
         path: q.path,
         content,
+        modified: mtime_ms(&meta),
     }))
 }
 
@@ -261,12 +292,18 @@ async fn read_file(
 struct SaveBody {
     path: String,
     content: String,
+    /// 읽을 때 받은 수정 시각(epoch ms). 주면 저장 직전 디스크 mtime 과 비교해
+    /// 다르면 409(외부에서 변경됨) — lost update 방지(P2). 생략/0 이면 강제 저장.
+    #[serde(default)]
+    base_modified: Option<u64>,
 }
 
 #[derive(Serialize)]
 struct SaveResp {
     ok: bool,
     path: String,
+    /// 저장 후 새 수정 시각 — 클라이언트가 다음 저장의 base 로 갱신.
+    modified: u64,
 }
 
 /// PUT /api/file — 본문을 **원자적으로**(temp 작성 후 rename) in-place 저장.
@@ -281,11 +318,26 @@ async fn write_file(
     if !ext_allowed(&abs) {
         return Err(StatusCode::FORBIDDEN);
     }
-    // 부모 디렉토리는 존재해야 한다(새 폴더 생성은 하지 않음 — 단순/안전).
+    // 부모 디렉토리는 존재해야 하고(새 폴더 생성 안 함), 루트 하위여야 한다(P1 —
+    // 새 파일은 resolve 의 canonicalize 가 스킵되므로 부모를 직접 검증해 심볼릭
+    // 링크 탈출을 막는다).
     let parent = abs.parent().ok_or(StatusCode::BAD_REQUEST)?;
     if !parent.is_dir() {
         return Err(StatusCode::BAD_REQUEST);
     }
+    parent_within_root(&ctx.root, &abs)?;
+
+    // P2: 낙관적 동시성 — base_modified 가 주어지고 대상이 존재하면 현재 mtime 과
+    // 비교해 그 사이 외부 변경(맥 데스크탑 편집 등)이 있었으면 409 로 거부.
+    if let Some(base) = body.base_modified.filter(|b| *b != 0) {
+        if let Ok(meta) = std::fs::metadata(&abs) {
+            if mtime_ms(&meta) != base {
+                return Err(StatusCode::CONFLICT);
+            }
+        }
+        // 대상이 없으면(새 파일) base 는 무의미 — 통과.
+    }
+
     // 같은 디렉토리에 temp 작성 → rename(동일 파일시스템이라 원자적).
     let tmp = parent.join(format!(
         ".{}.markmind.tmp",
@@ -296,9 +348,11 @@ async fn write_file(
         let _ = std::fs::remove_file(&tmp); // rename 실패 시 temp 정리
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    let modified = std::fs::metadata(&abs).map(|m| mtime_ms(&m)).unwrap_or(0);
     Ok(Json(SaveResp {
         ok: true,
         path: body.path,
+        modified,
     }))
 }
 

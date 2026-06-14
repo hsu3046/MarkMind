@@ -39,6 +39,13 @@ pub async fn share_url_airdrop(window: WebviewWindow, url: String) -> Result<(),
                         NSSharingService::sharingServiceNamed(NSSharingServiceNameSendViaAirDrop)
                             .ok_or_else(|| "AirDrop 서비스를 사용할 수 없습니다".to_string())?;
 
+                    // P3a: 항목을 보낼 수 있는지 먼저 확인 — 불가 시 무반응 대신 안내.
+                    if !service.canPerformWithItems(Some(&items)) {
+                        return Err(
+                            "AirDrop 으로 보낼 수 없습니다 (AirDrop 이 꺼져 있거나 주변 기기가 없을 수 있습니다). 복사 버튼을 이용하세요.".to_string(),
+                        );
+                    }
+
                     // AirDrop 수신자 선택 창 표시(메인 스레드 비동기).
                     service.performWithItems(&items);
                     Ok(())

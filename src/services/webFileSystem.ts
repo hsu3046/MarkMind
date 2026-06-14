@@ -153,19 +153,41 @@ export async function lanListFiles(): Promise<{ root: string; files: LanFile[] }
     return r.json();
 }
 
-export async function lanReadFile(path: string): Promise<{ path: string; content: string }> {
+export async function lanReadFile(
+    path: string,
+): Promise<{ path: string; content: string; modified: number }> {
     const r = await lanFetch(`/api/file?path=${encodeURIComponent(path)}`);
     if (!r.ok) throw new Error(`파일을 읽지 못했습니다 (${r.status})`);
     return r.json();
 }
 
-export async function lanWriteFile(path: string, content: string): Promise<void> {
+/** 저장 충돌(외부에서 변경됨, HTTP 409)을 식별하기 위한 에러 플래그. */
+export interface LanWriteError extends Error {
+    conflict?: boolean;
+}
+
+/**
+ * in-place 저장. baseModified(읽을 때의 mtime)를 주면 서버가 그 사이 외부
+ * 변경을 감지해 409 를 던진다(lost update 방지). 강제 저장은 baseModified 생략.
+ * 반환: 저장 후 새 mtime(다음 저장의 base).
+ */
+export async function lanWriteFile(
+    path: string,
+    content: string,
+    baseModified?: number,
+): Promise<{ modified: number }> {
     const r = await lanFetch('/api/file', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ path, content }),
+        body: JSON.stringify({ path, content, base_modified: baseModified }),
     });
+    if (r.status === 409) {
+        const err: LanWriteError = new Error('파일이 외부에서 변경되었습니다');
+        err.conflict = true;
+        throw err;
+    }
     if (!r.ok) throw new Error(`저장하지 못했습니다 (${r.status})`);
+    return r.json();
 }
 
 // ─── Public API ───
