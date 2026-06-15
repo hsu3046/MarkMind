@@ -17,6 +17,7 @@ import * as secretsBatch from '../../services/secretsService';
 import { confirmAction } from '../../services/dialogService';
 import { isTauri } from '../../services/platform';
 import { LanShareSection } from './LanShareSection';
+import { loadUserMemory, saveUserMemory, USER_MEMORY_MAX_CHARS } from '../../services/userMemory';
 import {
     ValidationResult,
     validateProvider,
@@ -125,6 +126,11 @@ export function SettingsView({ onDone }: SettingsViewProps) {
     const [driveBusy, setDriveBusy] = useState(false);
     const [driveError, setDriveError] = useState<string | null>(null);
 
+    // 사용자 메모리(#15) — AI system prompt 주입용 "내 정보"
+    const [userMemory, setUserMemory] = useState('');
+    const [memoryOrig, setMemoryOrig] = useState('');
+    const [memorySaving, setMemorySaving] = useState(false);
+
     useEffect(() => {
         setValues({
             gemini: getKey('gemini') || '',
@@ -154,8 +160,26 @@ export function SettingsView({ onDone }: SettingsViewProps) {
             const dp = (await secretsBatch.getDiarPython()) || '';
             setDiarPython(dp);
             setDiarPythonOrig(dp);
+            const mem = await loadUserMemory();
+            setUserMemory(mem);
+            setMemoryOrig(mem);
         })();
     }, []);
+
+    // 사용자 메모리(#15) 저장 — API 키 저장과 독립.
+    const handleSaveMemory = async () => {
+        setMemorySaving(true);
+        try {
+            await saveUserMemory(userMemory);
+            setMemoryOrig(userMemory);
+        } catch (e) {
+            await confirmAction(
+                `내 정보 저장에 실패했습니다: ${e instanceof Error ? e.message : String(e)}`,
+            );
+        } finally {
+            setMemorySaving(false);
+        }
+    };
 
     // ─── 입력 빠른 초기화 (휴지통) ───
     const handleClearKeyInput = async (provider: Provider) => {
@@ -397,6 +421,33 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                     </section>
                 );
             })}
+
+            {/* === 내 정보 (AI 컨텍스트, #15) === */}
+            <section className="convert-settings-section">
+                <label>
+                    내 정보 (AI 컨텍스트){' '}
+                    {memoryOrig && <span className="badge badge-ok">설정됨</span>}
+                </label>
+                <textarea
+                    className="convert-memory-input"
+                    placeholder="예: 한국어 사용자, B2B SaaS 분야, 존댓말 선호. 자주 쓰는 용어·약어 등"
+                    value={userMemory}
+                    rows={4}
+                    maxLength={USER_MEMORY_MAX_CHARS}
+                    onChange={(e) => setUserMemory(e.target.value)}
+                />
+                <p className="convert-key-note">
+                    AI(문법·번역·개선·구조화) 호출 시 참고 정보로 전달됩니다. {userMemory.length}/
+                    {USER_MEMORY_MAX_CHARS}자
+                </p>
+                <button
+                    className="primary"
+                    onClick={handleSaveMemory}
+                    disabled={memorySaving || userMemory === memoryOrig}
+                >
+                    {memorySaving ? '저장 중…' : '내 정보 저장'}
+                </button>
+            </section>
 
             {/* === 로컬 화자분리 (pyannote, 무료/오프라인) === */}
             <section className="convert-settings-section">

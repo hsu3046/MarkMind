@@ -10,6 +10,7 @@ mod mcp;
 mod print_pdf;
 mod secrets;
 mod share;
+mod user_memory;
 mod vault;
 
 use std::sync::Arc;
@@ -316,6 +317,9 @@ pub fn run() {
             // Vault (옵시디언형 문서 그래프 — 폴더 스캔 + create-on-click)
             vault::scan_vault,
             vault::create_file_at,
+            // 사용자 메모리(#15) — AI system prompt 주입용 "내 정보"
+            user_memory::read_user_memory,
+            user_memory::write_user_memory,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

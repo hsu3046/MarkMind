@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { AIRequest, AIResponse, DiffChunk, DiffSeg, getModelForMode } from '../types/ai';
 import { getKey, hasKey, setKey, removeKey } from './secureStorage';
+import { getCachedUserMemory } from './userMemory';
 
 // ─── API Key Management ───────────────────────────────────
 // 저장소: Tauri 환경 → macOS Keychain (Rust keyring), 웹 → localStorage.
@@ -25,6 +26,21 @@ export function hasApiKey(): boolean {
 // ─── System Prompts ───────────────────────────────────────
 
 function getSystemPrompt(request: AIRequest): string {
+    return getBaseSystemPrompt(request) + buildUserMemoryBlock();
+}
+
+/** 사용자 메모리(#15)를 system prompt 끝에 "참고 컨텍스트" 로 덧붙인다.
+    출력 형식 규칙(수정 텍스트만 출력 등)은 각 모드 prompt 가 이미 강제하므로,
+    여기선 톤·어조·용어·배경 이해에 쓸 정보만 제공한다. */
+function buildUserMemoryBlock(): string {
+    const memory = getCachedUserMemory().trim();
+    if (!memory) return '';
+    return `\n\n## 사용자 컨텍스트 (참고용)
+다음은 사용자가 제공한 정보입니다. 톤·어조·용어·배경 이해에 반영하되, 위의 출력 형식 규칙은 그대로 지키세요.
+${memory}`;
+}
+
+function getBaseSystemPrompt(request: AIRequest): string {
     const base = `You are an expert document editor. You work with Markdown documents.
 CRITICAL RULES:
 - Return ONLY the modified text. No explanations, no code blocks, no prefixes.
