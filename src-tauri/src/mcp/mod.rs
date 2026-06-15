@@ -287,27 +287,73 @@ struct OutlineResult {
     outline: Vec<OutlineItem>,
 }
 
+/// 선행 들여쓰기(스페이스=1, 탭=4칸 근사)를 세고, 공백 이후 부분을 반환.
+/// CommonMark 의 "4칸 이상 = indented code block" 판정을 근사하기 위함.
+fn split_indent(line: &str) -> (usize, &str) {
+    let mut indent = 0usize;
+    for (idx, ch) in line.char_indices() {
+        match ch {
+            ' ' => indent += 1,
+            '\t' => indent += 4,
+            _ => return (indent, &line[idx..]),
+        }
+    }
+    (indent, "") // 전부 공백인 라인
+}
+
+/// 코드펜스 마커면 (펜스 문자, 연속 길이) 반환. ``` 또는 ~~~ 가 3개 이상일 때만.
+/// `` ` ``·`~` 는 ASCII 1바이트라 반환된 길이는 바이트 인덱스로도 안전하게 쓸 수 있다.
+fn fence_marker(s: &str) -> Option<(char, usize)> {
+    let first = s.chars().next()?;
+    if first != '`' && first != '~' {
+        return None;
+    }
+    let len = s.chars().take_while(|&c| c == first).count();
+    (len >= 3).then_some((first, len))
+}
+
 /// 마크다운 ATX 헤딩(`#`~`######`) 추출. 코드펜스(``` / ~~~) 내부는 제외.
+///
+/// CommonMark 근사로 펜스 토글 정합성을 보강(이슈 #40):
+/// - 여는/닫는 펜스는 0~3칸 들여쓰기 + 동일 문자 3개 이상
+/// - 닫는 펜스는 여는 펜스와 **같은 문자·같거나 긴 길이**, 마커 뒤는 공백만(info-string 금지)
+/// - 4칸 이상 들여쓴 라인은 indented code block 으로 보고 펜스/헤딩 판정에서 제외
 fn parse_outline(content: &str) -> Vec<OutlineItem> {
     let mut out = Vec::new();
-    let mut in_fence = false;
+    // 열린 펜스: Some((문자, 길이)). None = 펜스 밖.
+    let mut fence: Option<(char, usize)> = None;
     for (i, line) in content.lines().enumerate() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            in_fence = !in_fence;
+        let (indent, rest) = split_indent(line);
+
+        if let Some((open_ch, open_len)) = fence {
+            // 펜스 안 — 헤딩 무시. 닫는 펜스만 탐지.
+            if indent <= 3 {
+                if let Some((ch, len)) = fence_marker(rest) {
+                    // 같은 종류·동등 이상 길이 + 마커 뒤 공백만 → 닫힘 (rest 는 ASCII 마커라 byte=char)
+                    if ch == open_ch && len >= open_len && rest[len..].trim().is_empty() {
+                        fence = None;
+                    }
+                }
+            }
             continue;
         }
-        if in_fence {
+
+        // 펜스 밖 — 4칸 이상 들여쓰기는 indented code block 이라 펜스/헤딩 판정 제외
+        if indent > 3 {
             continue;
         }
-        let hashes = trimmed.chars().take_while(|&c| c == '#').count();
+        if let Some((ch, len)) = fence_marker(rest) {
+            fence = Some((ch, len));
+            continue;
+        }
+        let hashes = rest.chars().take_while(|&c| c == '#').count();
         if (1..=6).contains(&hashes) {
-            let rest = &trimmed[hashes..];
+            let after = &rest[hashes..];
             // `# 제목` 처럼 # 뒤 공백이 있거나 빈 헤딩만 인정(`#title` 은 헤딩 아님)
-            if rest.is_empty() || rest.starts_with(' ') || rest.starts_with('\t') {
+            if after.is_empty() || after.starts_with(' ') || after.starts_with('\t') {
                 out.push(OutlineItem {
                     level: hashes as u8,
-                    title: rest.trim().to_string(),
+                    title: after.trim().to_string(),
                     line: i + 1,
                 });
             }
@@ -589,5 +635,69 @@ pub async fn start(state: Arc<McpState>, app: AppHandle) {
     eprintln!("[mcp] MarkMind MCP 서버 http://127.0.0.1:{MCP_PORT}/mcp 기동");
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("[mcp] serve 종료: {e}");
+    }
+}
+
+#[cfg(test)]
+mod outline_tests {
+    use super::parse_outline;
+
+    /// OutlineItem 은 PartialEq 미derive → (level, title, line) 튜플로 비교.
+    fn items(md: &str) -> Vec<(u8, String, usize)> {
+        parse_outline(md)
+            .into_iter()
+            .map(|o| (o.level, o.title, o.line))
+            .collect()
+    }
+
+    #[test]
+    fn extracts_basic_headings() {
+        let md = "# A\n## B\ntext\n### C";
+        assert_eq!(
+            items(md),
+            vec![(1, "A".into(), 1), (2, "B".into(), 2), (3, "C".into(), 4)]
+        );
+    }
+
+    #[test]
+    fn skips_headings_inside_fence() {
+        let md = "# Real\n```\n# fake in code\n```\n## After";
+        assert_eq!(items(md), vec![(1, "Real".into(), 1), (2, "After".into(), 5)]);
+    }
+
+    #[test]
+    fn open_with_info_string_close_plain() {
+        // ```rust 처럼 info-string 있는 여는 펜스 + 평범한 닫는 펜스
+        let md = "```rust\n# not heading\n```\n# Heading";
+        assert_eq!(items(md), vec![(1, "Heading".into(), 4)]);
+    }
+
+    #[test]
+    fn mismatched_fence_char_does_not_close() {
+        // ``` 로 열고 ~~~ 로는 닫지 못함 → 그 안의 # 는 계속 코드
+        let md = "```\n# x\n~~~\n# y\n```\n# real";
+        assert_eq!(items(md), vec![(1, "real".into(), 6)]);
+    }
+
+    #[test]
+    fn shorter_marker_does_not_close_longer_fence() {
+        // ```` (4) 로 열면 ``` (3) 으로 못 닫음
+        let md = "````\n# x\n```\n# still code\n````\n# real";
+        assert_eq!(items(md), vec![(1, "real".into(), 6)]);
+    }
+
+    #[test]
+    fn indented_4spaces_is_code_not_fence_or_heading() {
+        // 4칸 들여쓴 ``` 는 펜스 아님(코드블록) → 토글 안 됨, 뒤 헤딩 정상 인식
+        assert_eq!(items("text\n    ```\n# heading"), vec![(1, "heading".into(), 3)]);
+        // 4칸 들여쓴 # 는 헤딩 아님
+        assert_eq!(items("    # not heading\n# yes"), vec![(1, "yes".into(), 2)]);
+    }
+
+    #[test]
+    fn closing_fence_rejects_trailing_text() {
+        // 닫는 펜스 뒤에 텍스트가 있으면(info-string) 닫기로 인정 안 함
+        let md = "```\n# x\n``` not-close\n# still code\n```\n# real";
+        assert_eq!(items(md), vec![(1, "real".into(), 6)]);
     }
 }
