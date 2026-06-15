@@ -553,6 +553,30 @@
     font: inherit;
     font-size: 13px;
 }
+/* 내 정보(#15) textarea — convert-key-row input 과 동일 톤 + textarea 특성 */
+.convert-memory-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 13px;
+    line-height: 1.5;
+    resize: vertical;
+    min-height: 72px;
+}
+.convert-memory-input:focus {
+    outline: none;
+    border-color: var(--text-secondary);
+}
+/* 내 정보 저장 버튼(.convert-btn.primary)이 flex-column 섹션에서 full-width 로
+   늘어나지 않게 — align-items:stretch 기본 무시(#15 P2-3) */
+.convert-settings-section > button.primary {
+    align-self: flex-start;
+}
 .convert-key-row button {
     padding: 0 10px;
     background: var(--bg-secondary);

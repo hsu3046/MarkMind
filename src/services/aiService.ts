@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { AIRequest, AIResponse, DiffChunk, DiffSeg, getModelForMode } from '../types/ai';
 import { getKey, hasKey, setKey, removeKey } from './secureStorage';
+import { getCachedUserMemory } from './userMemory';
 
 // ─── API Key Management ───────────────────────────────────
 // 저장소: Tauri 환경 → macOS Keychain (Rust keyring), 웹 → localStorage.
@@ -25,6 +26,23 @@ export function hasApiKey(): boolean {
 // ─── System Prompts ───────────────────────────────────────
 
 function getSystemPrompt(request: AIRequest): string {
+    return getBaseSystemPrompt(request) + buildUserMemoryBlock(request.mode);
+}
+
+/** 사용자 메모리(#15)를 system prompt 끝에 "참고 컨텍스트" 로 덧붙인다.
+    grammar/translate 는 '최소 변경 / 원문 톤 유지' 모드라, 메모리(톤·배경 지시)를
+    주입하면 과편집·톤 변형을 유발할 수 있어 제외한다(#15 P3-1). improve/structurize
+    등만 주입하며, 출력 형식 규칙은 각 모드 prompt 가 이미 강제한다. */
+function buildUserMemoryBlock(mode: AIRequest['mode']): string {
+    if (mode === 'grammar' || mode === 'translate') return '';
+    const memory = getCachedUserMemory().trim();
+    if (!memory) return '';
+    return `\n\n## 사용자 컨텍스트 (참고용)
+다음은 사용자가 제공한 정보입니다. 톤·어조·용어·배경 이해에 반영하되, 위의 출력 형식 규칙은 그대로 지키세요.
+${memory}`;
+}
+
+function getBaseSystemPrompt(request: AIRequest): string {
     const base = `You are an expert document editor. You work with Markdown documents.
 CRITICAL RULES:
 - Return ONLY the modified text. No explanations, no code blocks, no prefixes.
