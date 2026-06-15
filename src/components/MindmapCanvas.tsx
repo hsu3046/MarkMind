@@ -71,12 +71,16 @@ function descPreview(s: string): string {
 const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodeProps) {
     const d = data as MindmapNodeData;
     const isRoot = d.level === 0;
-    // Branch hue from the L1 colour; level (h1/h2/h3…) shown as background intensity
-    // (deeper = lighter tint) via color-mix over the theme background.
+    // Branch hue from the L1 colour. Level (h1/h2/h3…) is shown two ways, deeper = lighter:
+    //   - the left stripe (띠) — the primary, clearly-stepped level cue
+    //   - the card background tint
     const base = isRoot ? 'var(--accent)' : PALETTE[d.colorIndex % PALETTE.length];
-    const tint = isRoot ? 22 : Math.max(6, 24 - d.level * 6); // % of hue mixed into bg
-    const accent = base;
-    const background = `color-mix(in srgb, ${base} ${tint}%, var(--bg-primary))`;
+    const bgPct = isRoot ? 26 : Math.max(8, 30 - d.level * 7);    // background intensity
+    const stripePct = Math.max(36, 100 - d.level * 18);           // 띠 농도 (얕을수록 진함)
+    const accent = base;                                          // branch hue (jump icon)
+    const background = `color-mix(in srgb, ${base} ${bgPct}%, var(--bg-primary))`;
+    const stripe = `color-mix(in srgb, ${base} ${stripePct}%, var(--bg-primary))`;
+    const thinBorder = `color-mix(in srgb, ${base} 28%, var(--bg-primary))`;
     const desc = d.node?.description?.trim();
 
     const editableRef = useRef<HTMLDivElement>(null);
@@ -105,7 +109,7 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
     }, [d]);
 
     return (
-        <div className={`mm-node${isRoot ? ' mm-root' : ''}`} style={{ borderColor: accent, background }}>
+        <div className={`mm-node${isRoot ? ' mm-root' : ''}`} style={{ borderColor: thinBorder, borderLeftColor: stripe, background }}>
             <Handle
                 id="left"
                 type={isRoot ? 'source' : d.side === 'left' ? 'source' : 'target'}

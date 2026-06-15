@@ -14,7 +14,7 @@
     background: var(--bg-primary);
     color: var(--text-primary);
     border: 1.5px solid var(--border-primary);
-    border-left-width: 4px;
+    border-left-width: 6px;
     border-radius: var(--radius-md, 8px);
     box-shadow: var(--shadow-sm);
     font-family: var(--font-sans);
@@ -27,7 +27,7 @@
     font-size: var(--text-base, 15px);
     background: var(--bg-secondary);
     border-width: 2px;
-    border-left-width: 5px;
+    border-left-width: 7px;
     padding: 10px 30px 10px 16px;
 }
 
@@ -181,6 +181,13 @@
 
 .mm-drill-static:hover {
     background: transparent;
+}
+
+/* connecting edges — fainter than the React Flow default */
+.react-flow__edge-path {
+    stroke: var(--border-primary);
+    stroke-width: 1.25px;
+    opacity: 0.45;
 }
 
 /* React Flow surface adopts the editor background */
