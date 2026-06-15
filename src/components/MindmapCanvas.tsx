@@ -10,7 +10,7 @@
  * x/y, so layout is always recomputed by d3 (see ../lib/d3-layout.ts).
  */
 
-import { memo, useEffect, useRef, useCallback } from 'react';
+import { memo, useEffect, useRef, useCallback, type CSSProperties } from 'react';
 import {
     ReactFlow,
     ReactFlowProvider,
@@ -109,7 +109,7 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
     }, [d]);
 
     return (
-        <div className={`mm-node${isRoot ? ' mm-root' : ''}`} style={{ borderColor: thinBorder, borderLeftColor: stripe, background }}>
+        <div className={`mm-node${isRoot ? ' mm-root' : ''}`} style={{ borderColor: thinBorder, background, '--mm-stripe': stripe } as CSSProperties}>
             <Handle
                 id="left"
                 type={isRoot ? 'source' : d.side === 'left' ? 'source' : 'target'}

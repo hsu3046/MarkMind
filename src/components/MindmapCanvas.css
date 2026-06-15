@@ -14,8 +14,7 @@
     background: var(--bg-primary);
     color: var(--text-primary);
     border: 1.5px solid var(--border-primary);
-    border-left-width: 6px;
-    border-radius: var(--radius-md, 8px);
+    border-radius: 0;
     box-shadow: var(--shadow-sm);
     font-family: var(--font-sans);
     font-size: var(--text-sm, 13px);
@@ -27,8 +26,22 @@
     font-size: var(--text-base, 15px);
     background: var(--bg-secondary);
     border-width: 2px;
-    border-left-width: 7px;
     padding: 10px 30px 10px 16px;
+}
+
+/* left accent stripe — clean rectangle (::before, no border miter), level-shaded */
+.mm-node::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 6px;
+    background: var(--mm-stripe, var(--accent));
+}
+
+.mm-node.mm-root::before {
+    width: 7px;
 }
 
 .mm-text {
@@ -183,12 +196,7 @@
     background: transparent;
 }
 
-/* connecting edges — fainter than the React Flow default */
-.react-flow__edge-path {
-    stroke: var(--border-primary);
-    stroke-width: 1.25px;
-    opacity: 0.45;
-}
+/* connecting edges use React Flow's default stroke/width */
 
 /* React Flow surface adopts the editor background */
 .mm-flow,
