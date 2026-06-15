@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Node } from '@xyflow/react';
 import { MindmapCanvas, type MindmapNodeData } from './MindmapCanvas';
-import { calculateD3Layout } from '../lib/d3-layout';
+import { calculateD3Layout, type SizeOverride } from '../lib/d3-layout';
 import { documentToTree, treeToDocument } from '../lib/markdownTree';
 import type { MindmapNode } from '../types/mindmap';
 
@@ -125,7 +125,14 @@ export function MindmapView({ content, onChange, fileName, onOpenDocument, onJum
         if (link && onOpenDocument) onOpenDocument(link.target, link.isWiki);
     }, [onOpenDocument]);
 
-    const layout = useMemo(() => calculateD3Layout(tree, NOOP), [tree]);
+    // Real measured node sizes (from React Flow) → re-layout so flextree spaces by
+    // actual height. Settles in one pass via the equality guard below.
+    const [measuredSizes, setMeasuredSizes] = useState<SizeOverride | undefined>(undefined);
+    const handleNodesMeasured = useCallback((sizes: SizeOverride) => {
+        setMeasuredSizes((prev) => (sameSizes(prev, sizes) ? prev : sizes));
+    }, []);
+
+    const layout = useMemo(() => calculateD3Layout(tree, NOOP, measuredSizes), [tree, measuredSizes]);
 
     const nodes: Node[] = useMemo(() =>
         layout.nodes.map((n) => {
@@ -156,7 +163,17 @@ export function MindmapView({ content, onChange, fileName, onOpenDocument, onJum
 
     return (
         <div style={{ flex: 1, width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
-            <MindmapCanvas nodes={nodes} edges={layout.edges} fitKey={stem} />
+            <MindmapCanvas nodes={nodes} edges={layout.edges} fitKey={stem} onNodesMeasured={handleNodesMeasured} />
         </div>
     );
+}
+
+/** Two size maps equal within 1px (avoids a re-layout loop from sub-pixel jitter). */
+function sameSizes(a: SizeOverride | undefined, b: SizeOverride): boolean {
+    if (!a || a.size !== b.size) return false;
+    for (const [id, s] of b) {
+        const p = a.get(id);
+        if (!p || Math.abs(p.width - s.width) > 1 || Math.abs(p.height - s.height) > 1) return false;
+    }
+    return true;
 }

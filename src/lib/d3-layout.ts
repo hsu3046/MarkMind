@@ -21,16 +21,21 @@ import { Node, Edge } from '@xyflow/react';
 
 // ─── Layout constants ───
 const HORIZONTAL_GAP = 60; // depth-axis gap between a node and its children
-const VERTICAL_GAP = 30;   // breadth-axis gap between sibling cards (cushion for estimate error)
-const ICON_SPACE = 26;     // jump icon (always shown) shares the card row
-const LINK_ICON_SPACE = 24; // drill-in icon when the node has links
+const VERTICAL_GAP = 26;   // breadth-axis gap between sibling cards
+const LINK_ICON_SPACE = 24; // inline drill-in icon when the node has links
 const CENTER_X = 0;
 const CENTER_Y = 0;
 
+// padding here = total horizontal padding in CSS (.mm-node padding-left + padding-right,
+// the right side carries extra room for the absolute hover jump icon).
 const NODE_WIDTH_CONFIG = {
-    root: { min: 200, max: 320, fontSize: 16, padding: 32, lineH: 22, padV: 24 },
-    child: { min: 120, max: 280, fontSize: 14, padding: 32, lineH: 19, padV: 20 },
+    root: { min: 200, max: 340, fontSize: 16, padding: 48, lineH: 22, padV: 24 },
+    child: { min: 120, max: 300, fontSize: 14, padding: 44, lineH: 19, padV: 20 },
 };
+
+/** Actual rendered size measured by React Flow, keyed by node id. Overrides the
+ *  estimate so flextree spaces nodes by their real height (no overlap). */
+export type SizeOverride = Map<string, { width: number; height: number }>;
 
 // ─── Size cache (invalidates on label/description change) ───
 interface Measure {
@@ -74,10 +79,9 @@ function measureNode(node: MindmapNode, isRoot: boolean): Measure {
         return m;
     }
 
-    // Reserve horizontal room for padding + the always-on jump icon (+ drill icon
-    // when linked); the text/description wrap inside what's left, so estimate the
-    // line count on the REAL text area to avoid under-counting → vertical overlap.
-    const reserved = cfg.padding + ICON_SPACE + ((node.links?.length ?? 0) > 0 ? LINK_ICON_SPACE : 0);
+    // Reserve horizontal room for padding (+ inline drill icon when linked); text
+    // wraps inside what's left, so estimate line count on the REAL text area.
+    const reserved = cfg.padding + ((node.links?.length ?? 0) > 0 ? LINK_ICON_SPACE : 0);
     const textW = naturalTextWidth(node.label || ' ', cfg.fontSize, 0);
     const width = Math.min(Math.max(textW + reserved, cfg.min), cfg.max);
     const textArea = Math.max(40, width - reserved);
@@ -128,13 +132,21 @@ interface FData {
     children: FData[];
 }
 
-function toFData(node: MindmapNode, isRoot: boolean, colorIndex: number): FData {
+/** Real measured size if available, else the estimate. */
+function sizeOf(node: MindmapNode, isRoot: boolean, override?: SizeOverride): { width: number; height: number } {
+    const o = override?.get(node.id);
+    if (o && o.width > 0 && o.height > 0) return { width: o.width, height: o.height };
     const m = measureNode(node, isRoot);
+    return { width: m.width, height: m.height };
+}
+
+function toFData(node: MindmapNode, isRoot: boolean, colorIndex: number, override?: SizeOverride): FData {
+    const s = sizeOf(node, isRoot, override);
     return {
         node,
-        size: [m.height + VERTICAL_GAP, m.width + HORIZONTAL_GAP],
+        size: [s.height + VERTICAL_GAP, s.width + HORIZONTAL_GAP],
         colorIndex,
-        children: (node.children ?? []).map((c) => toFData(c, false, colorIndex)),
+        children: (node.children ?? []).map((c) => toFData(c, false, colorIndex, override)),
     };
 }
 
@@ -168,16 +180,17 @@ function layoutSide(
     side: 'left' | 'right',
     onExpand: (node: MindmapNode) => void,
     out: Node[],
+    override?: SizeOverride,
 ): void {
     if (sideChildren.length === 0) return;
 
-    const rootMeasure = measureNode(rootNode, true);
+    const rootSize = sizeOf(rootNode, true, override);
     const virtualRoot: FData = {
         node: rootNode,
         // tighten the gap between the center root and L1 (half root width + gap)
-        size: [rootMeasure.height + VERTICAL_GAP, rootMeasure.width / 2 + HORIZONTAL_GAP],
+        size: [rootSize.height + VERTICAL_GAP, rootSize.width / 2 + HORIZONTAL_GAP],
         colorIndex: -1,
-        children: sideChildren.map((c) => toFData(c, false, colorOf(c))),
+        children: sideChildren.map((c) => toFData(c, false, colorOf(c), override)),
     };
 
     const layout = flextree<FData>({
@@ -189,11 +202,11 @@ function layoutSide(
 
     tree.each((n: FlextreeNode<FData>) => {
         if (n.data.colorIndex === -1) return; // skip virtual root
-        const m = measureNode(n.data.node, false);
+        const s = sizeOf(n.data.node, false, override);
         const depth = n.y; // horizontal offset from center
         const breadth = n.x; // vertical offset (centered)
-        const posX = side === 'right' ? CENTER_X + depth : CENTER_X - depth - m.width;
-        const posY = CENTER_Y + breadth - m.height / 2;
+        const posX = side === 'right' ? CENTER_X + depth : CENTER_X - depth - s.width;
+        const posY = CENTER_Y + breadth - s.height / 2;
         out.push(createReactFlowNode(n.data.node, posX, posY, n.depth, side, n.data.colorIndex, onExpand));
     });
 }
@@ -201,14 +214,15 @@ function layoutSide(
 export function calculateD3Layout(
     rootNode: MindmapNode,
     onExpand: (node: MindmapNode) => void,
+    override?: SizeOverride,
 ): LayoutResult {
     const nodes: Node[] = [];
     const edges: Edge[] = [];
 
-    const rootMeasure = measureNode(rootNode, true);
+    const rootSize = sizeOf(rootNode, true, override);
     // center root (React Flow position = top-left → offset by half its box)
     nodes.push(
-        createReactFlowNode(rootNode, CENTER_X - rootMeasure.width / 2, CENTER_Y - rootMeasure.height / 2, 0, 'center', 0, onExpand),
+        createReactFlowNode(rootNode, CENTER_X - rootSize.width / 2, CENTER_Y - rootSize.height / 2, 0, 'center', 0, onExpand),
     );
 
     if (!rootNode.children || rootNode.children.length === 0) {
@@ -218,8 +232,8 @@ export function calculateD3Layout(
     const { right, left } = balanceSides(rootNode.children);
     const colorOf = (child: MindmapNode) => rootNode.children.indexOf(child);
 
-    layoutSide(rootNode, right, colorOf, 'right', onExpand, nodes);
-    layoutSide(rootNode, left, colorOf, 'left', onExpand, nodes);
+    layoutSide(rootNode, right, colorOf, 'right', onExpand, nodes, override);
+    layoutSide(rootNode, left, colorOf, 'left', onExpand, nodes, override);
 
     // edges (independent of geometry)
     const addChildEdges = (parent: MindmapNode, side: 'left' | 'right') => {
