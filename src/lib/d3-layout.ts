@@ -21,7 +21,9 @@ import { Node, Edge } from '@xyflow/react';
 
 // ─── Layout constants ───
 const HORIZONTAL_GAP = 60; // depth-axis gap between a node and its children
-const VERTICAL_GAP = 22;   // breadth-axis gap between sibling cards
+const VERTICAL_GAP = 30;   // breadth-axis gap between sibling cards (cushion for estimate error)
+const ICON_SPACE = 26;     // jump icon (always shown) shares the card row
+const LINK_ICON_SPACE = 24; // drill-in icon when the node has links
 const CENTER_X = 0;
 const CENTER_Y = 0;
 
@@ -72,9 +74,14 @@ function measureNode(node: MindmapNode, isRoot: boolean): Measure {
         return m;
     }
 
-    const natural = naturalTextWidth(node.label || ' ', cfg.fontSize, cfg.padding);
-    const width = Math.min(Math.max(natural, cfg.min), cfg.max);
-    const lines = Math.max(1, Math.ceil(natural / Math.max(width, 1)));
+    // Reserve horizontal room for padding + the always-on jump icon (+ drill icon
+    // when linked); the text/description wrap inside what's left, so estimate the
+    // line count on the REAL text area to avoid under-counting → vertical overlap.
+    const reserved = cfg.padding + ICON_SPACE + ((node.links?.length ?? 0) > 0 ? LINK_ICON_SPACE : 0);
+    const textW = naturalTextWidth(node.label || ' ', cfg.fontSize, 0);
+    const width = Math.min(Math.max(textW + reserved, cfg.min), cfg.max);
+    const textArea = Math.max(40, width - reserved);
+    const lines = Math.max(1, Math.ceil(textW / textArea));
     let height = lines * cfg.lineH + cfg.padV;
 
     // description preview (shown under the label, CSS-clamped to 3 lines) —
@@ -82,10 +89,11 @@ function measureNode(node: MindmapNode, isRoot: boolean): Measure {
     const desc = node.description?.trim();
     if (desc) {
         const descFont = cfg.fontSize - 2;
-        const naturalDesc = naturalTextWidth(desc.replace(/\s+/g, ' '), descFont, 0);
-        const descLines = Math.min(3, Math.max(1, Math.ceil(naturalDesc / Math.max(width, 1))));
-        height += descLines * (descFont + 4) + 4;
+        const descW = naturalTextWidth(desc.replace(/\s+/g, ' '), descFont, 0);
+        const descLines = Math.min(3, Math.max(1, Math.ceil(descW / textArea)));
+        height += descLines * (descFont + 5) + 4;
     }
+    height += 6; // safety buffer for measurement error
 
     const m: Measure = { label: node.label, desc: descKey, width, height };
     measureCache.set(node.id, m);

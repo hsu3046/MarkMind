@@ -143,14 +143,15 @@
     background: var(--accent-subtle);
 }
 
-/* jump-to-section — fades in on node hover to avoid clutter */
+/* jump-to-section — top-right corner, colored with the node's branch hue (set inline) */
 .mm-jump {
-    width: 20px;
-    height: 20px;
+    align-self: flex-start;
+    width: 22px;
+    height: 22px;
     flex-shrink: 0;
-    color: var(--text-tertiary);
-    opacity: 0;
-    transition: opacity var(--transition-fast, 0.12s) ease, background var(--transition-fast, 0.12s) ease, color var(--transition-fast, 0.12s) ease;
+    opacity: 0.85;
+    /* color comes from inline style (= node border colour) */
+    transition: opacity var(--transition-fast, 0.12s) ease, background var(--transition-fast, 0.12s) ease;
 }
 
 .mm-node:hover .mm-jump {
@@ -158,8 +159,7 @@
 }
 
 .mm-jump:hover {
-    background: var(--bg-hover);
-    color: var(--accent);
+    background: color-mix(in srgb, currentColor 16%, transparent);
 }
 
 /* M1: passive link indicator (no navigation yet — M2 wires drill-in) */

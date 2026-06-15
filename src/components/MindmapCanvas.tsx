@@ -162,9 +162,10 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
                 <button
                     className="mm-jump"
                     title="문서에서 이 섹션으로 이동"
+                    style={{ color: accent }}
                     onClick={(e) => { e.stopPropagation(); d.onJumpToSource?.(); }}
                 >
-                    <SquareArrowOutUpRight size={12} />
+                    <SquareArrowOutUpRight size={13} strokeWidth={2.25} />
                 </button>
             )}
 
