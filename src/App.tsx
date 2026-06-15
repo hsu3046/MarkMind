@@ -233,6 +233,13 @@ function App() {
 
   // AI
   const ai = useAI();
+  // AI 결과(InlineDiff)는 에디터 페인에서만 보이므로, 마인드맵/그래프 뷰에서
+  // 실행해 응답이 오면 에디터로 전환해 diff 를 보이게 한다(구조화 등).
+  useEffect(() => {
+    if (ai.response && !ai.isLoading && (viewMode === 'mindmap' || viewMode === 'graph')) {
+      setViewMode('editor');
+    }
+  }, [ai.response, ai.isLoading, viewMode]);
   const [selectedText, setSelectedText] = useState('');
   const [selectionCoords, setSelectionCoords] = useState<{ top: number; left: number } | null>(null);
   const aiSelectionRef = useRef<{ fullContent: string; selectedText: string } | null>(null);
