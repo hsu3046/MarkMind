@@ -10,6 +10,7 @@ mod mcp;
 mod print_pdf;
 mod secrets;
 mod share;
+mod vault;
 
 use std::sync::Arc;
 
@@ -312,6 +313,9 @@ pub fn run() {
             gdrive::commands::gdrive_update,
             // PDF export — macOS NSPrintInfo 명시 + WKWebView native print
             print_pdf::export_pdf,
+            // Vault (옵시디언형 문서 그래프 — 폴더 스캔 + create-on-click)
+            vault::scan_vault,
+            vault::create_file_at,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

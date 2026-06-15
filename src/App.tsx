@@ -6,6 +6,7 @@ import { McpProposalView } from './components/McpProposalView';
 import { generateDiff } from './services/aiService';
 import { Preview } from './components/Preview';
 import { MindmapView } from './components/MindmapView';
+import { VaultGraphView } from './components/VaultGraphView';
 import { Toolbar, ViewMode } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { OutlinePanel } from './components/OutlinePanel';
@@ -20,6 +21,7 @@ import { LanFileBrowser } from './components/LanFileBrowser';
 import { hasLanServer, lanReadFile } from './services/webFileSystem';
 import type { DriveFile } from './services/gdriveService';
 import { confirmAction } from './services/dialogService';
+import { buildIndex, resolveTarget, type VaultFile } from './lib/vault';
 import { useFileSystem } from './hooks/useFileSystem';
 import { useTheme } from './hooks/useTheme';
 import { useRecentFiles } from './hooks/useRecentFiles';
@@ -65,6 +67,8 @@ function App() {
   // Callback ref: switch to preview when a real file is opened
   // Using a ref avoids initialization order issues (viewMode state declared below)
   const onFileOpenedRef = useRef<(() => void) | undefined>(undefined);
+  // Drill-in (mindmap → linked doc) suppresses the auto preview-switch + manages nav.
+  const drillingRef = useRef(false);
   const {
     content,
     filePath,
@@ -85,11 +89,16 @@ function App() {
 
   const [viewMode, setViewMode] = useState<ViewMode>('editor');
   const [splitRatio, setSplitRatio] = useState(0.5);
+  // Drill-in breadcrumb stack (mindmap "마인드맵 속 마인드맵" navigation).
+  const [mindmapNav, setMindmapNav] = useState<{ filePath: string; fileName: string; content: string }[]>([]);
 
   // Wire up the file-opened callback now that viewMode/setViewMode exist
   onFileOpenedRef.current = () => {
+    // Drill-in manages its own view mode + nav stack — don't reset to preview.
+    if (drillingRef.current) return;
     setViewMode('preview');
     setReadingMode(false);
+    setMindmapNav([]); // a regular file open ends any drill-in trail
   };
   const { syncEnabled, toggleSync, reattach } = useScrollSync(true);
   const [fontSize, setFontSize] = useState(() => {
@@ -406,6 +415,88 @@ function App() {
     },
     [isDirty, openFromRecent, converter],
   );
+
+  // ─── Mindmap drill-in (M2): open the document a node links to ───
+  // Vault root = the current file's directory. Resolves [[wikilinks]] / [..](rel.md)
+  // against the vault; opens the target in place (same window, stays in mindmap) and
+  // pushes a breadcrumb. Unresolved targets are created on click (Obsidian behavior).
+  const openInPlaceForDrill = useCallback((path: string, text: string, name: string) => {
+    drillingRef.current = true;
+    openFromRecent(path, text, name);
+    drillingRef.current = false;
+    setViewMode('mindmap');
+  }, [openFromRecent]);
+
+  const handleOpenLinkedDocument = useCallback(async (target: string, isWiki: boolean) => {
+    if (!isTauri()) return;
+    if (!filePath) {
+      await confirmAction('문서를 먼저 저장하면 연결된 문서로 이동할 수 있어요.', { title: 'MarkMind', kind: 'info' });
+      return;
+    }
+    // persist current edits before navigating away
+    if (isDirty) {
+      const r = await saveFile();
+      if (r !== 'saved') return;
+    }
+    const root = filePath.slice(0, filePath.lastIndexOf('/'));
+    const fromRel = filePath.slice(root.length + 1);
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const files = await invoke<VaultFile[]>('scan_vault', { root });
+      const hit = resolveTarget(target, isWiki, fromRel, buildIndex(files));
+      const snapshot = { filePath, fileName, content };
+      if (hit) {
+        setMindmapNav((s) => [...s, snapshot]);
+        openInPlaceForDrill(`${root}/${hit.path}`, hit.content, hit.name);
+      } else {
+        // create-on-click
+        const baseName = (target.split('/').pop() ?? target).replace(/\.(md|markdown|mdx|txt)$/i, '');
+        const rel = isWiki ? `${target}.md` : target;
+        const stub = `# ${baseName}\n`;
+        const created = await invoke<{ path: string; content: string }>('create_file_at', { root, relPath: rel, content: stub });
+        const name = created.path.split('/').pop() ?? `${baseName}.md`;
+        setMindmapNav((s) => [...s, snapshot]);
+        openInPlaceForDrill(created.path, created.content, name);
+      }
+    } catch (err) {
+      console.error('[App] 연결 문서 열기 실패:', err);
+      alert('연결된 문서를 열지 못했어요: ' + err);
+    }
+  }, [filePath, fileName, content, isDirty, saveFile, openInPlaceForDrill]);
+
+  // Vault graph node click → open that file (resets the drill breadcrumb).
+  const handleOpenVaultFile = useCallback((absPath: string, fileContent: string, name: string) => {
+    setMindmapNav([]);
+    openInPlaceForDrill(absPath, fileContent, name);
+  }, [openInPlaceForDrill]);
+
+  // Vault graph ghost click → create the note then open it.
+  const handleOpenVaultGhost = useCallback(async (name: string) => {
+    if (!filePath || !isTauri()) return;
+    const root = filePath.slice(0, filePath.lastIndexOf('/'));
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const stub = `# ${name}\n`;
+      const created = await invoke<{ path: string; content: string }>('create_file_at', { root, relPath: `${name}.md`, content: stub });
+      const fn = created.path.split('/').pop() ?? `${name}.md`;
+      setMindmapNav([]);
+      openInPlaceForDrill(created.path, created.content, fn);
+    } catch (err) {
+      console.error('[App] vault ghost 생성 실패:', err);
+      alert('문서 생성 실패: ' + err);
+    }
+  }, [filePath, openInPlaceForDrill]);
+
+  const handleMindmapBack = useCallback(async () => {
+    if (mindmapNav.length === 0) return;
+    if (isDirty) {
+      const r = await saveFile();
+      if (r !== 'saved') return;
+    }
+    const prev = mindmapNav[mindmapNav.length - 1];
+    setMindmapNav((s) => s.slice(0, -1));
+    openInPlaceForDrill(prev.filePath, prev.content, prev.fileName);
+  }, [mindmapNav, isDirty, saveFile, openInPlaceForDrill]);
 
   // AIPanel "실행" 클릭 → 모드에 따라 분기
   // - meeting-notes: converter.runNotes (새 .md 생성)
@@ -1024,6 +1115,11 @@ function App() {
             setViewMode('mindmap');
             setReadingMode(false);
             break;
+          case '5':
+            e.preventDefault();
+            setViewMode('graph');
+            setReadingMode(false);
+            break;
           case '=':
           case '+':
             e.preventDefault();
@@ -1290,9 +1386,36 @@ function App() {
 
         <div className="split-pane">
           {viewMode === 'mindmap' ? (
+            <div className="pane" style={{ width: '100%', flexDirection: 'column' }}>
+              {mcpBanner}
+              {mindmapNav.length > 0 && (
+                <div className="mindmap-breadcrumb">
+                  <button className="mm-back-btn" onClick={handleMindmapBack} title="뒤로">
+                    ← 뒤로
+                  </button>
+                  <span className="mm-crumbs">
+                    {mindmapNav.map((n, i) => (
+                      <span key={i}>{n.fileName.replace(/\.(md|markdown|mdx|txt)$/i, '')} ›&nbsp;</span>
+                    ))}
+                    <strong>{fileName.replace(/\.(md|markdown|mdx|txt)$/i, '')}</strong>
+                  </span>
+                </div>
+              )}
+              <MindmapView
+                content={content}
+                onChange={updateContent}
+                fileName={fileName}
+                onOpenDocument={handleOpenLinkedDocument}
+              />
+            </div>
+          ) : viewMode === 'graph' ? (
             <div className="pane" style={{ width: '100%' }}>
               {mcpBanner}
-              <MindmapView content={content} onChange={updateContent} fileName={fileName} />
+              <VaultGraphView
+                filePath={filePath}
+                onOpenFile={handleOpenVaultFile}
+                onOpenGhost={handleOpenVaultGhost}
+              />
             </div>
           ) : (
           <>

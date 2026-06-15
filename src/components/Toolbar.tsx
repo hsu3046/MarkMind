@@ -6,13 +6,13 @@ import {
     Search, ChevronRight, Sparkles, Check, X,
     Mic, ScanText, Settings,
     FileCode, FileText, AlignVerticalSpaceAround,
-    Network,
+    Network, Share2,
 } from 'lucide-react';
 import * as gdriveService from '../services/gdriveService';
 import type { RecentFile } from '../hooks/useRecentFiles';
 import { BackgroundPicker } from './BackgroundPicker';
 
-export type ViewMode = 'split' | 'editor' | 'preview' | 'mindmap';
+export type ViewMode = 'split' | 'editor' | 'preview' | 'mindmap' | 'graph';
 
 function EditableFileName({ fileName, isDirty, onRename }: { fileName: string; isDirty: boolean; onRename: (name: string) => void }) {
     const [editing, setEditing] = useState(false);
@@ -335,6 +335,13 @@ export function Toolbar({
                     title="Mindmap (⌘4)"
                 >
                     <Network size={16} strokeWidth={1.5} />
+                </button>
+                <button
+                    className={`toolbar-btn${viewMode === 'graph' ? ' active' : ''}`}
+                    onClick={() => onViewModeChange('graph')}
+                    title="Vault Graph (⌘5)"
+                >
+                    <Share2 size={16} strokeWidth={1.5} />
                 </button>
 
                 <div className="toolbar-divider" />
