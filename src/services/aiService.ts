@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { AIRequest, AIResponse, DiffChunk, getModelForMode } from '../types/ai';
+import { AIRequest, AIResponse, DiffChunk, DiffSeg, getModelForMode } from '../types/ai';
 import { getKey, hasKey, setKey, removeKey } from './secureStorage';
 
 // ─── API Key Management ───────────────────────────────────
@@ -134,30 +134,73 @@ export function generateDiff(original: string, modified: string): DiffChunk[] {
         }
     }
 
-    // Convert ops to chunks, inserting blank separators only between paragraph groups
+    // Convert ops to chunks. 변경된 문단 쌍(removed→added)은 word-level inline diff
+    // 를 적용해 바뀐 단어만 강조한다(parts). 그 외(unchanged/순수 add·del)는 기존
+    // 라인 단위. 그룹 사이에 빈 줄 separator(쌍 내부는 제외).
     const chunks: DiffChunk[] = [];
     let id = 0;
+    let i = 0;
 
-    for (let i = 0; i < interleaved.length; i++) {
+    while (i < interleaved.length) {
         const op = interleaved[i];
-        const lines = op.text.split('\n');
+        const next = interleaved[i + 1];
 
-        for (const line of lines) {
-            chunks.push({ id: id++, type: op.type === 'unchanged' ? 'unchanged' : op.type, content: line });
+        if (op.type === 'removed' && next && next.type === 'added') {
+            // 변경 쌍 — 문단 전체를 한 chunk 로 두고 단어 단위 세그먼트 부여.
+            const { origParts, modParts } = wordDiff(op.text, next.text);
+            chunks.push({ id: id++, type: 'removed', content: op.text, parts: origParts });
+            chunks.push({ id: id++, type: 'added', content: next.text, parts: modParts });
+            i += 2;
+        } else {
+            for (const line of op.text.split('\n')) {
+                chunks.push({ id: id++, type: op.type, content: line });
+            }
+            i += 1;
         }
 
-        // Add blank separator between paragraph groups,
-        // but NOT between a removed and an immediately following added (they form a pair)
-        if (i < interleaved.length - 1) {
-            const next = interleaved[i + 1];
-            const isChangePair = op.type === 'removed' && next.type === 'added';
-            if (!isChangePair) {
-                chunks.push({ id: id++, type: 'unchanged', content: '' });
-            }
+        if (i < interleaved.length) {
+            chunks.push({ id: id++, type: 'unchanged', content: '' });
         }
     }
 
     return chunks;
+}
+
+/** 단어/공백/구두점 토큰화 (한글·영문·숫자는 묶고 구두점은 1글자씩 →
+    따옴표 하나 변경도 그 토큰만 잡힘). */
+function tokenize(s: string): string[] {
+    return s.match(/\s+|[\p{L}\p{N}]+|[^\s\p{L}\p{N}]/gu) ?? [];
+}
+
+/** 변경된 문단 쌍에 단어 단위 LCS 적용 → 양쪽 세그먼트(공통=unchanged, 차이=removed/added). */
+function wordDiff(orig: string, mod: string): { origParts: DiffSeg[]; modParts: DiffSeg[] } {
+    const a = tokenize(orig);
+    const b = tokenize(mod);
+    const lcs = computeLCS(a, b);
+    return {
+        origParts: buildSegs(a, lcs, 'removed'),
+        modParts: buildSegs(b, lcs, 'added'),
+    };
+}
+
+/** 토큰 배열을 LCS 기준으로 세그먼트화. 공통 토큰=unchanged, 나머지=changeType.
+    인접 동일 type 은 병합. */
+function buildSegs(tokens: string[], lcs: string[], changeType: 'removed' | 'added'): DiffSeg[] {
+    const segs: DiffSeg[] = [];
+    let li = 0;
+    for (const tok of tokens) {
+        let type: DiffSeg['type'];
+        if (li < lcs.length && tok === lcs[li]) {
+            type = 'unchanged';
+            li++;
+        } else {
+            type = changeType;
+        }
+        const last = segs[segs.length - 1];
+        if (last && last.type === type) last.text += tok;
+        else segs.push({ text: tok, type });
+    }
+    return segs;
 }
 
 /** Split text into paragraphs (separated by blank lines) */

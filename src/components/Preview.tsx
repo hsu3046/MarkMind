@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -32,6 +32,9 @@ interface PreviewProps {
     fontSize?: number;
     /** 편집 모드 활성화 — undefined 면 read-only 만 (기본). 제공 시 토글 표시. */
     onChange?: (markdown: string) => void;
+    /** 리치텍스트 편집 모드에서 포맷 툴바 바로 아래에 함께 sticky 로 붙일 배너
+        (예: MCP 수정 제안). read-only 모드에선 무시. */
+    banner?: ReactNode;
 }
 
 // CommonMark 의 emphasis right-flanking 규칙 때문에 닫는 `**` 다음에
@@ -648,11 +651,13 @@ function RichEditor({
     rawFrontmatter,
     fontSize,
     onChange,
+    banner,
 }: {
     body: string;
     rawFrontmatter: string;
     fontSize: number;
     onChange: (markdown: string) => void;
+    banner?: ReactNode;
 }) {
     const editor = useEditor({
         extensions: [
@@ -785,13 +790,18 @@ function RichEditor({
     if (!editor) return null;
     return (
         <>
-            <RichToolbar editor={editor} />
+            {/* 툴바 + 배너를 한 sticky 블록으로 묶어, 배너가 포맷 툴바 바로 아래에
+                고정되도록 한다(스크롤해도 함께 상단 고정). */}
+            <div className="rich-sticky-top">
+                <RichToolbar editor={editor} />
+                {banner}
+            </div>
             <EditorContent editor={editor} />
         </>
     );
 }
 
-export function Preview({ content, fontSize = 14, onChange }: PreviewProps) {
+export function Preview({ content, fontSize = 14, onChange, banner }: PreviewProps) {
     const { fields, body, processedBody, rawFrontmatter } = useMemo(() => {
         const split = splitFrontmatter(content);
         return {
@@ -834,6 +844,7 @@ export function Preview({ content, fontSize = 14, onChange }: PreviewProps) {
                     rawFrontmatter={rawFrontmatter}
                     fontSize={fontSize}
                     onChange={onChange!}
+                    banner={banner}
                 />
             </div>
         );

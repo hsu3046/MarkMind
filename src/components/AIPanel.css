@@ -453,6 +453,49 @@
     color: #ef4444;
 }
 
+/* ── MCP 제안 헤더 — 제목 좌측 + 수락/거절 우측 끝, 채워진 강조 버튼 ── */
+.mcp-proposal-actions {
+    gap: 8px;
+    padding-bottom: 10px;
+}
+.mcp-proposal-title {
+    flex: 1;              /* 제목이 남은 폭을 차지 → 버튼이 오른쪽 끝으로 */
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* 두 버튼 동일 형태로 통일 + 항상 채워진 색(hover 전에도 눈에 띄게) */
+.mcp-proposal-actions .diff-btn {
+    padding: 6px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 6px;
+}
+.mcp-proposal-actions .diff-accept-all {
+    background: #22c55e;
+    border-color: #22c55e;
+    color: #fff;
+}
+.mcp-proposal-actions .diff-accept-all:hover {
+    background: #16a34a;
+    border-color: #16a34a;
+    color: #fff;
+}
+.mcp-proposal-actions .diff-reject-all {
+    background: #ef4444;
+    border-color: #ef4444;
+    color: #fff;
+}
+.mcp-proposal-actions .diff-reject-all:hover {
+    background: #dc2626;
+    border-color: #dc2626;
+    color: #fff;
+}
+
 .diff-remaining {
     font-size: 11px;
     color: var(--text-tertiary);
@@ -505,6 +548,37 @@
 .diff-line.diff-removed.accepted,
 .diff-line.diff-added.rejected {
     opacity: 0.3;
+}
+
+/* ── Word-level inline diff (parts) ──────────────────
+   변경된 문단 쌍에서 바뀐 단어만 강조한다. 라인 전체의 색/취소선을
+   걷어내(중립) 안 바뀐 단어는 흐리게, 세그먼트가 강조를 담당. */
+.diff-line.diff-removed:has(.diff-text-wordwise),
+.diff-line.diff-added:has(.diff-text-wordwise) {
+    color: var(--text-secondary);
+    text-decoration: none;
+}
+.diff-line.diff-removed:has(.diff-text-wordwise) .diff-marker {
+    color: #ef4444;
+}
+.diff-line.diff-added:has(.diff-text-wordwise) .diff-marker {
+    color: #22c55e;
+}
+.diff-text-wordwise .diff-seg-unchanged {
+    color: var(--text-secondary);
+    text-decoration: none;
+}
+.diff-text-wordwise .diff-seg-removed {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.2);
+    text-decoration: line-through;
+    border-radius: 2px;
+}
+.diff-text-wordwise .diff-seg-added {
+    color: #22c55e;
+    background: rgba(34, 197, 94, 0.2);
+    text-decoration: none;
+    border-radius: 2px;
 }
 
 .diff-marker {

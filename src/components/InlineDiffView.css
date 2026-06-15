@@ -167,6 +167,32 @@
     color: #22c55e;
 }
 
+/* ── Word-level inline diff (parts) ──────────────────
+   변경된 문단 쌍에서 바뀐 단어만 강조. 라인 전체의 색/취소선을
+   중립화하고(안 바뀐 단어는 흐리게) 세그먼트가 강조를 담당.
+   gutter 색은 자체 규칙이라 유지됨. */
+.idiff-removed:has(.diff-text-wordwise),
+.idiff-added:has(.diff-text-wordwise) {
+    color: var(--text-secondary);
+    text-decoration: none;
+}
+.diff-text-wordwise .diff-seg-unchanged {
+    color: var(--text-secondary);
+    text-decoration: none;
+}
+.diff-text-wordwise .diff-seg-removed {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.2);
+    text-decoration: line-through;
+    border-radius: 2px;
+}
+.diff-text-wordwise .diff-seg-added {
+    color: #22c55e;
+    background: rgba(34, 197, 94, 0.2);
+    text-decoration: none;
+    border-radius: 2px;
+}
+
 /* Decided states */
 .idiff-removed.accepted,
 .idiff-added.rejected {

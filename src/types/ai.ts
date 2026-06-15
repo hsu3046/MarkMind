@@ -16,12 +16,21 @@ export interface AIRequest {
     improveQuality?: ImproveQuality;
 }
 
+/** 라인 내부 단어 단위 세그먼트 (word-level inline diff) */
+export interface DiffSeg {
+    text: string;
+    type: 'unchanged' | 'removed' | 'added';
+}
+
 /** Diff 변경 블록 */
 export interface DiffChunk {
     id: number;
     type: 'unchanged' | 'removed' | 'added';
     content: string;
     accepted?: boolean;  // undefined = 미결정, true = 수락, false = 거부
+    /** 변경된 문단 쌍(removed↔added)일 때 단어 단위 세그먼트. 있으면 렌더가
+        바뀐 단어만 강조(없으면 content 전체를 type 색으로). */
+    parts?: DiffSeg[];
 }
 
 /** AI 응답 */

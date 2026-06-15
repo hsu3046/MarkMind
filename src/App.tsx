@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { AIMode, DiffChunk } from './types/ai';
 import { Editor, EditorHandle } from './components/Editor';
 import { McpProposalView } from './components/McpProposalView';
@@ -28,7 +29,7 @@ import { useConverter } from './hooks/useConverter';
 import { isTauri } from './services/platform';
 import { getCallbackPath } from './services/knowaiAuth';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
-import { Link, Unlink, Mic, ScanText, BookOpen, X as IconX } from 'lucide-react';
+import { Link, Unlink, Mic, ScanText, BookOpen, X as IconX, Sparkles } from 'lucide-react';
 import { ConvertSidebar } from './components/sidebar/ConvertSidebar';
 import { AudioTab } from './components/convert/AudioTab';
 import { OcrTab } from './components/convert/OcrTab';
@@ -40,6 +41,19 @@ import './components/sidebar/sidebar.css';
 const FONT_SIZE_MIN = 12;
 const FONT_SIZE_MAX = 28;
 const FONT_SIZE_DEFAULT = 14;
+
+/** MCP 제안 배너용 — 변경 구역(연속된 removed/added 런) 개수. 빈 unchanged
+    separator 가 구역을 가르므로 removed+added 쌍 1개 = 1곳으로 집계된다. */
+function countMcpChanges(chunks: DiffChunk[]): number {
+  let n = 0;
+  let inChange = false;
+  for (const c of chunks) {
+    const changed = c.type !== 'unchanged';
+    if (changed && !inChange) n++;
+    inChange = changed;
+  }
+  return n;
+}
 
 function App() {
   const { theme, setThemeTransient, resetThemeToOS } = useTheme();
@@ -222,6 +236,9 @@ function App() {
     // 제안 생성 시점의 문서 내용 — 수락 시 그 사이 변경(lost update) 감지용.
     baseContent: string;
   } | null>(null);
+  // 제안 도착 시 뷰를 뺏지 않고 배너만 띄운다. '변경 보기' 누르면 오버레이로 diff 리뷰.
+  // (현재 뷰 모드 무관 — 리치 텍스트로 보던 중에도 그대로 유지.)
+  const [mcpReviewOpen, setMcpReviewOpen] = useState(false);
   // 리스너 클로저가 항상 최신 content 로 diff 를 만들도록 ref 로 추적(렌더마다 동기 갱신).
   const latestContentRef = useRef(content);
   latestContentRef.current = content;
@@ -452,6 +469,7 @@ function App() {
     updateContent(p.newContent);
     ackMcpProposal(p.requestId, true, [...p.newContent].length);
     setMcpProposal(null);
+    setMcpReviewOpen(false);
   }, [ackMcpProposal, updateContent]);
 
   const rejectMcpProposal = useCallback(() => {
@@ -459,7 +477,22 @@ function App() {
     if (!p) return;
     ackMcpProposal(p.requestId, false, null);
     setMcpProposal(null);
+    setMcpReviewOpen(false);
   }, [ackMcpProposal]);
+
+  // MCP 리뷰 오버레이 ESC = 닫기(거절 아님 — 배너로 복귀). capture 로 다른 ESC
+  // 핸들러(검색 닫기/리딩 모드)보다 먼저 가로채 부수효과를 막는다.
+  useEffect(() => {
+    if (!mcpReviewOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setMcpReviewOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [mcpReviewOpen]);
 
   // Outline panel: jump to heading in editor or preview depending on current mode
   const handleOutlineClick = useCallback((id: string, line: number) => {
@@ -546,8 +579,9 @@ function App() {
         clearAiDiffRef.current();
         const base = latestContentRef.current;
         const chunks = generateDiff(base, newContent ?? '');
-        setViewMode('editor');
-        setReadingMode(false);
+        // 뷰를 강제 전환하지 않는다 — 현재 모드(리치 텍스트 포함) 유지하고
+        // 배너로 알린 뒤 '변경 보기'를 누르면 오버레이로 리뷰(제안A).
+        setMcpReviewOpen(false);
         setMcpProposal({
           requestId,
           chunks,
@@ -1107,6 +1141,28 @@ function App() {
     );
   }
 
+  // MCP 수정 제안 배너 — 뷰 모드별로 위치가 달라(리치텍스트=툴바 아래, 마크다운=페인 상단)
+  // 한 번 정의해 양쪽에서 재사용. 리뷰 오버레이가 열리면 숨긴다.
+  const mcpBanner = mcpProposal && !mcpReviewOpen ? (
+    <div className="mcp-banner">
+      <span className="mcp-banner-icon"><Sparkles size={16} strokeWidth={2} /></span>
+      <span className="mcp-banner-text">
+        Claude 수정 제안{mcpProposal.description ? `: ${mcpProposal.description}` : ''}
+        {` · ${countMcpChanges(mcpProposal.chunks)}곳`}
+      </span>
+      <button className="mcp-banner-btn mcp-banner-review" onClick={() => setMcpReviewOpen(true)}>
+        변경 보기
+      </button>
+      <button
+        className="mcp-banner-btn mcp-banner-reject"
+        onClick={rejectMcpProposal}
+        title="제안 거절"
+      >
+        거절
+      </button>
+    </div>
+  ) : null;
+
   return (
     <div
       className="app"
@@ -1234,14 +1290,9 @@ function App() {
                 width: viewMode === 'split' ? `${splitRatio * 100}%` : '100%',
               }}
             >
-              {mcpProposal ? (
-                <McpProposalView
-                  chunks={mcpProposal.chunks}
-                  description={mcpProposal.description}
-                  onAccept={acceptMcpProposal}
-                  onReject={rejectMcpProposal}
-                />
-              ) : ai.response && !ai.isLoading ? (
+              {/* 마크다운/split 모드 — 페인 상단(메인 툴바 바로 아래)에 배너 */}
+              {mcpBanner}
+              {ai.response && !ai.isLoading ? (
                 <InlineDiffView
                   chunks={ai.response.chunks}
                   onAcceptChunk={ai.acceptChunk}
@@ -1320,6 +1371,7 @@ function App() {
                 content={content}
                 fontSize={fontSize}
                 onChange={viewMode === 'preview' ? updateContent : undefined}
+                banner={mcpBanner}
               />
             </div>
           )}
@@ -1449,6 +1501,28 @@ function App() {
           console.log('[Drive] 저장됨:', file.name);
         }}
       />
+
+      {/* MCP 수정 제안 리뷰 오버레이 — '변경 보기' 클릭 시. 현재 뷰 모드와 무관하게
+          어디서든 diff 를 검토(수락/거절). Base UI Dialog 의 iOS/WKWebView 스크롤
+          버그 회피를 위해 커스텀 포털 사용. backdrop/ESC = 닫기(거절 아님, 배너로 복귀). */}
+      {mcpProposal && mcpReviewOpen && createPortal(
+        <div className="mcp-review-overlay" role="dialog" aria-modal="true">
+          <div
+            className="mcp-review-backdrop"
+            onClick={() => setMcpReviewOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="mcp-review-panel">
+            <McpProposalView
+              chunks={mcpProposal.chunks}
+              description={mcpProposal.description}
+              onAccept={acceptMcpProposal}
+              onReject={rejectMcpProposal}
+            />
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

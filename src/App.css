@@ -1528,11 +1528,16 @@ body.is-resizing .split-pane {
   width: auto;
 }
 
-/* 편집 toolbar — Rich Text 모드에서 main Toolbar 바로 아래 sticky 0, seamless */
-.rich-toolbar {
+/* 툴바+배너 sticky 래퍼 — Rich Text 모드에서 main Toolbar 바로 아래 0 고정.
+   (sticky 를 toolbar 개별이 아니라 이 래퍼에 둬서 배너가 툴바와 함께 고정됨) */
+.rich-sticky-top {
   position: sticky;
   top: 0;
   z-index: 4;
+}
+
+/* 편집 toolbar — main Toolbar 바로 아래, seamless */
+.rich-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 2px;
@@ -3209,4 +3214,98 @@ code.hljs {
   a[href^='javascript:']::after {
     content: '';
   }
+}
+
+/* ── MCP 수정 제안 배너 (제안A) ─────────────────────────
+   propose_edit 도착 시 뷰를 뺏지 않고 얇은 바로 알린다. */
+.mcp-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px;
+  /* 파스텔 반투명 강조 — 흰 배경 위에서도 눈에 띄고 다크모드에선 은은한 블루 글로우 */
+  background: rgba(59, 130, 246, 0.1);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.22);
+  border-left: 3px solid var(--accent, #3b82f6);
+  font-size: 13px;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+.mcp-banner-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent, #3b82f6);
+  flex-shrink: 0;
+}
+.mcp-banner-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-banner-btn {
+  padding: 4px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.mcp-banner-review {
+  background: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+  color: #fff;
+  font-weight: 600;
+}
+.mcp-banner-review:hover {
+  filter: brightness(1.08);
+}
+.mcp-banner-reject:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+/* ── MCP 리뷰 오버레이 ─────────────────────────────────
+   '변경 보기' 클릭 시 모든 뷰 모드에서 diff 검토. 커스텀 포털
+   (Base UI Dialog 의 iOS/WKWebView 스크롤 버그 회피). */
+.mcp-review-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5vh 16px;
+}
+.mcp-review-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+.mcp-review-panel {
+  position: relative;
+  width: min(880px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  padding: 4px 16px 16px;
+  overflow: hidden;
+}
+/* McpProposalView(.diff-view)가 패널 높이를 채우고 내용만 스크롤 */
+.mcp-review-panel .diff-view {
+  flex: 1;
+  min-height: 0;
+}
+.mcp-review-panel .diff-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }

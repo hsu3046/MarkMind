@@ -119,7 +119,13 @@ export function InlineDiffView({
                                         <span className="idiff-gutter">
                                             {chunk.type === 'removed' ? '−' : '+'}
                                         </span>
-                                        <span className="idiff-text">{chunk.content || '\u00A0'}</span>
+                                        <span className={`idiff-text${chunk.parts ? ' diff-text-wordwise' : ''}`}>
+                                            {chunk.parts
+                                                ? chunk.parts.map((p, pi) => (
+                                                      <span key={pi} className={`diff-seg diff-seg-${p.type}`}>{p.text}</span>
+                                                  ))
+                                                : chunk.content || '\u00A0'}
+                                        </span>
                                     </div>
                                 ))
                             )}

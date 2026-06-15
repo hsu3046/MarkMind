@@ -6,6 +6,7 @@ import { Check, X } from 'lucide-react';
  * Claude 가 제안한 전체 내용 변경을 현재 내용과의 diff 로 보여주고,
  * 사용자가 전체 수락/거절만 한다(chunk 단위 인터랙션 없음 — AI 흐름의
  * InlineDiffView 와 달리 ai 훅 상태와 분리되어 독립 동작).
+ * 변경된 문단 쌍은 chunk.parts(단어 단위 세그먼트)로 바뀐 단어만 강조.
  */
 interface McpProposalViewProps {
     chunks: DiffChunk[];
@@ -19,15 +20,15 @@ export function McpProposalView({ chunks, description, onAccept, onReject }: Mcp
 
     return (
         <div className="diff-view">
-            <div className="diff-actions">
-                <span className="diff-remaining" style={{ marginRight: 'auto' }}>
+            <div className="diff-actions mcp-proposal-actions">
+                <span className="mcp-proposal-title">
                     Claude 수정 제안{description ? `: ${description}` : ''}
                 </span>
                 <button className="diff-btn diff-accept-all" onClick={onAccept} title="수정안 수락">
-                    <Check size={13} /> 수락
+                    <Check size={14} /> 수락
                 </button>
                 <button className="diff-btn diff-reject-all" onClick={onReject} title="수정안 거절">
-                    <X size={13} /> 거절
+                    <X size={14} /> 거절
                 </button>
             </div>
 
@@ -36,7 +37,7 @@ export function McpProposalView({ chunks, description, onAccept, onReject }: Mcp
                     if (group.type === 'unchanged') {
                         return (
                             <div key={i} className="diff-line diff-unchanged">
-                                {group.chunks[0].content || ' '}
+                                {group.chunks[0].content || ' '}
                             </div>
                         );
                     }
@@ -48,7 +49,15 @@ export function McpProposalView({ chunks, description, onAccept, onReject }: Mcp
                                         <span className="diff-marker">
                                             {chunk.type === 'removed' ? '−' : '+'}
                                         </span>
-                                        <span className="diff-text">{chunk.content || ' '}</span>
+                                        <span className={`diff-text${chunk.parts ? ' diff-text-wordwise' : ''}`}>
+                                            {chunk.parts
+                                                ? chunk.parts.map((p, pi) => (
+                                                      <span key={pi} className={`diff-seg diff-seg-${p.type}`}>
+                                                          {p.text}
+                                                      </span>
+                                                  ))
+                                                : chunk.content || ' '}
+                                        </span>
                                     </div>
                                 ))}
                             </div>
