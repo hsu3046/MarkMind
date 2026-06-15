@@ -70,6 +70,9 @@ export interface MindmapNode {
     mdOrigin?: 'root' | 'heading' | 'list';
     /** Literal heading level (1–6) when mdOrigin === 'heading'. Preserves the user's level. */
     mdLevel?: number;
+    /** 1-based source line of this heading/list item in the FULL document (incl. frontmatter).
+     *  Used to jump from a mindmap node to its section in the editor. */
+    mdLine?: number;
     /** Links parsed from label + description (see [[NodeLink]]). Read-only derived. */
     links?: NodeLink[];
 }

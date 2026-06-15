@@ -110,7 +110,8 @@
 }
 
 .mm-toolbar button,
-.mm-drill {
+.mm-drill,
+.mm-jump {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -140,6 +141,25 @@
 
 .mm-drill:hover {
     background: var(--accent-subtle);
+}
+
+/* jump-to-section — fades in on node hover to avoid clutter */
+.mm-jump {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+    opacity: 0;
+    transition: opacity var(--transition-fast, 0.12s) ease, background var(--transition-fast, 0.12s) ease, color var(--transition-fast, 0.12s) ease;
+}
+
+.mm-node:hover .mm-jump {
+    opacity: 1;
+}
+
+.mm-jump:hover {
+    background: var(--bg-hover);
+    color: var(--accent);
 }
 
 /* M1: passive link indicator (no navigation yet — M2 wires drill-in) */

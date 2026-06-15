@@ -117,7 +117,7 @@ export function markdownToTree(md: string, opts: ParseOptions = {}): MindmapNode
             const depth = headingDepth() + 1;
             const node: MindmapNode = {
                 id: '', label: h[2].trim(), type: 'sub_branch',
-                mdOrigin: 'heading', mdLevel: level, children: [],
+                mdOrigin: 'heading', mdLevel: level, mdLine: i + 1, children: [],
             };
             parent.children.push(node);
             headingStack.push({ level, node, depth });
@@ -139,7 +139,7 @@ export function markdownToTree(md: string, opts: ParseOptions = {}): MindmapNode
                 ? listStack[listStack.length - 1].depth
                 : headingDepth()) + 1;
             const node: MindmapNode = {
-                id: '', label: li[2].trim(), type: 'sub_branch', mdOrigin: 'list', children: [],
+                id: '', label: li[2].trim(), type: 'sub_branch', mdOrigin: 'list', mdLine: i + 1, children: [],
             };
             parent.children.push(node);
             listStack.push({ indent, node, depth });
@@ -288,10 +288,18 @@ function splitFrontmatter(md: string): SplitDoc {
     return { frontmatter: `---\n${raw}\n---\n`, body };
 }
 
-/** Full document (with optional frontmatter) → { frontmatter, tree }. */
+function offsetLines(node: MindmapNode, delta: number): void {
+    if (node.mdLine !== undefined) node.mdLine += delta;
+    for (const c of node.children) offsetLines(c, delta);
+}
+
+/** Full document (with optional frontmatter) → { frontmatter, tree }.
+ *  mdLine values are shifted to full-document coordinates (past the frontmatter). */
 export function documentToTree(fullMd: string, rootLabel?: string): { frontmatter: string; tree: MindmapNode } {
     const { frontmatter, body } = splitFrontmatter(fullMd);
-    return { frontmatter, tree: markdownToTree(body, { rootLabel }) };
+    const tree = markdownToTree(body, { rootLabel });
+    if (frontmatter) offsetLines(tree, frontmatter.split('\n').length - 1);
+    return { frontmatter, tree };
 }
 
 /** Tree + saved frontmatter → full document markdown. */

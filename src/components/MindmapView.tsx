@@ -22,6 +22,8 @@ interface MindmapViewProps {
     fileName: string;
     /** Drill-in: open a linked document (M2 navigation; M1 may pass a basic opener). */
     onOpenDocument?: (target: string, isWiki: boolean) => void;
+    /** Jump to this node's section (source line) in the editor. */
+    onJumpToSource?: (line: number) => void;
 }
 
 const NOOP = () => {};
@@ -53,7 +55,7 @@ function findParentById(root: MindmapNode, id: string): { parent: MindmapNode | 
     return { parent: cur ?? null, index };
 }
 
-export function MindmapView({ content, onChange, fileName, onOpenDocument }: MindmapViewProps) {
+export function MindmapView({ content, onChange, fileName, onOpenDocument, onJumpToSource }: MindmapViewProps) {
     const stem = useMemo(() => stemOf(fileName), [fileName]);
 
     const initial = useMemo(() => documentToTree(content, stem), []); // mount only
@@ -143,10 +145,13 @@ export function MindmapView({ content, onChange, fileName, onOpenDocument }: Min
                     onAddChild: () => addChild(n.id),
                     onDelete: () => deleteNode(n.id),
                     onOpenLink: () => openLink(base.node),
+                    onJumpToSource: base.mdLine !== undefined && onJumpToSource
+                        ? () => onJumpToSource(base.mdLine as number)
+                        : undefined,
                 } satisfies MindmapNodeData,
             };
         }),
-        [layout, editingId, updateLabel, addChild, deleteNode, openLink, onOpenDocument],
+        [layout, editingId, updateLabel, addChild, deleteNode, openLink, onOpenDocument, onJumpToSource],
     );
 
     return (

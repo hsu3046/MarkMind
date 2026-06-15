@@ -254,6 +254,7 @@ function createReactFlowNode(
             hasChildren: (node.children?.length ?? 0) > 0,
             childrenCount: node.children?.length ?? 0,
             canExpand: level < 4,
+            mdLine: node.mdLine,
             onExpand: () => onExpand(node),
         },
     };

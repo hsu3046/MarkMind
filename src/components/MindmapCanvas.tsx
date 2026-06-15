@@ -23,7 +23,7 @@ import {
     type Edge,
     type NodeProps,
 } from '@xyflow/react';
-import { Plus, Pencil, Trash2, FileSymlink } from 'lucide-react';
+import { Plus, Pencil, Trash2, FileSymlink, SquareArrowOutUpRight } from 'lucide-react';
 import type { MindmapNode } from '../types/mindmap';
 import '@xyflow/react/dist/style.css';
 import './MindmapCanvas.css';
@@ -37,6 +37,8 @@ export interface MindmapNodeData {
     colorIndex: number;
     hasChildren: boolean;
     childrenCount: number;
+    /** 1-based source line in the full document (for jump-to-section). */
+    mdLine?: number;
     // injected by MindmapView
     isEditing?: boolean;
     hasLinks?: boolean;
@@ -44,6 +46,7 @@ export interface MindmapNodeData {
     /** When true the drill-in affordance navigates; otherwise it's a passive indicator (M1). */
     canDrill?: boolean;
     onStartEdit?: () => void;
+    onJumpToSource?: () => void;
     onUpdateLabel?: (value: string) => void;
     onCancelEdit?: () => void;
     onAddChild?: () => void;
@@ -153,6 +156,16 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
                         <FileSymlink size={12} />
                     </span>
                 )
+            )}
+
+            {d.onJumpToSource && !d.isEditing && (
+                <button
+                    className="mm-jump"
+                    title="문서에서 이 섹션으로 이동"
+                    onClick={(e) => { e.stopPropagation(); d.onJumpToSource?.(); }}
+                >
+                    <SquareArrowOutUpRight size={12} />
+                </button>
             )}
 
             <Handle

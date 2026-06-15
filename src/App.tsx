@@ -69,6 +69,8 @@ function App() {
   const onFileOpenedRef = useRef<(() => void) | undefined>(undefined);
   // Drill-in (mindmap → linked doc) suppresses the auto preview-switch + manages nav.
   const drillingRef = useRef(false);
+  // Jump-to-section: line to scroll to once the editor mounts (set when jumping from mindmap/graph).
+  const pendingScrollLineRef = useRef<number | null>(null);
   const {
     content,
     filePath,
@@ -504,6 +506,27 @@ function App() {
     setMindmapNav((s) => s.slice(0, -1));
     openInPlaceForDrill(prev.filePath, prev.content, prev.fileName);
   }, [mindmapNav, isDirty, saveFile, openInPlaceForDrill]);
+
+  // 마인드맵/그래프 노드의 "이 섹션으로 이동" — 에디터 라인으로 스크롤.
+  // 다른 뷰면 split 으로 전환 후 에디터 마운트를 기다렸다가 스크롤.
+  const handleJumpToSource = useCallback((line: number) => {
+    if (viewMode === 'editor' || viewMode === 'split') {
+      editorRef.current?.scrollToLine(line);
+    } else {
+      pendingScrollLineRef.current = line;
+      setViewMode('split');
+      setReadingMode(false);
+    }
+  }, [viewMode]);
+
+  useEffect(() => {
+    if ((viewMode === 'editor' || viewMode === 'split') && pendingScrollLineRef.current != null) {
+      const line = pendingScrollLineRef.current;
+      pendingScrollLineRef.current = null;
+      const t = setTimeout(() => editorRef.current?.scrollToLine(line), 120);
+      return () => clearTimeout(t);
+    }
+  }, [viewMode]);
 
   // AIPanel "실행" 클릭 → 모드에 따라 분기
   // - meeting-notes: converter.runNotes (새 .md 생성)
@@ -1413,6 +1436,7 @@ function App() {
                 onChange={updateContent}
                 fileName={fileName}
                 onOpenDocument={handleOpenLinkedDocument}
+                onJumpToSource={handleJumpToSource}
               />
             </div>
           ) : viewMode === 'graph' ? (
