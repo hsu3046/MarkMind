@@ -26,13 +26,15 @@ export function hasApiKey(): boolean {
 // ─── System Prompts ───────────────────────────────────────
 
 function getSystemPrompt(request: AIRequest): string {
-    return getBaseSystemPrompt(request) + buildUserMemoryBlock();
+    return getBaseSystemPrompt(request) + buildUserMemoryBlock(request.mode);
 }
 
 /** 사용자 메모리(#15)를 system prompt 끝에 "참고 컨텍스트" 로 덧붙인다.
-    출력 형식 규칙(수정 텍스트만 출력 등)은 각 모드 prompt 가 이미 강제하므로,
-    여기선 톤·어조·용어·배경 이해에 쓸 정보만 제공한다. */
-function buildUserMemoryBlock(): string {
+    grammar/translate 는 '최소 변경 / 원문 톤 유지' 모드라, 메모리(톤·배경 지시)를
+    주입하면 과편집·톤 변형을 유발할 수 있어 제외한다(#15 P3-1). improve/structurize
+    등만 주입하며, 출력 형식 규칙은 각 모드 prompt 가 이미 강제한다. */
+function buildUserMemoryBlock(mode: AIRequest['mode']): string {
+    if (mode === 'grammar' || mode === 'translate') return '';
     const memory = getCachedUserMemory().trim();
     if (!memory) return '';
     return `\n\n## 사용자 컨텍스트 (참고용)

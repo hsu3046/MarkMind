@@ -33,7 +33,9 @@ export async function loadUserMemory(): Promise<string> {
 
 /** Settings 에서 저장. 상한으로 자른 뒤 디스크에 쓰고 캐시도 즉시 갱신. */
 export async function saveUserMemory(content: string): Promise<void> {
-    const trimmed = content.slice(0, USER_MEMORY_MAX_CHARS);
+    // code-point 단위 절단 — slice(code unit)는 이모지 등 서로게이트 쌍 중간을 잘라
+    // lone surrogate 를 남기고, invoke 직렬화(serde_json)가 이를 거부한다(#15 P3-7).
+    const trimmed = Array.from(content).slice(0, USER_MEMORY_MAX_CHARS).join('');
     if (isTauri) {
         await invoke('write_user_memory', { content: trimmed });
     }

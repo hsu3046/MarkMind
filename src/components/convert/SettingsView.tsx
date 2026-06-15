@@ -441,7 +441,7 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                     {USER_MEMORY_MAX_CHARS}자
                 </p>
                 <button
-                    className="primary"
+                    className="convert-btn primary"
                     onClick={handleSaveMemory}
                     disabled={memorySaving || userMemory === memoryOrig}
                 >
