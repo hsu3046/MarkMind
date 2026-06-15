@@ -1383,7 +1383,7 @@ function App() {
     >
       {dragActive && (
         <div className="file-drop-overlay" aria-hidden>
-          <div className="file-drop-overlay-inner">📄 파일을 놓아 여기서 열기</div>
+          <div className="file-drop-overlay-inner">Drag &amp; Drop</div>
         </div>
       )}
       <div
