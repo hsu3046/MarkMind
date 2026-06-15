@@ -196,7 +196,10 @@ function wholeReplacementChunks(original: string, modified: string): DiffChunk[]
     for (const line of original.split('\n')) {
         chunks.push({ id: id++, type: 'removed', content: line });
     }
-    chunks.push({ id: id++, type: 'unchanged', content: '' });
+    // separator(빈 unchanged)는 넣지 않는다 — applyDiff 가 unchanged 를 accepted 무관
+    // 무조건 출력에 포함하므로, separator 가 있으면 accept-all 시 선두 빈 줄 /
+    // reject-all 시 후미 빈 줄이 라운드트립에 주입된다(#36 P2-1). removed→added 는
+    // type 색으로 구분되고, separator 가 없어야 countMcpChanges 도 1곳으로 정확하다.
     for (const line of modified.split('\n')) {
         chunks.push({ id: id++, type: 'added', content: line });
     }

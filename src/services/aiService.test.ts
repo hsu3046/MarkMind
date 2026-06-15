@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateDiff } from './aiService';
+import { generateDiff, applyDiff } from './aiService';
 
 // #36 — generateDiff 의 paragraph/word LCS 는 O(m·n) DP 라 대형 입력에서 메인 스레드를
 // 막는다. 일정 규모(LCS_CELL_LIMIT = 200만 셀) 초과 시 "전체 교체"로 폴백하는 가드를 검증.
@@ -40,5 +40,16 @@ describe('generateDiff 대형 문서 가드(#36)', () => {
         // 예외 없이 removed/added 가 생성되면 통과(폭발 시 행/크래시 발생).
         expect(chunks.some((c) => c.type === 'removed')).toBe(true);
         expect(chunks.some((c) => c.type === 'added')).toBe(true);
+    });
+
+    it('대형 문서 폴백을 applyDiff 하면 원본/수정본이 정확히 복원(separator 가짜 빈 줄 없음, #36 P2-1)', () => {
+        const common = Array.from({ length: 1500 }, (_, i) => `c${i}`);
+        const orig = [...common, 'tail-o'].join('\n\n'); // 1501 문단
+        const mod = [...common, 'tail-m'].join('\n\n'); // 1501² > 200만 → 폴백
+        const chunks = generateDiff(orig, mod);
+        // accept-all → 수정본 정확 복원 (선두 가짜 빈 줄 없음)
+        expect(applyDiff(chunks.map((c) => ({ ...c, accepted: true })))).toBe(mod);
+        // reject-all → 원본 정확 복원 (후미 가짜 빈 줄 없음)
+        expect(applyDiff(chunks.map((c) => ({ ...c, accepted: false })))).toBe(orig);
     });
 });
