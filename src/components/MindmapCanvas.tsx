@@ -54,6 +54,17 @@ export interface MindmapNodeData {
 
 const PALETTE = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6'];
 
+/** One-line plain-text preview of a node's description (full text on hover). */
+function descPreview(s: string): string {
+    return s
+        .replace(/```[\s\S]*?```/g, '⟨코드⟩')   // collapse fenced code
+        .replace(/^\s*\|.*$/gm, '⟨표⟩')          // collapse table rows
+        .replace(/^\s*[#>*\-+]+\s*/gm, '')       // strip block markers
+        .replace(/[`*_]/g, '')                    // strip inline emphasis
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodeProps) {
     const d = data as MindmapNodeData;
     const isRoot = d.level === 0;
@@ -63,6 +74,7 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
     const tint = isRoot ? 22 : Math.max(6, 24 - d.level * 6); // % of hue mixed into bg
     const accent = base;
     const background = `color-mix(in srgb, ${base} ${tint}%, var(--bg-primary))`;
+    const desc = d.node?.description?.trim();
 
     const editableRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
@@ -117,7 +129,10 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
                     onBlur={(e) => commit(e.currentTarget.textContent || '')}
                 />
             ) : (
-                <span className="mm-label">{d.label || '(빈 노드)'}</span>
+                <div className="mm-text">
+                    <span className="mm-label">{d.label || '(빈 노드)'}</span>
+                    {desc && <span className="mm-desc" title={desc}>{descPreview(desc)}</span>}
+                </div>
             )}
 
             {d.hasLinks && !d.isEditing && (

@@ -30,9 +30,10 @@ const NODE_WIDTH_CONFIG = {
     child: { min: 120, max: 280, fontSize: 14, padding: 32, lineH: 19, padV: 20 },
 };
 
-// ─── Size cache (invalidates on label change) ───
+// ─── Size cache (invalidates on label/description change) ───
 interface Measure {
     label: string;
+    desc: string;   // trimmed description (height depends on it)
     width: number;  // clamped card width
     height: number; // estimated card height (accounts for wrapping)
 }
@@ -53,8 +54,9 @@ function naturalTextWidth(label: string, fontSize: number, padding: number): num
 }
 
 function measureNode(node: MindmapNode, isRoot: boolean): Measure {
+    const descKey = node.description?.trim() ?? '';
     const cached = measureCache.get(node.id);
-    if (cached && cached.label === node.label) return cached;
+    if (cached && cached.label === node.label && cached.desc === descKey) return cached;
 
     const cfg = isRoot ? NODE_WIDTH_CONFIG.root : NODE_WIDTH_CONFIG.child;
 
@@ -62,6 +64,7 @@ function measureNode(node: MindmapNode, isRoot: boolean): Measure {
     if (node.kind === 'image' && node.image_width) {
         const m: Measure = {
             label: node.label,
+            desc: descKey,
             width: Math.min(Math.max(node.image_width + 32, 120), 520),
             height: Math.min(Math.max((node.image_height ?? 150) + 24, 80), 560),
         };
@@ -72,9 +75,19 @@ function measureNode(node: MindmapNode, isRoot: boolean): Measure {
     const natural = naturalTextWidth(node.label || ' ', cfg.fontSize, cfg.padding);
     const width = Math.min(Math.max(natural, cfg.min), cfg.max);
     const lines = Math.max(1, Math.ceil(natural / Math.max(width, 1)));
-    const height = lines * cfg.lineH + cfg.padV;
+    let height = lines * cfg.lineH + cfg.padV;
 
-    const m: Measure = { label: node.label, width, height };
+    // description preview (shown under the label, CSS-clamped to 3 lines) —
+    // reserve its space so flextree doesn't overlap siblings.
+    const desc = node.description?.trim();
+    if (desc) {
+        const descFont = cfg.fontSize - 2;
+        const naturalDesc = naturalTextWidth(desc.replace(/\s+/g, ' '), descFont, 0);
+        const descLines = Math.min(3, Math.max(1, Math.ceil(naturalDesc / Math.max(width, 1))));
+        height += descLines * (descFont + 4) + 4;
+    }
+
+    const m: Measure = { label: node.label, desc: descKey, width, height };
     measureCache.set(node.id, m);
     return m;
 }
