@@ -80,9 +80,21 @@ function getLanguageName(lang: string): string {
 
 // ─── Diff Generation ──────────────────────────────────────
 
+/** computeLCS 의 O(m·n) DP 가 메인 스레드를 막지 않도록 하는 셀 수 상한(#36).
+    문단/토큰 곱이 이 값을 넘으면 정밀 LCS 대신 통짜 교체로 폴백한다.
+    (m+1)(n+1) number 행렬 ≈ 16MB·수백만 연산 수준 — 일반 문서는 한참 아래. */
+const LCS_CELL_LIMIT = 2_000_000;
+
 export function generateDiff(original: string, modified: string): DiffChunk[] {
     const origParas = splitIntoParagraphs(original);
     const modParas = splitIntoParagraphs(modified);
+
+    // 대형 문서 가드(#36): paragraph-level LCS 가 폭발할 규모면 정밀 diff 를 건너뛰고
+    // "전체 교체" 미리보기로 폴백 — propose_edit 리스너가 메인 스레드에서 동기 호출하므로
+    // 여기서 막지 않으면 수천 문단 문서에서 UI 가 프리즈된다.
+    if (origParas.length * modParas.length > LCS_CELL_LIMIT) {
+        return wholeReplacementChunks(original, modified);
+    }
 
     // Build paragraph-level operations
     type ParaOp = { type: 'unchanged'; text: string }
@@ -176,6 +188,21 @@ export function generateDiff(original: string, modified: string): DiffChunk[] {
     return chunks;
 }
 
+/** 대형 문서 폴백(#36): 정밀 diff 없이 원본 전체→수정본 전체 교체로 표현.
+    라인 단위 chunk 라 computeLCS 의 O(m·n) 비용이 없다(split 은 O(n)). */
+function wholeReplacementChunks(original: string, modified: string): DiffChunk[] {
+    const chunks: DiffChunk[] = [];
+    let id = 0;
+    for (const line of original.split('\n')) {
+        chunks.push({ id: id++, type: 'removed', content: line });
+    }
+    chunks.push({ id: id++, type: 'unchanged', content: '' });
+    for (const line of modified.split('\n')) {
+        chunks.push({ id: id++, type: 'added', content: line });
+    }
+    return chunks;
+}
+
 /** 단어/공백/구두점 토큰화 (한글·영문·숫자는 묶고 구두점은 1글자씩 →
     따옴표 하나 변경도 그 토큰만 잡힘). */
 function tokenize(s: string): string[] {
@@ -186,6 +213,14 @@ function tokenize(s: string): string[] {
 function wordDiff(orig: string, mod: string): { origParts: DiffSeg[]; modParts: DiffSeg[] } {
     const a = tokenize(orig);
     const b = tokenize(mod);
+    // 거대 문단 쌍 가드(#36): 토큰 LCS 가 폭발할 규모면(예: 줄바꿈 없는 초대형 단락)
+    // 단어 단위 강조를 포기하고 문단 전체를 통짜 removed/added 세그먼트로 둔다.
+    if (a.length * b.length > LCS_CELL_LIMIT) {
+        return {
+            origParts: [{ text: orig, type: 'removed' }],
+            modParts: [{ text: mod, type: 'added' }],
+        };
+    }
     const lcs = computeLCS(a, b);
     return {
         origParts: buildSegs(a, lcs, 'removed'),
