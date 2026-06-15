@@ -625,8 +625,10 @@ pub async fn start(state: Arc<McpState>, app: AppHandle, shutdown: CancellationT
     let config = StreamableHttpServerConfig::default()
         .with_stateful_mode(false)
         .with_allowed_origins(["tauri://localhost", "http://tauri.localhost"])
-        // graceful shutdown(#38): RunEvent::ExitRequested 에서 이 토큰을 cancel 하면
-        // rmcp 의 active session 이 정리되고, 아래 axum graceful shutdown 도 트리거된다.
+        // shutdown 신호(#38, best-effort): RunEvent::ExitRequested 에서 이 토큰을 cancel
+        // 하면 rmcp active session 의 child_token 과 아래 axum graceful shutdown 이 정리를
+        // "시작"한다. 단 cancel 측이 drain 완료를 await 하지 않고 프로세스가 곧 종료되므로
+        // 완전한 세션 정리를 "보장"하지는 않는다(로컬 PoC — 강제 종료보다 약간 정중한 수준).
         .with_cancellation_token(shutdown.clone());
 
     let service = StreamableHttpService::new(
