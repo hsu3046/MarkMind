@@ -26,6 +26,10 @@ struct PendingFiles(Mutex<HashMap<String, String>>);
 /// 새 창 mount 시 `take_pending_content(label)` 로 가져가 loadFromMemory.
 struct PendingContent(Mutex<HashMap<String, (String, String)>>);
 
+/// MCP HTTP 서버 graceful shutdown 신호(#38). 앱 종료(RunEvent::ExitRequested) 시
+/// cancel → rmcp active session 정리 + axum graceful shutdown 트리거.
+struct McpShutdown(tokio_util::sync::CancellationToken);
+
 #[tauri::command]
 fn take_pending_file(state: tauri::State<'_, PendingFiles>, label: String) -> Option<String> {
     state.0.lock().ok().and_then(|mut m| m.remove(&label))
@@ -240,8 +244,12 @@ pub fn run() {
             secrets::migrate_legacy_once();
             // MCP 서버 기동 — bind 실패해도 내부에서 로그만 (앱 정상).
             // 쓰기 tool 이 윈도우로 event emit 하므로 AppHandle 도 전달.
+            // graceful shutdown(#38) 토큰을 만들어 manage + start 에 전달. RunEvent::
+            // ExitRequested 에서 cancel → rmcp 세션 정리 + axum graceful shutdown.
+            let mcp_shutdown = tokio_util::sync::CancellationToken::new();
+            app.manage(McpShutdown(mcp_shutdown.clone()));
             let st = app.state::<Arc<mcp::McpState>>().inner().clone();
-            tauri::async_runtime::spawn(mcp::start(st, app.handle().clone()));
+            tauri::async_runtime::spawn(mcp::start(st, app.handle().clone(), mcp_shutdown));
             Ok(())
         })
         .manage(pending)
@@ -361,6 +369,12 @@ pub fn run() {
                             }
                         }
                     }
+                }
+            }
+            if let tauri::RunEvent::ExitRequested { .. } = &event {
+                if let Some(s) = app.try_state::<McpShutdown>() {
+                    s.0.cancel();
+                    eprintln!("[mcp] 앱 종료 — MCP graceful shutdown 신호 전송");
                 }
             }
             let _ = &event;

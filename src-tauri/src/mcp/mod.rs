@@ -26,6 +26,7 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 /// MCP 서버가 listen 하는 고정 포트. 클라이언트는 한 번 등록하고 재사용:
 /// `claude mcp add --transport http markmind http://localhost:8417/mcp`
@@ -602,7 +603,7 @@ impl ServerHandler for MarkMindServer {
 /// Streamable HTTP MCP 서버를 127.0.0.1:MCP_PORT 에서 기동.
 /// bind 실패해도 패닉 없이 로그만 — 앱 본체는 정상 동작.
 /// `app` 은 쓰기 tool 이 대상 윈도우로 event 를 emit 하는 데 사용.
-pub async fn start(state: Arc<McpState>, app: AppHandle) {
+pub async fn start(state: Arc<McpState>, app: AppHandle, shutdown: CancellationToken) {
     use rmcp::transport::streamable_http_server::{
         session::local::LocalSessionManager, tower::StreamableHttpServerConfig,
         StreamableHttpService,
@@ -615,7 +616,18 @@ pub async fn start(state: Arc<McpState>, app: AppHandle) {
     // stateless: 세션을 두지 않아 앱 재시작 후에도 클라이언트가 "Session not found"
     // 없이 계속 동작(읽기=요청/응답, 쓰기=propose 의 request_id 기반이라 세션 불필요).
     // mcp-remote 호환·재시작 강건성은 재현 바이너리로 실측 검증함.
-    let config = StreamableHttpServerConfig::default().with_stateful_mode(false);
+    //
+    // Origin 검증(#34, defense-in-depth): Origin 헤더가 붙는 요청(=브라우저 컨텍스트)만
+    // 우리 앱 origin 으로 제한해 악성 원격 웹페이지의 cross-origin 호출을 403 차단한다.
+    // 정합 클라(mcp-remote 등 node)는 Origin 헤더를 보내지 않고, rmcp 의
+    // validate_origin_header 는 allowed_origins 가 채워져 있어도 Origin 부재 시 Ok 로
+    // 통과시키므로(tower.rs) 기존 연결에는 영향이 없다.
+    let config = StreamableHttpServerConfig::default()
+        .with_stateful_mode(false)
+        .with_allowed_origins(["tauri://localhost", "http://tauri.localhost"])
+        // graceful shutdown(#38): RunEvent::ExitRequested 에서 이 토큰을 cancel 하면
+        // rmcp 의 active session 이 정리되고, 아래 axum graceful shutdown 도 트리거된다.
+        .with_cancellation_token(shutdown.clone());
 
     let service = StreamableHttpService::new(
         move || Ok(MarkMindServer::new(factory_state.clone(), factory_app.clone())),
@@ -633,7 +645,10 @@ pub async fn start(state: Arc<McpState>, app: AppHandle) {
         }
     };
     eprintln!("[mcp] MarkMind MCP 서버 http://127.0.0.1:{MCP_PORT}/mcp 기동");
-    if let Err(e) = axum::serve(listener, app).await {
+    if let Err(e) = axum::serve(listener, app)
+        .with_graceful_shutdown(async move { shutdown.cancelled().await })
+        .await
+    {
         eprintln!("[mcp] serve 종료: {e}");
     }
 }
