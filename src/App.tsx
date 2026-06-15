@@ -333,6 +333,9 @@ function App() {
     panelStateRef.current = { audioPanelVisible, ocrPanelVisible };
   }, [audioPanelVisible, ocrPanelVisible]);
 
+  // 드래그&드롭 핸들러에서 최신 handleOpenInCurrentEditor 를 stale 없이 호출(#14)
+  const handleOpenInCurrentEditorRef = useRef<((path: string) => Promise<void>) | null>(null);
+
   // OS-level 파일 드롭 라우팅 (mount 시 1회만 등록)
   useEffect(() => {
     if (!isTauri()) return;
@@ -340,10 +343,26 @@ function App() {
     (async () => {
       try {
         const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+        const { invoke } = await import('@tauri-apps/api/core');
         const win = getCurrentWebviewWindow();
         unlisten = await win.listen<{ paths: string[] }>('tauri://drag-drop', async (event) => {
-          const path = event.payload?.paths?.[0];
-          if (!path) return;
+          const paths = event.payload?.paths ?? [];
+          if (paths.length === 0) return;
+          const mdExts = ['md','markdown','mdx','txt'];
+
+          // 여러 파일 동시 드롭 → 각각 새 윈도우 (현재 작업 보호). 마크다운 계열만.
+          if (paths.length > 1) {
+            for (const p of paths) {
+              const e = p.split('.').pop()?.toLowerCase() ?? '';
+              if (mdExts.includes(e)) {
+                try { await invoke('open_new_window', { filePath: p }); }
+                catch (err) { console.error('[App] 새 창 열기 실패:', err); }
+              }
+            }
+            return;
+          }
+
+          const path = paths[0];
           const ext = path.split('.').pop()?.toLowerCase() ?? '';
           const name = path.split(/[\\/]/).pop() ?? path;
           const audioExts = ['mp3','wav','m4a','qta','aac','ogg','flac','wma','amr','opus','mp4','mov','webm','m4v'];
@@ -372,8 +391,14 @@ function App() {
             } catch (err) {
               console.error('[App] 인라인 OCR 실패:', err);
             }
+            return;
           }
-          // 3) 마크다운/텍스트는 기존 Tauri RunEvent::Opened 가 처리 (새 윈도우)
+
+          // 3) 마크다운/텍스트 → 현재 창에서 열기 (unsaved 시 확인). #14:
+          // 기존엔 무동작이었음(RunEvent::Opened 는 Finder 더블클릭용이라 드롭엔 안 불림).
+          if (mdExts.includes(ext)) {
+            await handleOpenInCurrentEditorRef.current?.(path);
+          }
         });
       } catch (err) {
         console.warn('[App] drop listener 등록 실패:', err);
@@ -425,6 +450,10 @@ function App() {
     },
     [isDirty, openFromRecent, converter],
   );
+  // drag&drop 핸들러(mount 1회 등록)가 최신 handleOpenInCurrentEditor 를 ref 로 호출(#14)
+  useEffect(() => {
+    handleOpenInCurrentEditorRef.current = handleOpenInCurrentEditor;
+  }, [handleOpenInCurrentEditor]);
 
   // ─── Mindmap drill-in (M2): open the document a node links to ───
   // Vault root = the current file's directory. Resolves [[wikilinks]] / [..](rel.md)
