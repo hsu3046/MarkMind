@@ -7,6 +7,7 @@ import { generateDiff } from './services/aiService';
 import { Preview } from './components/Preview';
 import { MindmapView } from './components/MindmapView';
 import { VaultGraphView } from './components/VaultGraphView';
+import { FlowchartView } from './components/FlowchartView';
 import { Toolbar, ViewMode } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { OutlinePanel } from './components/OutlinePanel';
@@ -1150,6 +1151,11 @@ function App() {
             setViewMode('graph');
             setReadingMode(false);
             break;
+          case '6':
+            e.preventDefault();
+            setViewMode('flowchart');
+            setReadingMode(false);
+            break;
           case '=':
           case '+':
             e.preventDefault();
@@ -1447,6 +1453,11 @@ function App() {
                 onOpenFile={handleOpenVaultFile}
                 onOpenGhost={handleOpenVaultGhost}
               />
+            </div>
+          ) : viewMode === 'flowchart' ? (
+            <div className="pane" style={{ width: '100%' }}>
+              {mcpBanner}
+              <FlowchartView content={content} fileName={fileName} />
             </div>
           ) : (
           <>

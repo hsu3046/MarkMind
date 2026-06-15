@@ -1,0 +1,71 @@
+/* #46 M3 플로우차트 노드 — type 별 색/모양. min-width 는 dagre 의 SHAPE_DIMENSIONS
+   와 맞춰 레이아웃 겹침을 막는다. 정교한 다이아몬드(decision)는 ④에서. */
+.flow-node {
+    box-sizing: border-box;
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    border: 1.5px solid var(--border-primary, #cccccc);
+    border-radius: 8px;
+    background: var(--bg-secondary, #f5f5f5);
+    color: var(--text-primary, #222222);
+    font-size: 13px;
+    line-height: 1.4;
+    text-align: center;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.flow-node__label {
+    display: block;
+}
+
+/* start / end — 라이프사이클 터미네이터(pill) */
+.flow-node--start,
+.flow-node--end {
+    min-width: 120px;
+    border-radius: 30px;
+    background: #dbeafe;
+    border-color: #60a5fa;
+    color: #1e3a5f;
+}
+
+/* process — 기본 단계(사각형) */
+.flow-node--process {
+    min-width: 160px;
+}
+
+/* io — 입출력(평행사변형 힌트) */
+.flow-node--io {
+    min-width: 160px;
+    background: #dcfce7;
+    border-color: #4ade80;
+    color: #14532d;
+    transform: skewX(-12deg);
+}
+.flow-node--io .flow-node__label {
+    transform: skewX(12deg);
+}
+
+/* decision — 분기(1차 색만, 다이아몬드는 ④) */
+.flow-node--decision {
+    min-width: 200px;
+    background: #fef9c3;
+    border-color: #facc15;
+    color: #713f12;
+}
+
+/* merge — 합류(원형) */
+.flow-node--merge {
+    min-width: 60px;
+    border-radius: 50%;
+    background: #e9d5ff;
+    border-color: #c084fc;
+    color: #4c1d6b;
+}
+
+/* image — 후속(1차는 라벨만) */
+.flow-node--image {
+    background: #ffffff;
+}
