@@ -183,49 +183,6 @@ struct GetDocResult {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-struct EditDocArgs {
-    /// 대상 윈도우 라벨(우선). 생략 시 file_path, 그것도 없으면 현재 포커스 문서.
-    #[serde(default)]
-    window_label: Option<String>,
-    /// 대상 파일 절대 경로.
-    #[serde(default)]
-    file_path: Option<String>,
-    /// 교체할 기존 문자열. 문서에 **정확히 한 번** 나타나야 한다.
-    old_str: String,
-    /// 대체 문자열.
-    new_str: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-struct SetContentArgs {
-    /// 대상 윈도우 라벨(우선). 생략 시 file_path, 그것도 없으면 현재 포커스 문서.
-    #[serde(default)]
-    window_label: Option<String>,
-    /// 대상 파일 절대 경로.
-    #[serde(default)]
-    file_path: Option<String>,
-    /// 문서 전체를 대체할 새 내용.
-    content: String,
-    /// 빈/공백 content 로 문서 전체를 비우려면 명시적으로 true. 기본 false →
-    /// 실수/환각으로 문서가 통째로 지워지는 사고 방지.
-    #[serde(default)]
-    allow_empty: bool,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-struct InsertTextArgs {
-    #[serde(default)]
-    window_label: Option<String>,
-    #[serde(default)]
-    file_path: Option<String>,
-    /// 삽입할 텍스트.
-    text: String,
-    /// 삽입 위치: "cursor"(현재 커서, 기본) | "end"(문서 끝).
-    #[serde(default)]
-    position: Option<String>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 struct CreateDocArgs {
     /// 새 문서 내용.
     content: String,
@@ -274,13 +231,8 @@ struct EditRequest {
     /// 대상 윈도우 라벨. emit_to 로 이미 타게팅하지만, 프론트가 자기 창인지
     /// 한 번 더 확인해 멀티윈도우에서 엉뚱한 창 편집을 막는다.
     window_label: String,
-    /// "str_replace" | "set_content" | "insert_text" | "save" | "propose"
-    op: String,
-    old_str: Option<String>,
-    new_str: Option<String>,
+    /// 제안하는 새 전체 내용.
     content: Option<String>,
-    /// insert_text 위치: "cursor" | "end"
-    position: Option<String>,
     /// propose 수정안 설명(diff 미리보기에 표시).
     description: Option<String>,
 }
@@ -513,90 +465,6 @@ impl MarkMindServer {
     }
 
     #[tool(
-        description = "Replace the first exact occurrence of `old_str` with `new_str` in an open MarkMind document (target by window_label, file_path, or — if both omitted — the currently focused window). `old_str` must match EXACTLY ONCE; the edit fails if it is not found or appears multiple times. The change is applied to the live editor and marked unsaved (the user must save). Read the document first to copy `old_str` verbatim including whitespace."
-    )]
-    async fn edit_document(&self, Parameters(args): Parameters<EditDocArgs>) -> Json<EditResultOut> {
-        let Some(label) = resolve_target(&self.state, &args.window_label, &args.file_path) else {
-            return Json(EditResultOut::fail("일치하는 열린 문서가 없습니다 (list_open_documents 로 확인)"));
-        };
-        let payload = EditRequest {
-            request_id: uuid::Uuid::new_v4().to_string(),
-            window_label: label.clone(),
-            op: "str_replace".into(),
-            old_str: Some(args.old_str),
-            new_str: Some(args.new_str),
-            ..Default::default()
-        };
-        Json(self.dispatch_edit(label, "mcp-apply-edit", 15, payload).await)
-    }
-
-    #[tool(
-        description = "Replace the ENTIRE content of an open MarkMind document (target by window_label, file_path, or — if both omitted — the currently focused window) with `content`. The change is applied to the live editor and marked unsaved (the user must save). Prefer edit_document for surgical changes; use this for full rewrites."
-    )]
-    async fn set_document_content(
-        &self,
-        Parameters(args): Parameters<SetContentArgs>,
-    ) -> Json<EditResultOut> {
-        if args.content.len() > MAX_CONTENT_BYTES {
-            return Json(EditResultOut::fail(format!(
-                "content 가 너무 큽니다 (상한 {}MB)",
-                MAX_CONTENT_BYTES / 1024 / 1024
-            )));
-        }
-        if args.content.trim().is_empty() && !args.allow_empty {
-            return Json(EditResultOut::fail(
-                "content 가 비어 있습니다. 문서를 정말 비우려면 allow_empty:true 를 주세요",
-            ));
-        }
-        let Some(label) = resolve_target(&self.state, &args.window_label, &args.file_path) else {
-            return Json(EditResultOut::fail("일치하는 열린 문서가 없습니다 (list_open_documents 로 확인)"));
-        };
-        let payload = EditRequest {
-            request_id: uuid::Uuid::new_v4().to_string(),
-            window_label: label.clone(),
-            op: "set_content".into(),
-            content: Some(args.content),
-            ..Default::default()
-        };
-        Json(self.dispatch_edit(label, "mcp-apply-edit", 15, payload).await)
-    }
-
-    #[tool(
-        description = "Insert `text` into an open MarkMind document at `position` ('cursor' = current cursor, default; 'end' = end of document). Target by window_label, file_path, or current focused window. Preserves undo history. Applied to the live editor, left unsaved."
-    )]
-    async fn insert_text(&self, Parameters(args): Parameters<InsertTextArgs>) -> Json<EditResultOut> {
-        let Some(label) = resolve_target(&self.state, &args.window_label, &args.file_path) else {
-            return Json(EditResultOut::fail("일치하는 열린 문서가 없습니다 (list_open_documents 로 확인)"));
-        };
-        let payload = EditRequest {
-            request_id: uuid::Uuid::new_v4().to_string(),
-            window_label: label.clone(),
-            op: "insert_text".into(),
-            content: Some(args.text),
-            position: Some(args.position.unwrap_or_else(|| "cursor".into())),
-            ..Default::default()
-        };
-        Json(self.dispatch_edit(label, "mcp-editor-action", 15, payload).await)
-    }
-
-    #[tool(
-        description = "Save an open MarkMind document to disk (target by window_label, file_path, or current focused window). If the document has no file path yet, a Save dialog opens for the user. Use after edits when the user asks to save."
-    )]
-    async fn save_document(&self, Parameters(args): Parameters<GetDocArgs>) -> Json<EditResultOut> {
-        let Some(label) = resolve_target(&self.state, &args.window_label, &args.file_path) else {
-            return Json(EditResultOut::fail("일치하는 열린 문서가 없습니다 (list_open_documents 로 확인)"));
-        };
-        let payload = EditRequest {
-            request_id: uuid::Uuid::new_v4().to_string(),
-            window_label: label.clone(),
-            op: "save".into(),
-            ..Default::default()
-        };
-        // 경로 없는 새 문서는 Save 다이얼로그가 떠 사용자 결정을 기다리므로 길게(300s).
-        Json(self.dispatch_edit(label, "mcp-editor-action", 300, payload).await)
-    }
-
-    #[tool(
         description = "Open a NEW MarkMind editor window containing `content` (e.g. a draft you composed). `file_name` sets the title (defaults to Untitled.md). The document is unsaved with no file path until the user saves it. Returns the new window_label."
     )]
     async fn create_document(&self, Parameters(args): Parameters<CreateDocArgs>) -> Json<EditResultOut> {
@@ -644,10 +512,8 @@ impl MarkMindServer {
         let payload = EditRequest {
             request_id: uuid::Uuid::new_v4().to_string(),
             window_label: label.clone(),
-            op: "propose".into(),
             content: Some(args.new_content),
             description: args.description,
-            ..Default::default()
         };
         // 사용자 결정 대기 — 5분 timeout.
         Json(self.dispatch_edit(label, "mcp-propose-edit", 300, payload).await)
@@ -680,7 +546,7 @@ impl ServerHandler for MarkMindServer {
                 .with_mime_type("image/png")
                 .with_sizes(vec!["128x128".into()])]);
         info.instructions = Some(
-            "MarkMind document bridge. Read: list_open_documents, get_current_document, get_document, get_outline. Edit (applied to the live editor, left UNSAVED unless you call save_document): edit_document (unique str_replace), set_document_content (full rewrite), insert_text (at cursor/end). propose_edit shows a diff the user must accept. create_document opens a draft in a new window. save_document writes to disk. Always read a document before editing so old_str matches verbatim."
+            "MarkMind document bridge. Read: list_open_documents, get_current_document, get_document, get_outline. To EDIT an open document, ALWAYS use propose_edit: read the document first, then call propose_edit with the full new content — the user reviews a diff and accepts/rejects it (nothing changes unless they accept). create_document opens a draft in a new window. NEVER save: the user saves manually after reviewing; there is no save tool."
                 .into(),
         );
         info
@@ -700,7 +566,10 @@ pub async fn start(state: Arc<McpState>, app: AppHandle) {
     let factory_app = app.clone();
     // 127.0.0.1 bind 자체로 외부 접근이 차단되므로 기본 config.
     // (DNS rebinding 방어용 Host 검증은 default 에 localhost/127.0.0.1 포함됨.)
-    let config = StreamableHttpServerConfig::default();
+    // stateless: 세션을 두지 않아 앱 재시작 후에도 클라이언트가 "Session not found"
+    // 없이 계속 동작(읽기=요청/응답, 쓰기=propose 의 request_id 기반이라 세션 불필요).
+    // mcp-remote 호환·재시작 강건성은 재현 바이너리로 실측 검증함.
+    let config = StreamableHttpServerConfig::default().with_stateful_mode(false);
 
     let service = StreamableHttpService::new(
         move || Ok(MarkMindServer::new(factory_state.clone(), factory_app.clone())),
