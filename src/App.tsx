@@ -228,9 +228,7 @@ function App() {
   // 리스너(deps []) 가 stale 없이 쓰도록 ref 로 최신값 추적.
   const mcpProposalRef = useRef(mcpProposal);
   mcpProposalRef.current = mcpProposal;
-  // MCP 리스너가 저장·AI diff 정리를 stale 없이 호출하도록 ref 경유.
-  const saveFileRef = useRef(saveFile);
-  saveFileRef.current = saveFile;
+  // MCP 리스너가 AI diff 정리를 stale 없이 호출하도록 ref 경유.
   const clearAiDiffRef = useRef<() => void>(() => {});
   clearAiDiffRef.current = () => {
     if (ai.response) ai.setResponse(null);
@@ -518,24 +516,21 @@ function App() {
     }
   }, [filePath, addRecentFile]);
 
-  // ─── MCP editor-action 처리 (replace_selection / insert_text / save) ───
-  // content 변경(str_replace/set_content)은 useFileSystem 이 'mcp-apply-edit' 로
-  // 처리하고, 에디터 view 접근이 필요한 액션은 여기서 'mcp-editor-action' 으로
-  // 처리한다(editorRef / saveFile 접근). emit_to 타게팅 + windowLabel 가드.
+  // ─── MCP propose_edit 처리 ───
+  // Claude 의 수정은 propose_edit 한 경로로 일원화 — diff 미리보기를 띄우고
+  // 사용자가 수락/거절(ack 는 McpProposalView 핸들러). 즉시 적용/자동 저장 도구는
+  // 제거됨(자동 저장 방지). emit_to 타게팅 + windowLabel 가드, deps [] (ref 경유).
   useEffect(() => {
     if (!isTauri()) return;
     let cancelled = false;
-    const unlistens: Array<() => void> = [];
+    let unlisten: (() => void) | undefined;
 
     (async () => {
       const { listen } = await import('@tauri-apps/api/event');
-      const { invoke } = await import('@tauri-apps/api/core');
       const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
       const myLabel = getCurrentWebviewWindow().label;
 
-      // propose_edit — diff 미리보기를 띄우고 사용자 결정을 기다린다(ack 는
-      // McpProposalView 의 수락/거절 핸들러에서). 편집 모드로 전환해 보이게 한다.
-      const uPropose = await listen<{
+      const u = await listen<{
         requestId: string;
         windowLabel: string;
         content?: string | null;
@@ -562,70 +557,14 @@ function App() {
         });
       });
 
-      const u = await listen<{
-        requestId: string;
-        windowLabel: string;
-        op: string;
-        content?: string | null;
-        position?: string | null;
-      }>('mcp-editor-action', async (event) => {
-        const { requestId, windowLabel, op, content, position } = event.payload;
-        if (windowLabel !== myLabel) return;
-
-        let ok = false;
-        let error: string | null = null;
-        try {
-          const ed = editorRef.current;
-          // 에디터가 언마운트된 이유를 구분(E): 제안/ AI diff 검토 중이면 그 사실을 알림.
-          const unmountReason = mcpProposalRef.current
-            ? '제안(diff)을 검토 중이라 편집할 수 없습니다 — 먼저 수락/거절하세요'
-            : '에디터가 편집 모드가 아닙니다 (preview/reading 모드일 수 있음)';
-          if (op === 'insert_text') {
-            if (ed) {
-              if ((position ?? 'cursor') === 'end') ed.insertAtEnd(content ?? '');
-              else ed.insertAtCursor(content ?? '');
-              ok = true;
-            } else if ((position ?? 'cursor') === 'end' && !mcpProposalRef.current) {
-              // 에디터 없어도 '문서 끝 삽입'은 content op 로 fallback(커서 삽입은 위치 불명이라 불가).
-              updateContent(latestContentRef.current + (content ?? ''));
-              ok = true;
-            } else {
-              error = unmountReason;
-            }
-          } else if (op === 'save') {
-            const r = await saveFileRef.current();
-            ok = r === 'saved';
-            if (r === 'cancelled') error = '사용자가 저장을 취소했습니다';
-            else if (r === 'failed') error = '디스크 저장 실패';
-          } else {
-            error = `알 수 없는 op: ${op}`;
-          }
-        } catch (e) {
-          error = String(e);
-        }
-
-        try {
-          await invoke('mcp_apply_edit_result', { requestId, ok, error, charCount: null });
-        } catch {
-          // ack 실패 시 tool 쪽 timeout 으로 정리
-        }
-      });
-
-      if (cancelled) {
-        uPropose();
-        u();
-      } else {
-        unlistens.push(uPropose, u);
-      }
+      if (cancelled) u();
+      else unlisten = u;
     })();
 
     return () => {
       cancelled = true;
-      unlistens.forEach((fn) => fn());
+      if (unlisten) unlisten();
     };
-    // deps [] — saveFile/ai/mcpProposal 등은 모두 ref 경유로 최신값을 읽으므로
-    // 마운트 1회만 등록(저장·이름변경마다 teardown→재등록되어 그 사이 이벤트가
-    // 유실되던 문제 방지). useFileSystem 의 mcp-apply-edit 패턴과 통일.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
