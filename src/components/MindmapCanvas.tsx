@@ -111,7 +111,11 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
             />
 
             {d.isEditing ? (
+                // distinct key from the view branch → React remounts instead of
+                // reusing the same <div>, which would leave the contentEditable's
+                // imperative text node behind and duplicate the label.
                 <div
+                    key="mm-edit"
                     role="textbox"
                     contentEditable
                     suppressContentEditableWarning
@@ -129,7 +133,7 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
                     onBlur={(e) => commit(e.currentTarget.textContent || '')}
                 />
             ) : (
-                <div className="mm-text">
+                <div key="mm-view" className="mm-text">
                     <span className="mm-label">{d.label || '(빈 노드)'}</span>
                     {desc && <span className="mm-desc" title={desc}>{descPreview(desc)}</span>}
                 </div>
