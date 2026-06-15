@@ -57,7 +57,12 @@ const PALETTE = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899
 const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodeProps) {
     const d = data as MindmapNodeData;
     const isRoot = d.level === 0;
-    const accent = isRoot ? 'var(--accent)' : PALETTE[d.colorIndex % PALETTE.length];
+    // Branch hue from the L1 colour; level (h1/h2/h3…) shown as background intensity
+    // (deeper = lighter tint) via color-mix over the theme background.
+    const base = isRoot ? 'var(--accent)' : PALETTE[d.colorIndex % PALETTE.length];
+    const tint = isRoot ? 22 : Math.max(6, 24 - d.level * 6); // % of hue mixed into bg
+    const accent = base;
+    const background = `color-mix(in srgb, ${base} ${tint}%, var(--bg-primary))`;
 
     const editableRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
@@ -85,7 +90,7 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
     }, [d]);
 
     return (
-        <div className={`mm-node${isRoot ? ' mm-root' : ''}`} style={{ borderColor: accent }}>
+        <div className={`mm-node${isRoot ? ' mm-root' : ''}`} style={{ borderColor: accent, background }}>
             <Handle
                 id="left"
                 type={isRoot ? 'source' : d.side === 'left' ? 'source' : 'target'}

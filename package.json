@@ -38,6 +38,7 @@
     "@tiptap/starter-kit": "^3.23.6",
     "@uiw/react-codemirror": "^4.25.7",
     "@xyflow/react": "^12.11.0",
+    "d3-flextree": "^2.1.2",
     "d3-force": "^3.0.0",
     "d3-hierarchy": "^3.1.2",
     "highlight.js": "^11.11.1",
