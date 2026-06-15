@@ -5,6 +5,7 @@ import { Editor, EditorHandle } from './components/Editor';
 import { McpProposalView } from './components/McpProposalView';
 import { generateDiff } from './services/aiService';
 import { Preview } from './components/Preview';
+import { MindmapView } from './components/MindmapView';
 import { Toolbar, ViewMode } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { OutlinePanel } from './components/OutlinePanel';
@@ -1018,6 +1019,11 @@ function App() {
             setViewMode('preview');
             setReadingMode(false);
             break;
+          case '4':
+            e.preventDefault();
+            setViewMode('mindmap');
+            setReadingMode(false);
+            break;
           case '=':
           case '+':
             e.preventDefault();
@@ -1283,6 +1289,13 @@ function App() {
         <OutlinePanel content={content} visible={outlineVisible} onHeadingClick={handleOutlineClick} />
 
         <div className="split-pane">
+          {viewMode === 'mindmap' ? (
+            <div className="pane" style={{ width: '100%' }}>
+              {mcpBanner}
+              <MindmapView content={content} onChange={updateContent} fileName={fileName} />
+            </div>
+          ) : (
+          <>
           {viewMode !== 'preview' && (
             <div
               className="pane pane-editor"
@@ -1375,10 +1388,12 @@ function App() {
               />
             </div>
           )}
+          </>
+          )}
         </div>
 
         {/* Floating AI Bar */}
-        {viewMode !== 'preview' && (
+        {(viewMode === 'editor' || viewMode === 'split') && (
           <FloatingAIBar
             selectedText={selectedText}
             coords={selectionCoords}

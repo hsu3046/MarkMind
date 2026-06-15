@@ -1,0 +1,200 @@
+/**
+ * Lean React Flow mindmap canvas.
+ *
+ * A slimmed rewrite of MindBusiness's 1000-line canvas: keeps the React Flow
+ * setup, the custom 'mindmap' node, bezier edges, and inline label editing —
+ * but drops zustand / framer-motion / sonner / hugeicons / IndexedDB images /
+ * AI-expand. Editing bubbles to the parent (MindmapView) instead of a store.
+ *
+ * Nodes are NOT draggable (MVP): markdown is the source of truth and can't store
+ * x/y, so layout is always recomputed by d3 (see ../lib/d3-layout.ts).
+ */
+
+import { memo, useEffect, useRef, useCallback } from 'react';
+import {
+    ReactFlow,
+    ReactFlowProvider,
+    Background,
+    Controls,
+    Handle,
+    Position,
+    BezierEdge,
+    type Node,
+    type Edge,
+    type NodeProps,
+} from '@xyflow/react';
+import { Plus, Pencil, Trash2, FileSymlink } from 'lucide-react';
+import type { MindmapNode } from '../types/mindmap';
+import '@xyflow/react/dist/style.css';
+import './MindmapCanvas.css';
+
+/** Data carried on each React Flow node (produced by d3-layout + augmented by MindmapView). */
+export interface MindmapNodeData {
+    label: string;
+    node: MindmapNode;
+    level: number;
+    side: 'left' | 'right' | 'center';
+    colorIndex: number;
+    hasChildren: boolean;
+    childrenCount: number;
+    // injected by MindmapView
+    isEditing?: boolean;
+    hasLinks?: boolean;
+    linkCount?: number;
+    /** When true the drill-in affordance navigates; otherwise it's a passive indicator (M1). */
+    canDrill?: boolean;
+    onStartEdit?: () => void;
+    onUpdateLabel?: (value: string) => void;
+    onCancelEdit?: () => void;
+    onAddChild?: () => void;
+    onDelete?: () => void;
+    onOpenLink?: () => void;
+    [key: string]: unknown;
+}
+
+const PALETTE = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6'];
+
+const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodeProps) {
+    const d = data as MindmapNodeData;
+    const isRoot = d.level === 0;
+    const accent = isRoot ? 'var(--accent)' : PALETTE[d.colorIndex % PALETTE.length];
+
+    const editableRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!d.isEditing) return;
+        const el = editableRef.current;
+        if (!el) return;
+        if (el.textContent !== d.label) el.textContent = d.label;
+        const t = setTimeout(() => {
+            el.focus({ preventScroll: true });
+            const sel = window.getSelection();
+            if (!sel) return;
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }, 50);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [d.isEditing]);
+
+    const commit = useCallback((value: string) => {
+        const v = value.trim();
+        if (v && v !== d.label) d.onUpdateLabel?.(v);
+        else d.onCancelEdit?.();
+    }, [d]);
+
+    return (
+        <div className={`mm-node${isRoot ? ' mm-root' : ''}`} style={{ borderColor: accent }}>
+            <Handle
+                id="left"
+                type={isRoot ? 'source' : d.side === 'left' ? 'source' : 'target'}
+                position={Position.Left}
+                className="mm-handle"
+            />
+
+            {d.isEditing ? (
+                <div
+                    role="textbox"
+                    contentEditable
+                    suppressContentEditableWarning
+                    ref={editableRef}
+                    className="mm-edit nodrag"
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            commit(e.currentTarget.textContent || '');
+                        } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            d.onCancelEdit?.();
+                        }
+                    }}
+                    onBlur={(e) => commit(e.currentTarget.textContent || '')}
+                />
+            ) : (
+                <span className="mm-label">{d.label || '(빈 노드)'}</span>
+            )}
+
+            {d.hasLinks && !d.isEditing && (
+                d.canDrill ? (
+                    <button
+                        className="mm-drill"
+                        title={`연결된 문서 ${d.linkCount ?? 1}개 열기`}
+                        onClick={(e) => { e.stopPropagation(); d.onOpenLink?.(); }}
+                    >
+                        <FileSymlink size={12} />
+                    </button>
+                ) : (
+                    <span className="mm-drill mm-drill-static" title={`연결된 문서 ${d.linkCount ?? 1}개`}>
+                        <FileSymlink size={12} />
+                    </span>
+                )
+            )}
+
+            <Handle
+                id="right"
+                type={isRoot ? 'source' : d.side === 'left' ? 'target' : 'source'}
+                position={Position.Right}
+                className="mm-handle"
+            />
+
+            {/* hover toolbar */}
+            {!d.isEditing && (
+                <div className="mm-toolbar nodrag" onClick={(e) => e.stopPropagation()}>
+                    <button title="이름 편집" onClick={(e) => { e.stopPropagation(); d.onStartEdit?.(); }}>
+                        <Pencil size={12} />
+                    </button>
+                    <button title="자식 추가" onClick={(e) => { e.stopPropagation(); d.onAddChild?.(); }}>
+                        <Plus size={12} />
+                    </button>
+                    {!isRoot && (
+                        <button title="삭제" onClick={(e) => { e.stopPropagation(); d.onDelete?.(); }}>
+                            <Trash2 size={12} />
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+});
+
+const nodeTypes = { mindmap: MindmapNodeComponent };
+const edgeTypes = { bezier: BezierEdge };
+
+interface MindmapCanvasProps {
+    nodes: Node[];
+    edges: Edge[];
+    /** Re-fit the viewport when this key changes (e.g. document switch). */
+    fitKey?: string;
+}
+
+function MindmapCanvasInner({ nodes, edges, fitKey }: MindmapCanvasProps) {
+    return (
+        <ReactFlow
+            key={fitKey}
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable
+            fitView
+            fitViewOptions={{ padding: 0.2, maxZoom: 1.2 }}
+            minZoom={0.1}
+            maxZoom={2.5}
+            proOptions={{ hideAttribution: true }}
+        >
+            <Background gap={20} size={1} />
+            <Controls showInteractive={false} />
+        </ReactFlow>
+    );
+}
+
+export function MindmapCanvas(props: MindmapCanvasProps) {
+    return (
+        <ReactFlowProvider>
+            <MindmapCanvasInner {...props} />
+        </ReactFlowProvider>
+    );
+}
