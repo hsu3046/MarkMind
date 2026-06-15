@@ -1,18 +1,19 @@
 /**
  * Bi-directional mindmap layout (left/right) using d3-flextree.
  *
- * Why flextree over plain d3.tree (Reingold–Tilford): the tidy-tree algorithm
- * assumes uniform node sizes, so with many variably-sized cards you get wasted
- * gaps or overlaps. d3-flextree generalizes Reingold–Tilford to **variable node
- * bounding boxes**, packing each subtree by its actual extent → compact, never
- * overlapping, even with hundreds of nodes. (Klortho/d3-flextree)
+ * Overlap-proof "fixed MAX slot" strategy: every node is laid out in a uniform
+ * MAX_W × MAX_H box, and the card's content is clamped to that box in CSS
+ * (label 2 lines, description 3 lines, max-width). Because no card can exceed
+ * its slot, columns (spaced by MAX_W + gap) and rows (spaced by MAX_H + gap)
+ * can never collide — regardless of how the browser actually wraps the text.
  *
- * On top of that we balance the L1 children across the two sides by **subtree
- * leaf weight** (not raw count), so a few heavy branches don't pile onto one
- * side and leave the other empty.
+ * flextree gives node.x (breadth → vertical) and node.y (depth → horizontal,
+ * cumulative: child.y = parent.y + parent.depthSize). A light per-node size
+ * estimate is used ONLY to place the card nicely inside its fixed slot
+ * (left-align on the left side, vertical-center) — never for spacing.
  *
- * Axis mapping: flextree lays a tree top→down (x = breadth/sibling, y = depth).
- * We rotate it to a horizontal mindmap — depth → horizontal, breadth → vertical.
+ * L1 children are split across the two sides by subtree leaf weight so heavy
+ * branches don't pile onto one side.
  */
 
 import { flextree, type FlextreeNode } from 'd3-flextree';
@@ -20,133 +21,80 @@ import { MindmapNode } from '../types/mindmap';
 import { Node, Edge } from '@xyflow/react';
 
 // ─── Layout constants ───
-const HORIZONTAL_GAP = 60; // depth-axis gap between a node and its children
-const VERTICAL_GAP = 26;   // breadth-axis gap between sibling cards
-const LINK_ICON_SPACE = 24; // inline drill-in icon when the node has links
+const MAX_W = 280;          // fixed slot width (cards clamped to this in CSS)
+const MAX_H = 124;          // fixed slot height (cards clamped to this in CSS)
+const HORIZONTAL_GAP = 56;  // gap between depth columns
+const VERTICAL_GAP = 26;    // gap between sibling rows
 const CENTER_X = 0;
 const CENTER_Y = 0;
 
-// padding here = total horizontal padding in CSS (.mm-node padding-left + padding-right,
-// the right side carries extra room for the absolute hover jump icon).
-const NODE_WIDTH_CONFIG = {
-    root: { min: 200, max: 340, fontSize: 16, padding: 48, lineH: 22, padV: 24 },
-    child: { min: 120, max: 300, fontSize: 14, padding: 44, lineH: 19, padV: 20 },
-};
+const SLOT_W = MAX_W + HORIZONTAL_GAP;
+const SLOT_H = MAX_H + VERTICAL_GAP;
 
-/** Actual rendered size measured by React Flow, keyed by node id. Overrides the
- *  estimate so flextree spaces nodes by their real height (no overlap). */
-export type SizeOverride = Map<string, { width: number; height: number }>;
+const FONT = { root: 16, child: 14 };
+const LINE_H = { root: 22, child: 19 };
+const DESC_LINE_H = 16;
+const PAD_H = 44; // total horizontal padding (matches .mm-node)
+const PAD_V = 18; // total vertical padding
+const MIN_W = 120;
 
-// ─── Size cache (invalidates on label/description change) ───
-interface Measure {
-    label: string;
-    desc: string;   // trimmed description (height depends on it)
-    width: number;  // clamped card width
-    height: number; // estimated card height (accounts for wrapping)
-}
-const measureCache = new Map<string, Measure>();
-
-/** Natural (unclamped) text width using CJK=1em, ASCII≈0.55em weights. */
-function naturalTextWidth(label: string, fontSize: number, padding: number): number {
+/** Char-weighted text width (CJK ≈ 1em, ASCII ≈ 0.55em). */
+function textWidth(label: string, fontSize: number): number {
     let total = 0;
     for (const ch of label) {
         const code = ch.charCodeAt(0);
-        if ((code >= 0xac00 && code <= 0xd7af) || (code >= 0x4e00 && code <= 0x9fff)) {
-            total += fontSize; // CJK ~1em
-        } else {
-            total += fontSize * 0.55; // ASCII/Latin
-        }
+        total += (code >= 0xac00 && code <= 0xd7af) || (code >= 0x4e00 && code <= 0x9fff)
+            ? fontSize
+            : fontSize * 0.55;
     }
-    return total + padding;
+    return total;
 }
 
-function measureNode(node: MindmapNode, isRoot: boolean): Measure {
-    const descKey = node.description?.trim() ?? '';
-    const cached = measureCache.get(node.id);
-    if (cached && cached.label === node.label && cached.desc === descKey) return cached;
-
-    const cfg = isRoot ? NODE_WIDTH_CONFIG.root : NODE_WIDTH_CONFIG.child;
-
-    // image nodes: honour persisted display size
+/** Estimate the rendered card size, clamped to the slot. Used for in-slot
+ *  placement only (not spacing), so small errors never cause overlap. */
+function estimateCard(node: MindmapNode, isRoot: boolean): { w: number; h: number } {
     if (node.kind === 'image' && node.image_width) {
-        const m: Measure = {
-            label: node.label,
-            desc: descKey,
-            width: Math.min(Math.max(node.image_width + 32, 120), 520),
-            height: Math.min(Math.max((node.image_height ?? 150) + 24, 80), 560),
+        return {
+            w: Math.min(Math.max(node.image_width + 32, MIN_W), MAX_W),
+            h: Math.min(Math.max((node.image_height ?? 150) + 24, 60), MAX_H),
         };
-        measureCache.set(node.id, m);
-        return m;
     }
-
-    // Reserve horizontal room for padding (+ inline drill icon when linked); text
-    // wraps inside what's left, so estimate line count on the REAL text area.
-    const reserved = cfg.padding + ((node.links?.length ?? 0) > 0 ? LINK_ICON_SPACE : 0);
-    const textW = naturalTextWidth(node.label || ' ', cfg.fontSize, 0);
-    const width = Math.min(Math.max(textW + reserved, cfg.min), cfg.max);
-    const textArea = Math.max(40, width - reserved);
-    const lines = Math.max(1, Math.ceil(textW / textArea));
-    let height = lines * cfg.lineH + cfg.padV;
-
-    // description preview (shown under the label, CSS-clamped to 3 lines) —
-    // reserve its space so flextree doesn't overlap siblings.
+    const font = isRoot ? FONT.root : FONT.child;
+    const lineH = isRoot ? LINE_H.root : LINE_H.child;
+    const tw = textWidth(node.label || ' ', font);
+    const w = Math.min(Math.max(tw + PAD_H, MIN_W), MAX_W);
+    const textArea = Math.max(40, w - PAD_H);
+    const labelLines = Math.min(2, Math.max(1, Math.ceil(tw / textArea)));
+    let h = labelLines * lineH + PAD_V;
     const desc = node.description?.trim();
     if (desc) {
-        const descFont = cfg.fontSize - 2;
-        const descW = naturalTextWidth(desc.replace(/\s+/g, ' '), descFont, 0);
-        const descLines = Math.min(3, Math.max(1, Math.ceil(descW / textArea)));
-        height += descLines * (descFont + 5) + 4;
+        const dw = textWidth(desc.replace(/\s+/g, ' '), font - 3);
+        const descLines = Math.min(3, Math.max(1, Math.ceil(dw / textArea)));
+        h += descLines * DESC_LINE_H + 4;
     }
-    height += 6; // safety buffer for measurement error
-
-    const m: Measure = { label: node.label, desc: descKey, width, height };
-    measureCache.set(node.id, m);
-    return m;
+    return { w, h: Math.min(h, MAX_H) };
 }
-
-/** Cached clamped node width (kept for backward-compatible callers). */
-export function getCachedWidth(id: string, label: string, isRoot = false): number {
-    const cached = measureCache.get(id);
-    if (cached && cached.label === label) return cached.width;
-    return measureNode({ id, label, type: '', children: [] }, isRoot).width;
-}
-
-export function clearWidthCache(): void {
-    measureCache.clear();
-}
-
-export const estimateNodeWidth = (label: string, isRoot: boolean): number =>
-    measureNode({ id: `__tmp__:${label}`, label, type: '', children: [] }, isRoot).width;
 
 export interface LayoutResult {
     nodes: Node[];
     edges: Edge[];
 }
 
-// ─── flextree data shape ───
+// ─── flextree data shape (uniform slot size) ───
 interface FData {
     node: MindmapNode;
-    /** [breadthExtent, depthExtent] = [cardHeight+gap, cardWidth+gap]. */
+    /** [breadth, depth] — UNIFORM slot so spacing can't overlap. */
     size: [number, number];
     colorIndex: number;
     children: FData[];
 }
 
-/** Real measured size if available, else the estimate. */
-function sizeOf(node: MindmapNode, isRoot: boolean, override?: SizeOverride): { width: number; height: number } {
-    const o = override?.get(node.id);
-    if (o && o.width > 0 && o.height > 0) return { width: o.width, height: o.height };
-    const m = measureNode(node, isRoot);
-    return { width: m.width, height: m.height };
-}
-
-function toFData(node: MindmapNode, isRoot: boolean, colorIndex: number, override?: SizeOverride): FData {
-    const s = sizeOf(node, isRoot, override);
+function toFData(node: MindmapNode, colorIndex: number): FData {
     return {
         node,
-        size: [s.height + VERTICAL_GAP, s.width + HORIZONTAL_GAP],
+        size: [SLOT_H, SLOT_W],
         colorIndex,
-        children: (node.children ?? []).map((c) => toFData(c, false, colorIndex, override)),
+        children: (node.children ?? []).map((c) => toFData(c, colorIndex)),
     };
 }
 
@@ -155,7 +103,7 @@ function leafCount(node: MindmapNode): number {
     return node.children.reduce((sum, c) => sum + leafCount(c), 0);
 }
 
-/** Split L1 children into right/left, balancing by subtree leaf weight (order preserved). */
+/** Split L1 children into right/left, balancing by subtree leaf weight. */
 function balanceSides(children: MindmapNode[]): { right: MindmapNode[]; left: MindmapNode[] } {
     if (children.length <= 1) return { right: children, left: [] };
     const weights = children.map(leafCount);
@@ -180,17 +128,16 @@ function layoutSide(
     side: 'left' | 'right',
     onExpand: (node: MindmapNode) => void,
     out: Node[],
-    override?: SizeOverride,
 ): void {
     if (sideChildren.length === 0) return;
 
-    const rootSize = sizeOf(rootNode, true, override);
+    const rootW = estimateCard(rootNode, true).w;
     const virtualRoot: FData = {
         node: rootNode,
-        // tighten the gap between the center root and L1 (half root width + gap)
-        size: [rootSize.height + VERTICAL_GAP, rootSize.width / 2 + HORIZONTAL_GAP],
+        // depth: half the root + gap so L1 hugs the centre root
+        size: [SLOT_H, rootW / 2 + HORIZONTAL_GAP],
         colorIndex: -1,
-        children: sideChildren.map((c) => toFData(c, false, colorOf(c), override)),
+        children: sideChildren.map((c) => toFData(c, colorOf(c))),
     };
 
     const layout = flextree<FData>({
@@ -202,11 +149,10 @@ function layoutSide(
 
     tree.each((n: FlextreeNode<FData>) => {
         if (n.data.colorIndex === -1) return; // skip virtual root
-        const s = sizeOf(n.data.node, false, override);
-        const depth = n.y; // horizontal offset from center
-        const breadth = n.x; // vertical offset (centered)
-        const posX = side === 'right' ? CENTER_X + depth : CENTER_X - depth - s.width;
-        const posY = CENTER_Y + breadth - s.height / 2;
+        const card = estimateCard(n.data.node, false);
+        // node.y = left edge of this node's depth slot; node.x = slot centre (breadth)
+        const posX = side === 'right' ? CENTER_X + n.y : CENTER_X - n.y - card.w;
+        const posY = CENTER_Y + n.x - card.h / 2;
         out.push(createReactFlowNode(n.data.node, posX, posY, n.depth, side, n.data.colorIndex, onExpand));
     });
 }
@@ -214,15 +160,13 @@ function layoutSide(
 export function calculateD3Layout(
     rootNode: MindmapNode,
     onExpand: (node: MindmapNode) => void,
-    override?: SizeOverride,
 ): LayoutResult {
     const nodes: Node[] = [];
     const edges: Edge[] = [];
 
-    const rootSize = sizeOf(rootNode, true, override);
-    // center root (React Flow position = top-left → offset by half its box)
+    const rootCard = estimateCard(rootNode, true);
     nodes.push(
-        createReactFlowNode(rootNode, CENTER_X - rootSize.width / 2, CENTER_Y - rootSize.height / 2, 0, 'center', 0, onExpand),
+        createReactFlowNode(rootNode, CENTER_X - rootCard.w / 2, CENTER_Y - rootCard.h / 2, 0, 'center', 0, onExpand),
     );
 
     if (!rootNode.children || rootNode.children.length === 0) {
@@ -232,10 +176,9 @@ export function calculateD3Layout(
     const { right, left } = balanceSides(rootNode.children);
     const colorOf = (child: MindmapNode) => rootNode.children.indexOf(child);
 
-    layoutSide(rootNode, right, colorOf, 'right', onExpand, nodes, override);
-    layoutSide(rootNode, left, colorOf, 'left', onExpand, nodes, override);
+    layoutSide(rootNode, right, colorOf, 'right', onExpand, nodes);
+    layoutSide(rootNode, left, colorOf, 'left', onExpand, nodes);
 
-    // edges (independent of geometry)
     const addChildEdges = (parent: MindmapNode, side: 'left' | 'right') => {
         for (const child of parent.children ?? []) {
             edges.push(createEdge(parent.id, child.id, side));

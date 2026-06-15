@@ -19,8 +19,6 @@ import {
     Handle,
     Position,
     BezierEdge,
-    useReactFlow,
-    useNodesInitialized,
     type Node,
     type Edge,
     type NodeProps,
@@ -206,28 +204,9 @@ interface MindmapCanvasProps {
     edges: Edge[];
     /** Re-fit the viewport when this key changes (e.g. document switch). */
     fitKey?: string;
-    /** Report real measured node sizes so the parent can re-layout (no overlap). */
-    onNodesMeasured?: (sizes: Map<string, { width: number; height: number }>) => void;
 }
 
-function MindmapCanvasInner({ nodes, edges, fitKey, onNodesMeasured }: MindmapCanvasProps) {
-    const { getNodes } = useReactFlow();
-    const initialized = useNodesInitialized();
-
-    // Once React Flow has measured the DOM nodes, report real sizes upward so the
-    // layout can be recomputed with actual heights — eliminating overlap from the
-    // pre-render size estimate. The parent diffs sizes, so this settles in one pass.
-    useEffect(() => {
-        if (!initialized || !onNodesMeasured) return;
-        const sizes = new Map<string, { width: number; height: number }>();
-        for (const n of getNodes()) {
-            const w = n.measured?.width;
-            const h = n.measured?.height;
-            if (w && h) sizes.set(n.id, { width: w, height: h });
-        }
-        if (sizes.size > 0) onNodesMeasured(sizes);
-    }, [initialized, nodes, onNodesMeasured, getNodes]);
-
+function MindmapCanvasInner({ nodes, edges, fitKey }: MindmapCanvasProps) {
     return (
         <ReactFlow
             key={fitKey}
