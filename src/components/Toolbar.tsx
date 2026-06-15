@@ -334,14 +334,14 @@ export function Toolbar({
                     onClick={() => onViewModeChange('mindmap')}
                     title="Mindmap (⌘4)"
                 >
-                    <Network size={16} strokeWidth={1.5} />
+                    <Share2 size={16} strokeWidth={1.5} />
                 </button>
                 <button
                     className={`toolbar-btn${viewMode === 'graph' ? ' active' : ''}`}
                     onClick={() => onViewModeChange('graph')}
                     title="Vault Graph (⌘5)"
                 >
-                    <Share2 size={16} strokeWidth={1.5} />
+                    <Network size={16} strokeWidth={1.5} />
                 </button>
 
                 <div className="toolbar-divider" />
