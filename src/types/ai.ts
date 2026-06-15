@@ -1,8 +1,9 @@
 /** AI 모드 선택
- *  - grammar/translate/improve: 현재 문서를 변형 → InlineDiff
+ *  - grammar/translate/improve/structurize: 현재 문서를 변형 → InlineDiff
+ *  - structurize: 산문을 #/##/### + 불릿 계층 아웃라인으로 재구성(마인드맵용)
  *  - meeting-notes: 현재 문서를 transcript 로 보고 회의록 .md 새 파일 생성 → ResultCard
  */
-export type AIMode = 'grammar' | 'translate' | 'improve' | 'meeting-notes';
+export type AIMode = 'grammar' | 'translate' | 'improve' | 'structurize' | 'meeting-notes';
 
 /** 번역 대상 언어 */
 export type TranslateLanguage = 'ko' | 'en' | 'ja';
@@ -65,6 +66,7 @@ export function getModelForMode(mode: AIMode, hasPrompt: boolean, improveQuality
     if (mode === 'improve') {
         return improveQuality === 'speed' ? AI_MODELS.flash : AI_MODELS.pro;
     }
+    if (mode === 'structurize') return AI_MODELS.flash; // 구조 재구성 — 속도/품질 균형
     if (hasPrompt) return AI_MODELS.flash;
     return AI_MODELS.lite;
 }

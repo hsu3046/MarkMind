@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build": "tsc && vite build",
     "build:web": "tsc && vite build",
     "preview": "vite preview",
@@ -35,6 +37,10 @@
     "@tiptap/react": "^3.23.6",
     "@tiptap/starter-kit": "^3.23.6",
     "@uiw/react-codemirror": "^4.25.7",
+    "@xyflow/react": "^12.11.0",
+    "d3-flextree": "^2.1.2",
+    "d3-force": "^3.0.0",
+    "d3-hierarchy": "^3.1.2",
     "highlight.js": "^11.11.1",
     "lucide-react": "^0.576.0",
     "react": "^19.1.0",
@@ -47,10 +53,13 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@types/d3-force": "^3.0.10",
+    "@types/d3-hierarchy": "^3.1.7",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^2.1.9"
   }
 }

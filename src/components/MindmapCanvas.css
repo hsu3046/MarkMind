@@ -1,0 +1,209 @@
+/* Mindmap canvas — themed via MarkMind CSS variables (light/dark aware). */
+
+.mm-node {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    /* MAX box — content clamped to this so the uniform layout slots never overlap */
+    max-width: 280px;
+    max-height: 124px;
+    box-sizing: border-box;
+    /* extra right padding leaves room for the absolute hover jump icon */
+    padding: 8px 30px 8px 14px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1.5px solid var(--border-primary);
+    border-radius: 0;
+    box-shadow: var(--shadow-sm);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm, 13px);
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.mm-node.mm-root {
+    font-size: var(--text-base, 15px);
+    background: var(--bg-secondary);
+    border-width: 2px;
+    padding: 10px 30px 10px 16px;
+}
+
+/* left accent stripe — clean rectangle (::before, no border miter), level-shaded */
+.mm-node::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 6px;
+    background: var(--mm-stripe, var(--accent));
+}
+
+.mm-node.mm-root::before {
+    width: 7px;
+}
+
+.mm-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.mm-label {
+    max-width: 232px;
+    white-space: normal;
+    word-break: break-word;
+    /* clamp to 2 lines so the card never exceeds its fixed MAX_H slot */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* description preview under the label — clamped to 3 lines, full text on hover */
+.mm-desc {
+    max-width: 232px;
+    font-size: var(--text-xs, 11px);
+    font-weight: 400;
+    color: var(--text-tertiary);
+    line-height: 1.3;
+    white-space: normal;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.mm-edit {
+    display: inline-block;
+    min-width: 100px;
+    max-width: 250px;
+    max-height: 96px;
+    overflow-y: auto;
+    padding: 2px 4px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm, 4px);
+    outline: none;
+    font: inherit;
+    white-space: pre-wrap;
+    word-break: break-word;
+    text-align: left;
+}
+
+/* hidden connection handles */
+.mm-handle.react-flow__handle {
+    opacity: 0;
+    width: 6px;
+    height: 6px;
+    min-width: 0;
+    border: none;
+    background: transparent;
+}
+
+/* hover toolbar above the card */
+.mm-toolbar {
+    position: absolute;
+    left: 50%;
+    top: -34px;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md, 8px);
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition-fast, 0.12s) ease;
+    z-index: 20;
+}
+
+.mm-node:hover .mm-toolbar {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.mm-toolbar button,
+.mm-drill,
+.mm-jump {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    transition: background var(--transition-fast, 0.12s) ease, color var(--transition-fast, 0.12s) ease;
+}
+
+.mm-toolbar button:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+/* drill-in affordance for nodes that link to other docs (Obsidian-style) */
+.mm-drill {
+    width: 20px;
+    height: 20px;
+    color: var(--accent);
+    flex-shrink: 0;
+}
+
+.mm-drill:hover {
+    background: var(--accent-subtle);
+}
+
+/* jump-to-section — absolute top-right corner (equal top/right margin), shown on
+   node hover only, colored with the node's branch hue (set inline = border color) */
+.mm-jump {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    width: 22px;
+    height: 22px;
+    opacity: 0;
+    /* color comes from inline style (= node border colour) */
+    transition: opacity var(--transition-fast, 0.12s) ease, background var(--transition-fast, 0.12s) ease;
+}
+
+.mm-node:hover .mm-jump {
+    opacity: 1;
+}
+
+.mm-jump:hover {
+    background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+/* M1: passive link indicator (no navigation yet — M2 wires drill-in) */
+.mm-drill-static {
+    cursor: default;
+    opacity: 0.7;
+}
+
+.mm-drill-static:hover {
+    background: transparent;
+}
+
+/* connecting edges use React Flow's default stroke/width */
+
+/* React Flow surface adopts the editor background */
+.mm-flow,
+.react-flow.mm-flow {
+    background: var(--bg-secondary);
+}
+
+.react-flow__controls {
+    box-shadow: var(--shadow-sm);
+}

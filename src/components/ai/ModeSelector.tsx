@@ -2,7 +2,7 @@
  * AI 에이전트 모드 라디오 그룹 — AIPanel 에서 분리.
  */
 
-import { SpellCheck, Languages, Wand2, FileText } from 'lucide-react';
+import { SpellCheck, Languages, Wand2, FileText, ListTree } from 'lucide-react';
 import { AIMode } from '../../types/ai';
 
 interface ModeSelectorProps {
@@ -24,6 +24,10 @@ export function ModeSelector({ mode, onChange }: ModeSelectorProps) {
             <label className={`ai-mode-radio${mode === 'improve' ? ' active' : ''}`}>
                 <input type="radio" name="ai-mode" checked={mode === 'improve'} onChange={() => onChange('improve')} />
                 <Wand2 size={13} /> 문서 개선
+            </label>
+            <label className={`ai-mode-radio${mode === 'structurize' ? ' active' : ''}`}>
+                <input type="radio" name="ai-mode" checked={mode === 'structurize'} onChange={() => onChange('structurize')} />
+                <ListTree size={13} /> 구조화
             </label>
             <label className={`ai-mode-radio${mode === 'meeting-notes' ? ' active' : ''}`}>
                 <input type="radio" name="ai-mode" checked={mode === 'meeting-notes'} onChange={() => onChange('meeting-notes')} />

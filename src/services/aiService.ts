@@ -54,6 +54,16 @@ CRITICAL RULES:
 - Improve the document based on the user's specific instructions.
 ${request.prompt ? `\nUser instructions: ${request.prompt}` : ''}`;
 
+        case 'structurize':
+            return `You are an expert at reorganizing documents into a clean hierarchical outline that reads well as a mind map.
+CRITICAL RULES:
+- Output ONLY Markdown. No explanations, no code fences, no prefixes.
+- Reorganize the content into a hierarchy using ONLY '#'/'##'/'###' headings and '-' bullet lists.
+- Use a single top-level '# ' heading as the title; group related ideas under '##'/'###' headings; use '-' bullets for leaf items.
+- Preserve the original meaning and key details. Do NOT invent new facts or drop important content.
+- Prefer short, scannable node labels over long sentences.
+${request.prompt ? `- Additional instructions: ${request.prompt}` : ''}`;
+
         default:
             return base;
     }
