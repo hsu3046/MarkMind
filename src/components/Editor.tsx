@@ -30,6 +30,8 @@ interface EditorProps {
     onChange: (value: string) => void;
     theme: 'light' | 'dark';
     onSelectionChange?: (text: string, coords: { top: number; left: number } | null) => void;
+    /** 클립보드 이미지 붙여넣기 시 — 인라인 OCR 처리(#3). */
+    onImagePaste?: (file: File) => void;
 }
 
 export interface EditorHandle {
@@ -130,7 +132,7 @@ const darkHighlight = HighlightStyle.define([
 ]);
 
 export const Editor = forwardRef<EditorHandle, EditorProps>(
-    function Editor({ content, onChange, theme, onSelectionChange }, ref) {
+    function Editor({ content, onChange, theme, onSelectionChange, onImagePaste }, ref) {
         const cmRef = useRef<ReactCodeMirrorRef>(null);
 
         useImperativeHandle(ref, () => ({
@@ -219,8 +221,33 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                 );
             }
 
+            // 클립보드 이미지 붙여넣기 → 인라인 OCR (#3). 이미지 item 이 있으면 기본
+            // 붙여넣기를 막고 콜백으로 넘긴다(텍스트 붙여넣기는 그대로 통과).
+            if (onImagePaste) {
+                exts.push(
+                    EditorView.domEventHandlers({
+                        paste: (event) => {
+                            const items = event.clipboardData?.items;
+                            if (!items) return false;
+                            for (let i = 0; i < items.length; i++) {
+                                const it = items[i];
+                                if (it.type.startsWith('image/')) {
+                                    const file = it.getAsFile();
+                                    if (file) {
+                                        event.preventDefault();
+                                        onImagePaste(file);
+                                        return true;
+                                    }
+                                }
+                            }
+                            return false;
+                        },
+                    }),
+                );
+            }
+
             return exts;
-        }, [theme, onSelectionChange]);
+        }, [theme, onSelectionChange, onImagePaste]);
 
         return (
             <div className="editor-wrapper">

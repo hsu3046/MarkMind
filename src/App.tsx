@@ -563,6 +563,33 @@ function App() {
     setSelectionCoords(coords);
   }, []);
 
+  // 클립보드 이미지 붙여넣기 → 임시 파일 저장 후 인라인 OCR (#3).
+  // 에디터 onPaste 가 image item 을 넘기면 $TEMP 에 써서 기존 run_ocr_inline 을 재사용한다.
+  const handleImagePaste = useCallback(async (file: File) => {
+    try {
+      const [{ tempDir, join }, { writeFile, remove }] = await Promise.all([
+        import('@tauri-apps/api/path'),
+        import('@tauri-apps/plugin-fs'),
+      ]);
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace('svg+xml', 'svg');
+      const path = await join(await tempDir(), `markmind-ocr-paste-${Date.now()}.${ext}`);
+      await writeFile(path, buf);
+      try {
+        const text = await converter.runOcrInline(path);
+        if (text && editorRef.current) {
+          editorRef.current.insertAtCursor(`\n${text}\n`);
+        } else if (!text) {
+          alert('인라인 OCR 에 실패했습니다. Gemini API 키를 확인해주세요.');
+        }
+      } finally {
+        remove(path).catch(() => {});
+      }
+    } catch (err) {
+      console.error('[App] 클립보드 이미지 OCR 실패:', err);
+    }
+  }, [converter]);
+
   // MCP propose_edit 수락/거절 결과를 백엔드 tool 에 ack.
   const ackMcpProposal = useCallback((requestId: string, accepted: boolean, charCount: number | null) => {
     import('@tauri-apps/api/core')
@@ -1513,7 +1540,7 @@ function App() {
                   }}
                 />
               ) : (
-                <Editor ref={editorRef} content={content} onChange={updateContent} theme={theme} onSelectionChange={handleSelectionChange} />
+                <Editor ref={editorRef} content={content} onChange={updateContent} theme={theme} onSelectionChange={handleSelectionChange} onImagePaste={handleImagePaste} />
               )}
             </div>
           )}
