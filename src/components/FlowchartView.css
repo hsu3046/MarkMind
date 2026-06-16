@@ -87,6 +87,9 @@
     font-size: 12px;
     color: var(--text-secondary, #888888);
 }
+.flowchart-count-warn {
+    color: #ef4444;
+}
 .flowchart-gen-btn {
     margin-left: auto;
     display: inline-flex;

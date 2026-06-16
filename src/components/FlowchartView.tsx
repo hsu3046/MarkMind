@@ -31,6 +31,7 @@ import { layoutFlowchart } from '../lib/dagre-layout';
 import { parseFlowchartBlock, upsertFlowchartBlock } from '../lib/flowchartBlock';
 import { generateFlowchart } from '../services/aiService';
 import type { FlowchartNode, FlowchartEdge } from '../types/flowchart';
+import { confirmAction } from '../services/dialogService';
 import '@xyflow/react/dist/style.css';
 import './FlowchartView.css';
 
@@ -53,6 +54,11 @@ function FlowNode({ data }: NodeProps) {
 }
 
 const nodeTypes = { flow: FlowNode };
+
+// 가드레일(#46) — LLM 본격 호출 전 입력 길이 체크.
+const MIN_CHARS = 80; // 미만: 흐름도 변환 무의미 → 버튼 비활성
+const WARN_CHARS = 6000; // 이상: 핵심만 추출·단순화 경고
+const HARD_CHARS = 30000; // 이상: 시간·비용↑·부정확/실패 강경고
 
 /** FlowchartNode/Edge → React Flow Node/Edge. */
 function toReactFlow(nodes: FlowchartNode[], edges: FlowchartEdge[]): { nodes: Node[]; edges: Edge[] } {
@@ -85,6 +91,7 @@ interface FlowchartViewProps {
 
 function FlowchartViewInner({ content, fileName, onChange }: FlowchartViewProps) {
     const stem = useMemo(() => stemOf(fileName), [fileName]);
+    const charCount = content.trim().length;
     const [generating, setGenerating] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -103,6 +110,24 @@ function FlowchartViewInner({ content, fileName, onChange }: FlowchartViewProps)
     }, [content, stem]);
 
     const handleGenerate = async () => {
+        // 가드레일: LLM 본격 호출 전 길이 체크(#46)
+        if (charCount < MIN_CHARS) {
+            setError('흐름도로 만들기엔 내용이 너무 짧습니다.');
+            return;
+        }
+        if (charCount > HARD_CHARS) {
+            const ok = await confirmAction(
+                `문서가 매우 깁니다 (${charCount.toLocaleString()}자). 변환에 시간·비용이 크고 결과가 부정확하거나 실패할 수 있어요. 그래도 진행할까요?`,
+                { title: 'MarkMind', kind: 'warning' },
+            );
+            if (!ok) return;
+        } else if (charCount > WARN_CHARS) {
+            const ok = await confirmAction(
+                `문서가 깁니다 (${charCount.toLocaleString()}자). 핵심 흐름만 추출되어 일부 내용이 단순화될 수 있어요. 계속할까요?`,
+                { title: 'MarkMind', kind: 'info' },
+            );
+            if (!ok) return;
+        }
         setGenerating(true);
         setError(null);
         try {
@@ -120,8 +145,17 @@ function FlowchartViewInner({ content, fileName, onChange }: FlowchartViewProps)
             <div className="flowchart-toolbar">
                 <span className="flowchart-mode">
                     {isAi ? '🔀 AI 생성 흐름도' : '⊟ 구조 미러 (마인드맵과 동형 프리뷰)'}
+                    {' · '}
+                    <span className={charCount < MIN_CHARS ? 'flowchart-count-warn' : undefined}>
+                        {charCount.toLocaleString()}자
+                    </span>
                 </span>
-                <button className="flowchart-gen-btn" onClick={handleGenerate} disabled={generating}>
+                <button
+                    className="flowchart-gen-btn"
+                    onClick={handleGenerate}
+                    disabled={generating || charCount < MIN_CHARS}
+                    title={charCount < MIN_CHARS ? '흐름도로 만들기엔 내용이 너무 짧습니다' : undefined}
+                >
                     {generating ? <Loader2 size={14} className="spinning" /> : <Sparkles size={14} />}
                     {generating ? '생성 중…' : isAi ? 'AI 재생성' : 'AI 로 흐름도 생성'}
                 </button>
