@@ -309,7 +309,7 @@ export function AudioTab({ converter, droppedFile, onConsumeDropped, onOpenResul
 
             {batchProgress && (
                 <div className="audio-batch-progress">
-                    📦 다중 파일 진행: {batchProgress.done} / {batchProgress.total}
+                    다중 파일 진행: {batchProgress.done} / {batchProgress.total}
                 </div>
             )}
             {batchError && <div className="audio-batch-error">{batchError}</div>}
