@@ -1,0 +1,20 @@
+{
+  "manifest_version": "0.3",
+  "name": "markmind",
+  "display_name": "MarkMind",
+  "version": "0.4.4",
+  "description": "Connect Claude to your open MarkMind documents — read and edit live editor content (including unsaved changes) via the in-app MCP server.",
+  "author": {
+    "name": "KnowAI",
+    "url": "https://knowai.space"
+  },
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:8417/mcp"]
+    }
+  }
+}

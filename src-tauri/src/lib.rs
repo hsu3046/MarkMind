@@ -1,6 +1,7 @@
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod converters;
@@ -22,6 +23,11 @@ use std::sync::Arc;
 /// main 윈도우 (label="main") 도 같은 HashMap 사용 — OS 파일 연결 (RunEvent::Opened) 시
 /// PendingFiles.insert("main", path) 로 저장.
 struct PendingFiles(Mutex<HashMap<String, String>>);
+
+/// 새 윈도우 label 유일성 보장용 시퀀스. timestamp(ms) 만으론 같은 ms 에 창 2개를
+/// 만들면 label 이 겹쳐 "a webview with label `win-...` already exists" 가 났다.
+/// timestamp + seq 로 항상 유일하게 만든다.
+static WIN_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// MCP `create_document` 가 새 창에 넣을 (content, file_name) 보관.
 /// 새 창 mount 시 `take_pending_content(label)` 로 가져가 loadFromMemory.
@@ -117,11 +123,13 @@ pub(crate) fn create_content_window(
     }
 }
 
-/// (deprecated) 하위 호환 — 'main' label 로 위임.
-/// 기존 frontend 가 `get_pending_file()` 만 호출하는 경로 유지.
+/// 호출한 윈도우의 pending file 경로를 가져온다(remove). **윈도우 label 별로 분리** —
+/// 예전엔 항상 `"main"` 만 remove 해서, 새 창(win-*)이 자기 앞으로 저장된
+/// pending(store_pending(win-*, path))을 못 받고 "main"(없으면 null)을 가져가
+/// **빈 창**이 됐다. `window.label()` 로 자기 것을 가져오게 고침.
 #[tauri::command]
-fn get_pending_file(state: tauri::State<'_, PendingFiles>) -> Option<String> {
-    state.0.lock().ok().and_then(|mut m| m.remove("main"))
+fn get_pending_file(window: tauri::Window, state: tauri::State<'_, PendingFiles>) -> Option<String> {
+    state.0.lock().ok().and_then(|mut m| m.remove(window.label()))
 }
 
 /// 프론트(각 윈도우)가 자기 문서 상태를 MCP 공유 상태에 동기화.
@@ -183,7 +191,7 @@ async fn open_new_window(app: tauri::AppHandle, file_path: Option<String>) -> Re
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis();
-    let label = format!("win-{}", timestamp);
+    let label = format!("win-{}-{}", timestamp, WIN_SEQ.fetch_add(1, Ordering::Relaxed));
 
     // path 가 있으면 PendingFiles 에 저장 — URL 에는 file 쿼리 안 넣음 (길이/인코딩 회피)
     if let Some(ref path) = file_path {
@@ -217,7 +225,7 @@ fn spawn_window_for_file(app: &tauri::AppHandle, path: &str) {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis();
-    let label = format!("win-{}", timestamp);
+    let label = format!("win-{}-{}", timestamp, WIN_SEQ.fetch_add(1, Ordering::Relaxed));
 
     store_pending_file(app, &label, path);
 

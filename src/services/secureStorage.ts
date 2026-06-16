@@ -89,7 +89,7 @@ export async function initSecureStorage(): Promise<void> {
                 migrateLegacy('openai'),
             ]);
         } else {
-            // ⚠️ 웹 빌드: API 키가 평문으로 localStorage 에 저장됨.
+            // 주의: 웹 빌드 — API 키가 평문으로 localStorage 에 저장됨.
             // 프로덕션 웹 배포 전에 서버 경유 프록시 또는 OAuth 인증으로 전환 필수.
             console.warn(
                 '[secureStorage] 웹 환경에서 API 키는 localStorage 에 평문 저장됩니다. ' +

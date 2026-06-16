@@ -116,6 +116,7 @@ export function DriveBrowser({
                 const ok = await confirmAction(
                     `Drive 에 같은 이름의 파일 "${finalName}" 이 이미 있습니다.\n` +
                     `덮어쓰시겠습니까? (취소 시 같은 이름으로 새 파일이 생성됩니다)`,
+                    { title: '덮어쓰기', kind: 'warning' },
                 );
                 file = ok
                     ? await gdrive.updateFile(existing.id, saveContent)
@@ -124,6 +125,7 @@ export function DriveBrowser({
                 const proceed = await confirmAction(
                     `Drive 에 "${finalName}" 이름의 파일이 ${matching.length}개 있습니다 (서로 다른 폴더 등).\n` +
                     `어느 파일을 덮어쓸지 안전하게 특정할 수 없어 새 파일로 저장됩니다. 진행할까요?`,
+                    { title: '안내', kind: 'info' },
                 );
                 if (!proceed) {
                     setBusy(false);

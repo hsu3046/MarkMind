@@ -54,7 +54,7 @@ export function OcrTab({ converter, droppedFile, onConsumeDropped, onOpenResult 
                 await ask(
                     `파일이 ${sizeMB.toFixed(0)}MB 입니다.\n` +
                     `Gemini File API 한도(250MB) 를 초과합니다. PDF 라면 페이지를 분할해주세요.`,
-                    { title: 'MarkMind — 파일 크기 초과', kind: 'warning' },
+                    { title: '파일 크기 초과', kind: 'warning' },
                 );
                 return;
             }
@@ -62,7 +62,7 @@ export function OcrTab({ converter, droppedFile, onConsumeDropped, onOpenResult 
                 const ok = await ask(
                     `파일이 ${sizeMB.toFixed(0)}MB 입니다.\n` +
                     `2-Pass OCR (정밀 모드) 는 토큰 비용이 클 수 있습니다. 계속하시겠어요?`,
-                    { title: 'MarkMind', kind: 'info' },
+                    { title: '안내', kind: 'info' },
                 );
                 if (!ok) return;
             }

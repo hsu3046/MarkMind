@@ -1,0 +1,134 @@
+/* #46 M3 플로우차트 노드 — type 별 색/모양. min-width 는 dagre 의 SHAPE_DIMENSIONS
+   와 맞춰 레이아웃 겹침을 막는다. 정교한 다이아몬드(decision)는 ④에서. */
+.flow-node {
+    box-sizing: border-box;
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    border: 1.5px solid var(--border-primary, #cccccc);
+    border-radius: 8px;
+    background: var(--bg-secondary, #f5f5f5);
+    color: var(--text-primary, #222222);
+    font-size: 13px;
+    line-height: 1.4;
+    text-align: center;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.flow-node__label {
+    display: block;
+}
+
+/* start / end — 라이프사이클 터미네이터(pill) */
+.flow-node--start,
+.flow-node--end {
+    min-width: 120px;
+    border-radius: 30px;
+    background: #dbeafe;
+    border-color: #60a5fa;
+    color: #1e3a5f;
+}
+
+/* process — 기본 단계(사각형) */
+.flow-node--process {
+    min-width: 160px;
+}
+
+/* io — 입출력(평행사변형 힌트) */
+.flow-node--io {
+    min-width: 160px;
+    background: #dcfce7;
+    border-color: #4ade80;
+    color: #14532d;
+    transform: skewX(-12deg);
+}
+.flow-node--io .flow-node__label {
+    transform: skewX(12deg);
+}
+
+/* decision — 분기(BPMN 마름모, M3-④). clip-path 는 외곽선을 못 그리므로 border 대신
+   진한 배경 + 굵은 글씨로 구분. 좌/우 꼭짓점 = target(입력)/source(출력) 핸들 위치. */
+.flow-node--decision {
+    min-width: 200px;
+    min-height: 84px;
+    background: #fde68a;
+    border: none;
+    color: #713f12;
+    font-weight: 500;
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+    padding: 22px 44px;
+}
+
+/* merge — 합류(원형) */
+.flow-node--merge {
+    min-width: 60px;
+    border-radius: 50%;
+    background: #e9d5ff;
+    border-color: #c084fc;
+    color: #4c1d6b;
+}
+
+/* image — 후속(1차는 라벨만) */
+.flow-node--image {
+    background: #ffffff;
+}
+
+/* #46 M3-A3 — 뷰 툴바(모드 표시 + AI 생성 버튼) */
+.flowchart-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+.flowchart-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-primary, #e5e5e5);
+}
+.flowchart-mode {
+    font-size: 12px;
+    color: var(--text-secondary, #888888);
+}
+.flowchart-count-warn {
+    color: #ef4444;
+}
+.flowchart-gen-btn {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: 1px solid var(--border-primary, #cccccc);
+    border-radius: 6px;
+    background: var(--bg-secondary, #f5f5f5);
+    color: var(--text-primary, #222222);
+    cursor: pointer;
+    font-size: 13px;
+}
+.flowchart-gen-btn:hover:not(:disabled) {
+    background: var(--bg-hover, #ececec);
+}
+.flowchart-gen-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+.flowchart-error {
+    padding: 6px 12px;
+    color: #ef4444;
+    font-size: 12px;
+}
+.flowchart-canvas {
+    flex: 1;
+    min-height: 0;
+}
+.flowchart-view .spinning {
+    animation: flowchart-spin 1s linear infinite;
+}
+@keyframes flowchart-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

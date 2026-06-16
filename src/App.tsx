@@ -7,6 +7,7 @@ import { generateDiff } from './services/aiService';
 import { Preview } from './components/Preview';
 import { MindmapView } from './components/MindmapView';
 import { VaultGraphView } from './components/VaultGraphView';
+import { FlowchartView } from './components/FlowchartView';
 import { Toolbar, ViewMode } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { OutlinePanel } from './components/OutlinePanel';
@@ -402,7 +403,7 @@ function App() {
             ok = await ask(
               '현재 문서에 저장되지 않은 변경사항이 있습니다.\n' +
               '변환 결과로 교체하시겠습니까? (변경사항은 사라집니다)',
-              { title: 'MarkMind', kind: 'warning' },
+              { title: '저장 안 됨', kind: 'warning' },
             );
           } catch {
             // dialog plugin 실패 시 fallback
@@ -439,7 +440,7 @@ function App() {
   const handleOpenLinkedDocument = useCallback(async (target: string, isWiki: boolean) => {
     if (!isTauri()) return;
     if (!filePath) {
-      await confirmAction('문서를 먼저 저장하면 연결된 문서로 이동할 수 있어요.', { title: 'MarkMind', kind: 'info' });
+      await confirmAction('문서를 먼저 저장하면 연결된 문서로 이동할 수 있어요.', { title: '안내', kind: 'info' });
       return;
     }
     // persist current edits before navigating away
@@ -562,6 +563,33 @@ function App() {
     setSelectionCoords(coords);
   }, []);
 
+  // 클립보드 이미지 붙여넣기 → 임시 파일 저장 후 인라인 OCR (#3).
+  // 에디터 onPaste 가 image item 을 넘기면 $TEMP 에 써서 기존 run_ocr_inline 을 재사용한다.
+  const handleImagePaste = useCallback(async (file: File) => {
+    try {
+      const [{ tempDir, join }, { writeFile, remove }] = await Promise.all([
+        import('@tauri-apps/api/path'),
+        import('@tauri-apps/plugin-fs'),
+      ]);
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace('svg+xml', 'svg');
+      const path = await join(await tempDir(), `markmind-ocr-paste-${Date.now()}.${ext}`);
+      await writeFile(path, buf);
+      try {
+        const text = await converter.runOcrInline(path);
+        if (text && editorRef.current) {
+          editorRef.current.insertAtCursor(`\n${text}\n`);
+        } else if (!text) {
+          alert('인라인 OCR 에 실패했습니다. Gemini API 키를 확인해주세요.');
+        }
+      } finally {
+        remove(path).catch(() => {});
+      }
+    } catch (err) {
+      console.error('[App] 클립보드 이미지 OCR 실패:', err);
+    }
+  }, [converter]);
+
   // MCP propose_edit 수락/거절 결과를 백엔드 tool 에 ack.
   const ackMcpProposal = useCallback((requestId: string, accepted: boolean, charCount: number | null) => {
     import('@tauri-apps/api/core')
@@ -585,6 +613,7 @@ function App() {
     if (latestContentRef.current !== p.baseContent) {
       const ok = await confirmAction(
         '제안을 만든 이후 문서가 변경되었습니다. 그래도 제안 내용으로 전체 교체할까요? (그 사이 변경분이 사라집니다)',
+        { title: '덮어쓰기', kind: 'warning' },
       );
       if (!ok) return; // 모달 유지 — 사용자가 거절 버튼으로 명시적으로 닫게 함
     }
@@ -1058,6 +1087,7 @@ function App() {
         const ok = await confirmAction(
           '현재 문서에 저장되지 않은 변경사항이 있습니다.\n' +
             '다른 파일을 열면 변경사항이 사라집니다. 계속할까요?',
+          { title: '저장 안 됨', kind: 'warning' },
         );
         if (!ok) return;
       }
@@ -1148,6 +1178,11 @@ function App() {
           case '5':
             e.preventDefault();
             setViewMode('graph');
+            setReadingMode(false);
+            break;
+          case '6':
+            e.preventDefault();
+            setViewMode('flowchart');
             setReadingMode(false);
             break;
           case '=':
@@ -1448,6 +1483,11 @@ function App() {
                 onOpenGhost={handleOpenVaultGhost}
               />
             </div>
+          ) : viewMode === 'flowchart' ? (
+            <div className="pane" style={{ width: '100%' }}>
+              {mcpBanner}
+              <FlowchartView content={content} fileName={fileName} onChange={updateContent} />
+            </div>
           ) : (
           <>
           {viewMode !== 'preview' && (
@@ -1500,7 +1540,7 @@ function App() {
                   }}
                 />
               ) : (
-                <Editor ref={editorRef} content={content} onChange={updateContent} theme={theme} onSelectionChange={handleSelectionChange} />
+                <Editor ref={editorRef} content={content} onChange={updateContent} theme={theme} onSelectionChange={handleSelectionChange} onImagePaste={handleImagePaste} />
               )}
             </div>
           )}
@@ -1657,6 +1697,7 @@ function App() {
             const ok = await confirmAction(
               `현재 문서에 저장되지 않은 변경사항이 있습니다.\n` +
               `Drive 파일 "${file.name}" 의 내용으로 교체하시겠습니까? (변경사항은 사라집니다)`,
+              { title: '저장 안 됨', kind: 'warning' },
             );
             if (!ok) return;
           }

@@ -44,3 +44,7 @@ src-tauri/binaries/
 # Python bytecode 캐시
 __pycache__/
 
+# .mcpb 번들 산출물 — mcpb/ 소스로 `npm run pack:mcpb` 재생성, GitHub 릴리스에 첨부
+markmind.mcpb
+markmind-*.mcpb
+
