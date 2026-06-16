@@ -121,14 +121,14 @@ export function AudioTab({ converter, droppedFile, onConsumeDropped, onOpenResul
                 await ask(
                     `총 ${totalMB.toFixed(0)}MB 입니다.\n` +
                     `1GB 초과는 메모리 부족 위험이 큽니다. 파일을 줄이거나 분할하세요.`,
-                    { title: 'MarkMind — 파일 크기 경고', kind: 'warning' },
+                    { title: '파일 크기 경고', kind: 'warning' },
                 );
                 return;
             }
             if (totalMB > 500) {
                 const ok = await ask(
                     `총 ${totalMB.toFixed(0)}MB 입니다. 처리 메모리 사용량이 큽니다.\n계속하시겠어요?`,
-                    { title: 'MarkMind', kind: 'warning' },
+                    { title: '파일 크기', kind: 'warning' },
                 );
                 if (!ok) return;
             }

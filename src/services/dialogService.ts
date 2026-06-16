@@ -17,7 +17,7 @@ export async function confirmAction(
     message: string,
     options: ConfirmOptions = {},
 ): Promise<boolean> {
-    const { title = 'MarkMind', kind = 'warning' } = options;
+    const { title = '확인', kind = 'warning' } = options;
     if (isTauri()) {
         try {
             const { ask } = await import('@tauri-apps/plugin-dialog');

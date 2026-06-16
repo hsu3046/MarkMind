@@ -403,7 +403,7 @@ function App() {
             ok = await ask(
               '현재 문서에 저장되지 않은 변경사항이 있습니다.\n' +
               '변환 결과로 교체하시겠습니까? (변경사항은 사라집니다)',
-              { title: 'MarkMind', kind: 'warning' },
+              { title: '저장 안 됨', kind: 'warning' },
             );
           } catch {
             // dialog plugin 실패 시 fallback
@@ -440,7 +440,7 @@ function App() {
   const handleOpenLinkedDocument = useCallback(async (target: string, isWiki: boolean) => {
     if (!isTauri()) return;
     if (!filePath) {
-      await confirmAction('문서를 먼저 저장하면 연결된 문서로 이동할 수 있어요.', { title: 'MarkMind', kind: 'info' });
+      await confirmAction('문서를 먼저 저장하면 연결된 문서로 이동할 수 있어요.', { title: '안내', kind: 'info' });
       return;
     }
     // persist current edits before navigating away
