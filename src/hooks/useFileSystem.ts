@@ -35,6 +35,11 @@ async function tauriWriteTextFile() {
   return writeTextFile;
 }
 
+// 같은 path 가 짧은 시간(StrictMode 이중 listen·중복 open-file 이벤트)에 두 번 들어오면
+// 새 창이 2개 열리므로(중복/빈 창) 1초 디바운스로 1회만 처리. 윈도우(webview)별 모듈
+// 스코프라 창마다 독립.
+const recentOpenByPath = new Map<string, number>();
+
 export function useFileSystem(onFileOpened?: () => void) {
   const [fileState, setFileState] = useState<FileState>({
     content: '',
@@ -97,6 +102,12 @@ export function useFileSystem(onFileOpened?: () => void) {
       const { invoke } = await import('@tauri-apps/api/core');
 
       const openByPath = async (path: string) => {
+        // 디바운스 — StrictMode 이중 listen/중복 이벤트로 같은 path 가 연속 들어와도
+        // 새 창은 1개만 열리도록 1초 내 같은 path 재진입을 막는다.
+        const now = performance.now();
+        const last = recentOpenByPath.get(path);
+        if (last !== undefined && now - last < 1000) return;
+        recentOpenByPath.set(path, now);
         try {
           // If a file is already open, open in a new window (same as ⌘O behavior)
           const hasExistingFile = filePathRef.current || contentRef.current.length > 0;
