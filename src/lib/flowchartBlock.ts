@@ -32,6 +32,11 @@ export function parseFlowchartBlock(md: string): StoredFlowchart | null {
     }
 }
 
+/** markmind-flow 블록 존재 여부 (read-only 뷰의 흐름도 데이터 토글 표시 판단용). */
+export function hasFlowchartBlock(md: string): boolean {
+    return FLOW_BLOCK_RE.test(md);
+}
+
 /** 문서에 플로우차트 블록을 삽입/교체한다. position 은 제외하고 저장. */
 export function upsertFlowchartBlock(md: string, fc: StoredFlowchart): string {
     const stripped = {

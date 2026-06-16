@@ -17,6 +17,7 @@ import { SearchAndReplace } from '@sereneinserenade/tiptap-search-and-replace';
 import { Typography } from '@tiptap/extension-typography';
 import { InlineCheckbox } from '../extensions/InlineCheckbox';
 import { MarkdownTable } from '../extensions/MarkdownTable';
+import { removeFlowchartBlock, hasFlowchartBlock } from '../lib/flowchartBlock';
 import { TableTools } from './TableTools';
 import {
     Bold, Italic, Strikethrough, Code,
@@ -24,7 +25,7 @@ import {
     List, ListOrdered, ListChecks,
     Quote, Code2, Link as LinkIcon, Table as TableIcon,
     Undo2, Redo2, Minus,
-    IndentIncrease, IndentDecrease,
+    IndentIncrease, IndentDecrease, Eye, EyeOff,
 } from 'lucide-react';
 
 interface PreviewProps {
@@ -802,15 +803,23 @@ function RichEditor({
 }
 
 export function Preview({ content, fontSize = 14, onChange, banner }: PreviewProps) {
-    const { fields, body, processedBody, rawFrontmatter } = useMemo(() => {
+    const [showFlow, setShowFlow] = useState(false);
+    const { fields, body, rawFrontmatter } = useMemo(() => {
         const split = splitFrontmatter(content);
         return {
             fields: split.fields,
             body: split.body,
-            processedBody: fixEmphasis(joinBrokenTableRows(split.body)),
             rawFrontmatter: split.rawFrontmatter,
         };
     }, [content]);
+
+    // read-only 뷰 표시용 — 흐름도 데이터(markmind-flow JSON) 는 토글 off 시 숨긴다(표시만,
+    // 원본은 보존). 편집(⌘3 Rich Text) 경로는 strip 하면 저장 시 블록이 사라지므로 건드리지 않는다.
+    const hasFlow = useMemo(() => hasFlowchartBlock(body), [body]);
+    const processedBody = useMemo(
+        () => fixEmphasis(joinBrokenTableRows(showFlow ? body : removeFlowchartBlock(body))),
+        [body, showFlow],
+    );
 
     const editable = !!onChange;
 
@@ -852,6 +861,17 @@ export function Preview({ content, fontSize = 14, onChange, banner }: PreviewPro
 
     return (
         <div className="preview-wrapper">
+            {hasFlow && (
+                <button
+                    type="button"
+                    className="flow-data-toggle"
+                    onClick={() => setShowFlow((v) => !v)}
+                    title={showFlow ? '흐름도 데이터(코드블록) 숨기기' : '흐름도 데이터(코드블록) 보기'}
+                >
+                    {showFlow ? <EyeOff size={13} /> : <Eye size={13} />}
+                    {showFlow ? '흐름도 데이터 숨김' : '흐름도 데이터'}
+                </button>
+            )}
             <ReadOnlyView fields={fields} body={processedBody} fontSize={fontSize} />
         </div>
     );

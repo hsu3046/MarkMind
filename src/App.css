@@ -1547,6 +1547,25 @@ body.is-resizing .split-pane {
   padding: 32px 40px;
 }
 
+/* read-only 뷰 — 흐름도 데이터(markmind-flow 코드블록) 표시/숨김 토글 */
+.preview-wrapper > .flow-data-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  margin: 0 0 16px auto;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-secondary, #888888);
+  background: var(--bg-secondary, #f5f5f5);
+  border: 1px solid var(--border-primary, #e5e5e5);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.preview-wrapper > .flow-data-toggle:hover {
+  background: var(--bg-hover, #ececec);
+}
+
 /* Rich Text mode 는 패딩 0 — rich-toolbar 가 상단 seamless 로 main Toolbar 와 붙음.
    본문 영역만 padding 적용. */
 .preview-wrapper.preview-rich-mode {
