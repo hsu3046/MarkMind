@@ -175,6 +175,7 @@ export function SettingsView({ onDone }: SettingsViewProps) {
         } catch (e) {
             await confirmAction(
                 `내 정보 저장에 실패했습니다: ${e instanceof Error ? e.message : String(e)}`,
+                { title: '저장 실패', kind: 'error' },
             );
         } finally {
             setMemorySaving(false);
@@ -185,7 +186,7 @@ export function SettingsView({ onDone }: SettingsViewProps) {
     const handleClearKeyInput = async (provider: Provider) => {
         if (stored[provider]) {
             const label = KEY_SPECS.find((s) => s.provider === provider)?.label ?? provider;
-            const ok = await confirmAction(`${label}를 삭제하시겠습니까?`);
+            const ok = await confirmAction(`${label}를 삭제하시겠습니까?`, { title: '삭제', kind: 'warning' });
             if (!ok) return;
             await removeKey(provider);
             clearValidationStatus(provider);
@@ -201,6 +202,7 @@ export function SettingsView({ onDone }: SettingsViewProps) {
     const handleClearStoredCreds = async () => {
         const ok = await confirmAction(
             'Google Drive OAuth 설정을 모두 삭제하시겠습니까?\n저장된 연결도 함께 끊깁니다.',
+            { title: '삭제', kind: 'warning' },
         );
         if (!ok) return;
         setDriveBusy(true);
@@ -234,7 +236,7 @@ export function SettingsView({ onDone }: SettingsViewProps) {
     };
 
     const handleDriveDisconnect = async () => {
-        const ok = await confirmAction('Google Drive 연결을 해제하시겠습니까?');
+        const ok = await confirmAction('Google Drive 연결을 해제하시겠습니까?', { title: '연결 해제', kind: 'warning' });
         if (!ok) return;
         setDriveBusy(true);
         try {

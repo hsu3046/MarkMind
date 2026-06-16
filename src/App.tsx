@@ -586,6 +586,7 @@ function App() {
     if (latestContentRef.current !== p.baseContent) {
       const ok = await confirmAction(
         '제안을 만든 이후 문서가 변경되었습니다. 그래도 제안 내용으로 전체 교체할까요? (그 사이 변경분이 사라집니다)',
+        { title: '덮어쓰기', kind: 'warning' },
       );
       if (!ok) return; // 모달 유지 — 사용자가 거절 버튼으로 명시적으로 닫게 함
     }
@@ -1059,6 +1060,7 @@ function App() {
         const ok = await confirmAction(
           '현재 문서에 저장되지 않은 변경사항이 있습니다.\n' +
             '다른 파일을 열면 변경사항이 사라집니다. 계속할까요?',
+          { title: '저장 안 됨', kind: 'warning' },
         );
         if (!ok) return;
       }
@@ -1668,6 +1670,7 @@ function App() {
             const ok = await confirmAction(
               `현재 문서에 저장되지 않은 변경사항이 있습니다.\n` +
               `Drive 파일 "${file.name}" 의 내용으로 교체하시겠습니까? (변경사항은 사라집니다)`,
+              { title: '저장 안 됨', kind: 'warning' },
             );
             if (!ok) return;
           }
