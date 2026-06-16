@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
     Columns2, BookOpen,
     FilePlus, FolderOpen, Save, Download, FileDown,
-    ZoomIn, ZoomOut, List, Maximize, Clock,
+    CirclePlus, CircleMinus, BookMarked, Maximize, Clock,
     Search, ChevronRight, Sparkles, Check, X,
     Mic, ScanText, Settings,
     FileCode, FileText, AlignVerticalSpaceAround,
@@ -355,7 +355,7 @@ export function Toolbar({
 
                 {/* Outline + Search */}
                 <button className={`toolbar-btn${outlineVisible ? ' active' : ''}`} onClick={onToggleOutline} title="Outline">
-                    <List size={16} strokeWidth={1.5} />
+                    <BookMarked size={16} strokeWidth={1.5} />
                 </button>
                 <button className="toolbar-btn" onClick={onToggleSearch} title="Search (⌘F)">
                     <Search size={15} strokeWidth={1.5} />
@@ -366,13 +366,13 @@ export function Toolbar({
                 {/* Font size controls (압축 그룹 — 간격 좁힘) */}
                 <div className="toolbar-fontsize-group">
                     <button className="toolbar-btn" onClick={() => onFontSizeChange(-1)} title="Zoom Out (⌘-)" disabled={viewMode === 'editor'}>
-                        <ZoomOut size={15} strokeWidth={1.5} />
+                        <CircleMinus size={15} strokeWidth={1.5} />
                     </button>
                     <button className="toolbar-btn toolbar-font-reset" onClick={onFontSizeReset} title="Reset (⌘0)" disabled={viewMode === 'editor'}>
                         <span className="toolbar-font-size">{fontSize}</span>
                     </button>
                     <button className="toolbar-btn" onClick={() => onFontSizeChange(1)} title="Zoom In (⌘+)" disabled={viewMode === 'editor'}>
-                        <ZoomIn size={15} strokeWidth={1.5} />
+                        <CirclePlus size={15} strokeWidth={1.5} />
                     </button>
                 </div>
 

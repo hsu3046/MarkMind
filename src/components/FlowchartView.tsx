@@ -163,7 +163,7 @@ function FlowchartViewInner({ content, fileName, onChange }: FlowchartViewProps)
                     title={charCount < MIN_CHARS ? '흐름도로 만들기엔 내용이 너무 짧습니다' : undefined}
                 >
                     {generating ? <Loader2 size={14} className="spinning" /> : <Sparkles size={14} />}
-                    {generating ? '생성 중…' : isAi ? 'AI 재생성' : 'AI 로 흐름도 생성'}
+                    {generating ? '생성 중…' : isAi ? 'AI 재생성' : '플로우차트 AI 생성'}
                 </button>
             </div>
             {error && <div className="flowchart-error">{error}</div>}
