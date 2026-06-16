@@ -3367,3 +3367,26 @@ code.hljs {
   min-height: 0;
   overflow-y: auto;
 }
+
+/* #14 파일 드롭 시각 피드백 — 드래그 hover 중 전체화면 overlay.
+   OS 레벨 드롭이라 pointer-events:none 으로 클릭/드롭을 통과시킨다. */
+.file-drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+.file-drop-overlay-inner {
+  padding: 22px 38px;
+  border: 2px dashed rgba(255, 255, 255, 0.75);
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+}
