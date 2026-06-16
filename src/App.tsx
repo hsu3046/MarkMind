@@ -1457,7 +1457,7 @@ function App() {
           ) : viewMode === 'flowchart' ? (
             <div className="pane" style={{ width: '100%' }}>
               {mcpBanner}
-              <FlowchartView content={content} fileName={fileName} />
+              <FlowchartView content={content} fileName={fileName} onChange={updateContent} />
             </div>
           ) : (
           <>
