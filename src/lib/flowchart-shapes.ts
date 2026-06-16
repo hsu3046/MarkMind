@@ -13,7 +13,7 @@ export const SHAPE_DIMENSIONS: Record<
     start: { minWidth: 120, minHeight: 60, maxWidth: 240 },
     end: { minWidth: 120, minHeight: 60, maxWidth: 240 },
     process: { minWidth: 160, minHeight: 60, maxWidth: 320 },
-    decision: { minWidth: 200, minHeight: 60, maxWidth: 320 },
+    decision: { minWidth: 200, minHeight: 84, maxWidth: 320 },
     merge: { minWidth: 60, minHeight: 60, maxWidth: 160 },
     io: { minWidth: 160, minHeight: 60, maxWidth: 320 },
     // image: 캔버스 최소 footprint. 실제 크기는 image_width/height 로 결정.

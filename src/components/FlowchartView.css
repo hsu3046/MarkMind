@@ -48,12 +48,17 @@
     transform: skewX(12deg);
 }
 
-/* decision — 분기(1차 색만, 다이아몬드는 ④) */
+/* decision — 분기(BPMN 마름모, M3-④). clip-path 는 외곽선을 못 그리므로 border 대신
+   진한 배경 + 굵은 글씨로 구분. 좌/우 꼭짓점 = target(입력)/source(출력) 핸들 위치. */
 .flow-node--decision {
     min-width: 200px;
-    background: #fef9c3;
-    border-color: #facc15;
+    min-height: 84px;
+    background: #fde68a;
+    border: none;
     color: #713f12;
+    font-weight: 500;
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+    padding: 22px 44px;
 }
 
 /* merge — 합류(원형) */
