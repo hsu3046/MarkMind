@@ -53,6 +53,14 @@ pub struct EditOutcome {
 }
 
 /// MCP 서버와 Tauri 가 공유하는 상태. `Arc` 로 manage + 핸들러가 공유.
+///
+/// **다중 클라이언트 동시성**(#39 검토): 무인증 localhost 라 여러 MCP 클라이언트
+/// (Claude Desktop·Cursor·스크립트)가 같은 McpState 에 동시 접속할 수 있다. 모든
+/// 필드가 `Mutex` 라 데이터 레이스는 없고, 쓰기 요청은 `pending` 의 request_id
+/// 유일성 + per-window 취소(`cancel_window_pending`)로 격리된다 → 서버 측 안전.
+/// 남은 한계는 프론트(App)의 단일 제안 슬롯(동시 propose 시 UI 가 뒤 제안으로
+/// 덮임 — 임시 가드 적용)으로, 본격 per-request 큐/클라이언트별 세션은 인증 도입
+/// 시 검토(단일 사용자 환경에선 ROI 낮음).
 #[derive(Default)]
 pub struct McpState {
     /// window label → 문서 스냅샷
