@@ -10,6 +10,7 @@
     "build": "tsc && vite build",
     "build:web": "tsc && vite build",
     "preview": "vite preview",
+    "pack:mcpb": "npx -y @anthropic-ai/mcpb pack mcpb markmind.mcpb",
     "tauri": "tauri",
     "setup:ffmpeg": "bash src-tauri/scripts/download-ffmpeg.sh",
     "tauri:build": "npm run setup:ffmpeg && npm run tauri build",
