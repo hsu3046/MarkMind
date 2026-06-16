@@ -117,14 +117,20 @@ function FlowchartViewInner({ content, fileName, onChange }: FlowchartViewProps)
         }
         if (charCount > HARD_CHARS) {
             const ok = await confirmAction(
-                `문서가 매우 깁니다 (${charCount.toLocaleString()}자). 변환에 시간·비용이 크고 결과가 부정확하거나 실패할 수 있어요. 그래도 진행할까요?`,
-                { title: 'MarkMind', kind: 'warning' },
+                `문서가 매우 깁니다 (${charCount.toLocaleString()}자).\n\n` +
+                    'AI 변환에 드는 비용과 시간이 크게 늘고, 핵심을 제대로 추리지 못하거나 ' +
+                    '도중에 실패할 수 있어요.\n\n' +
+                    '짧은 문서로 나눠서 만드는 걸 권장합니다. 그래도 지금 진행할까요?',
+                { title: '경고', kind: 'warning' },
             );
             if (!ok) return;
         } else if (charCount > WARN_CHARS) {
             const ok = await confirmAction(
-                `문서가 깁니다 (${charCount.toLocaleString()}자). 핵심 흐름만 추출되어 일부 내용이 단순화될 수 있어요. 계속할까요?`,
-                { title: 'MarkMind', kind: 'info' },
+                `문서가 깁니다 (${charCount.toLocaleString()}자).\n\n` +
+                    'AI 가 전체에서 핵심 흐름만 추려 만들기 때문에 세부 내용은 생략·단순화될 수 있어요. ' +
+                    '또 문서가 길수록 AI 사용량(토큰 비용)도 함께 늘어납니다.\n\n' +
+                    '계속할까요?',
+                { title: '주의', kind: 'info' },
             );
             if (!ok) return;
         }
