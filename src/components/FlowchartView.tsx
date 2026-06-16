@@ -144,7 +144,7 @@ function FlowchartViewInner({ content, fileName, onChange }: FlowchartViewProps)
         <div className="flowchart-view">
             <div className="flowchart-toolbar">
                 <span className="flowchart-mode">
-                    {isAi ? '🔀 AI 생성 흐름도' : '⊟ 구조 미러 (마인드맵과 동형 프리뷰)'}
+                    {isAi ? 'AI 생성 흐름도' : '구조 미러 (마인드맵과 동형 프리뷰)'}
                     {' · '}
                     <span className={charCount < MIN_CHARS ? 'flowchart-count-warn' : undefined}>
                         {charCount.toLocaleString()}자
