@@ -247,24 +247,35 @@ function App() {
   const [selectionCoords, setSelectionCoords] = useState<{ top: number; left: number } | null>(null);
   const aiSelectionRef = useRef<{ fullContent: string; selectedText: string } | null>(null);
 
-  // MCP propose_edit — Claude 수정 제안을 diff 로 보여주고 사용자가 수락/거절.
-  const [mcpProposal, setMcpProposal] = useState<{
+  // MCP propose_edit — Claude 수정 제안을 큐에 쌓아 head 부터 순차 검토(#39).
+  // 무인증 localhost 라 여러 클라이언트(Claude Desktop + Cursor 등)가 같은 창에 동시
+  // propose 를 보낼 수 있다. 단일 슬롯이면 뒤 제안이 앞 제안을 덮어 첫 제안이 손실되므로
+  // 큐(FIFO)로 보관 — 사용자가 하나 수락/거절하면 다음 제안이 이어서 표시된다.
+  type McpQueuedProposal = {
     requestId: string;
-    chunks: DiffChunk[];
     newContent: string;
     description?: string;
-    // 제안 생성 시점의 문서 내용 — 수락 시 그 사이 변경(lost update) 감지용.
-    baseContent: string;
-  } | null>(null);
+    // 제안 도착 시점의 문서 내용 — 수락 시 그 사이 변경(lost update) 감지용.
+    arrivalContent: string;
+  };
+  const MCP_QUEUE_MAX = 50; // 안전장치 — 무한 누적 방지
+  const [mcpProposals, setMcpProposals] = useState<McpQueuedProposal[]>([]);
+  const head = mcpProposals[0] ?? null;
   // 제안 도착 시 뷰를 뺏지 않고 배너만 띄운다. '변경 보기' 누르면 오버레이로 diff 리뷰.
   // (현재 뷰 모드 무관 — 리치 텍스트로 보던 중에도 그대로 유지.)
   const [mcpReviewOpen, setMcpReviewOpen] = useState(false);
   // 리스너 클로저가 항상 최신 content 로 diff 를 만들도록 ref 로 추적(렌더마다 동기 갱신).
   const latestContentRef = useRef(content);
   latestContentRef.current = content;
-  // 리스너(deps []) 가 stale 없이 쓰도록 ref 로 최신값 추적.
-  const mcpProposalRef = useRef(mcpProposal);
-  mcpProposalRef.current = mcpProposal;
+  // head 표시 뷰 — chunks 를 현재 content 기준으로 파생한다. 앞 제안 수락으로 content 가
+  // 바뀌어도 다음 제안 diff 가 현재 기준으로 정확. 큐가 비면 계산하지 않음.
+  const mcpHeadView = useMemo(
+    () => (head ? { ...head, chunks: generateDiff(content, head.newContent) } : null),
+    [head, content],
+  );
+  // 리스너(deps []) 가 stale 없이 쓰도록 ref 로 최신 큐 추적.
+  const mcpProposalsRef = useRef(mcpProposals);
+  mcpProposalsRef.current = mcpProposals;
   // MCP 리스너가 AI diff 정리를 stale 없이 호출하도록 ref 경유.
   const clearAiDiffRef = useRef<() => void>(() => {});
   clearAiDiffRef.current = () => {
@@ -641,12 +652,12 @@ function App() {
   }, []);
   ackMcpProposalRef.current = ackMcpProposal;
 
-  // MCP propose_edit 수락 — lost update(B) 방지: 제안 생성 이후 문서가 바뀌었으면
-  // 그 변경분을 전체 교체로 덮어쓰기 전에 사용자에게 확인한다.
+  // MCP propose_edit 수락(큐 head) — lost update(B) 방지: 제안 도착 이후 문서가 바뀌었으면
+  // 그 변경분을 전체 교체로 덮어쓰기 전에 사용자에게 확인한다. 처리 후 head 를 큐에서 제거.
   const acceptMcpProposal = useCallback(async () => {
-    const p = mcpProposalRef.current;
+    const p = mcpProposalsRef.current[0];
     if (!p) return;
-    if (latestContentRef.current !== p.baseContent) {
+    if (latestContentRef.current !== p.arrivalContent) {
       const ok = await confirmAction(
         '제안을 만든 이후 문서가 변경되었습니다. 그래도 제안 내용으로 전체 교체할까요? (그 사이 변경분이 사라집니다)',
         { title: '덮어쓰기', kind: 'warning' },
@@ -655,15 +666,15 @@ function App() {
     }
     updateContent(p.newContent);
     ackMcpProposal(p.requestId, true, [...p.newContent].length);
-    setMcpProposal(null);
+    setMcpProposals((q) => q.slice(1)); // head 제거 → 다음 제안이 배너로 표시
     setMcpReviewOpen(false);
   }, [ackMcpProposal, updateContent]);
 
   const rejectMcpProposal = useCallback(() => {
-    const p = mcpProposalRef.current;
+    const p = mcpProposalsRef.current[0];
     if (!p) return;
     ackMcpProposal(p.requestId, false, null);
-    setMcpProposal(null);
+    setMcpProposals((q) => q.slice(1));
     setMcpReviewOpen(false);
   }, [ackMcpProposal]);
 
@@ -758,24 +769,24 @@ function App() {
       }>('mcp-propose-edit', (event) => {
         const { requestId, windowLabel, content: newContent, description } = event.payload;
         if (windowLabel !== myLabel) return;
-        // 클로버 방지(A): 이미 검토 중인 제안이 있으면 그 요청을 먼저 거절-ack 해
-        // orphan(5분 timeout)을 막고 새 제안으로 교체.
-        const prev = mcpProposalRef.current;
-        if (prev) ackMcpProposalRef.current(prev.requestId, false, null);
-        // 슬롯 충돌 방지(L): 진행 중 AI diff 가 있으면 정리(같은 pane 공유).
-        clearAiDiffRef.current();
-        const base = latestContentRef.current;
-        const chunks = generateDiff(base, newContent ?? '');
-        // 뷰를 강제 전환하지 않는다 — 현재 모드(리치 텍스트 포함) 유지하고
-        // 배너로 알린 뒤 '변경 보기'를 누르면 오버레이로 리뷰(제안A).
-        setMcpReviewOpen(false);
-        setMcpProposal({
-          requestId,
-          chunks,
-          newContent: newContent ?? '',
-          description: description ?? undefined,
-          baseContent: base,
-        });
+        // 큐 상한 초과 시 새 제안 즉시 거절-ack(orphan 방지) 후 무시 — 무한 누적 방지.
+        if (mcpProposalsRef.current.length >= MCP_QUEUE_MAX) {
+          ackMcpProposalRef.current(requestId, false, null);
+          return;
+        }
+        // 첫 제안일 때만 진행 중 AI diff 정리(같은 pane 공유). 큐에 이미 있으면 건드리지 않음.
+        if (mcpProposalsRef.current.length === 0) clearAiDiffRef.current();
+        // 큐에 append — 기존 제안을 거절하지 않고 보관해 순차 검토(#39). 도착 시점 content 를
+        // arrivalContent 로 저장(lost-update 감지). diff/표시는 head 가 될 때 현재 기준으로 파생.
+        setMcpProposals((q) => [
+          ...q,
+          {
+            requestId,
+            newContent: newContent ?? '',
+            description: description ?? undefined,
+            arrivalContent: latestContentRef.current,
+          },
+        ]);
       });
 
       if (cancelled) u();
@@ -1346,12 +1357,13 @@ function App() {
 
   // MCP 수정 제안 배너 — 뷰 모드별로 위치가 달라(리치텍스트=툴바 아래, 마크다운=페인 상단)
   // 한 번 정의해 양쪽에서 재사용. 리뷰 오버레이가 열리면 숨긴다.
-  const mcpBanner = mcpProposal && !mcpReviewOpen ? (
+  const mcpBanner = mcpHeadView && !mcpReviewOpen ? (
     <div className="mcp-banner">
       <span className="mcp-banner-icon"><Sparkles size={16} strokeWidth={2} /></span>
       <span className="mcp-banner-text">
-        Claude 수정 제안{mcpProposal.description ? `: ${mcpProposal.description}` : ''}
-        {` · ${countMcpChanges(mcpProposal.chunks)}곳`}
+        Claude 수정 제안{mcpHeadView.description ? `: ${mcpHeadView.description}` : ''}
+        {` · ${countMcpChanges(mcpHeadView.chunks)}곳`}
+        {mcpProposals.length > 1 ? ` · 외 ${mcpProposals.length - 1}건 대기` : ''}
       </span>
       <button className="mcp-banner-btn mcp-banner-review" onClick={() => setMcpReviewOpen(true)}>
         변경 보기
@@ -1756,7 +1768,7 @@ function App() {
       {/* MCP 수정 제안 리뷰 오버레이 — '변경 보기' 클릭 시. 현재 뷰 모드와 무관하게
           어디서든 diff 를 검토(수락/거절). Base UI Dialog 의 iOS/WKWebView 스크롤
           버그 회피를 위해 커스텀 포털 사용. backdrop/ESC = 닫기(거절 아님, 배너로 복귀). */}
-      {mcpProposal && mcpReviewOpen && createPortal(
+      {mcpHeadView && mcpReviewOpen && createPortal(
         <div className="mcp-review-overlay" role="dialog" aria-modal="true">
           <div
             className="mcp-review-backdrop"
@@ -1765,8 +1777,8 @@ function App() {
           />
           <div className="mcp-review-panel">
             <McpProposalView
-              chunks={mcpProposal.chunks}
-              description={mcpProposal.description}
+              chunks={mcpHeadView.chunks}
+              description={mcpHeadView.description}
               onAccept={acceptMcpProposal}
               onReject={rejectMcpProposal}
             />
