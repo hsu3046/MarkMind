@@ -30,7 +30,7 @@ interface EditorProps {
     onChange: (value: string) => void;
     theme: 'light' | 'dark';
     onSelectionChange?: (text: string, coords: { top: number; left: number } | null) => void;
-    /** 클립보드 이미지 붙여넣기 시 — 인라인 OCR 처리(#3). */
+    /** 클립보드 이미지 붙여넣기 시 — assets/ 에 이미지 인라인 첨부(#56). */
     onImagePaste?: (file: File) => void;
 }
 
@@ -41,8 +41,10 @@ export interface EditorHandle {
     toggleSearch: () => void;
     isSearchOpen: () => boolean;
     scrollToLine: (line: number) => void;
-    /** 현재 커서 위치에 텍스트 삽입 (인라인 OCR 결과 삽입용) */
+    /** 현재 커서 위치에 텍스트 삽입 (이미지 첨부 `![]()` 등) */
     insertAtCursor: (text: string) => void;
+    /** 드롭 좌표(client px)에 해당하는 문서 위치에 텍스트 삽입(#56). 좌표 무효면 커서 위치. */
+    insertAtCoords: (text: string, clientX: number, clientY: number) => void;
 }
 
 const lightTheme = EditorView.theme({
@@ -184,6 +186,17 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                 });
                 view.focus();
             },
+            insertAtCoords: (text: string, clientX: number, clientY: number) => {
+                const view = cmRef.current?.view;
+                if (!view) return;
+                // 드롭 좌표 → 문서 offset. 좌표가 텍스트 밖이면(null) 현재 커서로 fallback.
+                const at = view.posAtCoords({ x: clientX, y: clientY }) ?? view.state.selection.main.head;
+                view.dispatch({
+                    changes: { from: at, to: at, insert: text },
+                    selection: { anchor: at + text.length },
+                });
+                view.focus();
+            },
         }));
 
         const handleChange = useCallback((value: string) => {
@@ -221,7 +234,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                 );
             }
 
-            // 클립보드 이미지 붙여넣기 → 인라인 OCR (#3). 이미지 item 이 있으면 기본
+            // 클립보드 이미지 붙여넣기 → 이미지 인라인 첨부(#56). 이미지 item 이 있으면 기본
             // 붙여넣기를 막고 콜백으로 넘긴다(텍스트 붙여넣기는 그대로 통과).
             if (onImagePaste) {
                 exts.push(

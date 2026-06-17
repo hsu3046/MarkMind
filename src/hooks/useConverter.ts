@@ -138,19 +138,6 @@ export function useConverter() {
         [wrap],
     );
 
-    const runOcrInline = useCallback(
-        async (imagePath: string): Promise<string | null> => {
-            try {
-                // 인라인 OCR 는 jobState UI 추적 안 함 (StatusBar mini progress 만) — jobId 생략 OK
-                return await tauriInvoke<string>('run_ocr_inline', { imagePath });
-            } catch (err) {
-                console.error('[useConverter] 인라인 OCR 실패:', err);
-                return null;
-            }
-        },
-        [],
-    );
-
     const listTemplates = useCallback(
         (): Promise<TemplateInfo[]> => tauriInvoke<TemplateInfo[]>('list_meeting_templates'),
         [],
@@ -175,7 +162,6 @@ export function useConverter() {
         runAudio,
         runOcr,
         runNotes,
-        runOcrInline,
         listTemplates,
         openEditorWindow,
         readFileText,

@@ -20,7 +20,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # devtools: release 빌드에서도 우클릭 → Inspect Element 활성화 (production 디버깅)
 # 2.10 핀 — pyannote-rs 추가 시 cargo 가 tauri 2.3 으로 downgrade 해 wry 0.50 와 API mismatch.
-tauri = { version = "~2.10", features = ["devtools"] }
+# protocol-asset: asset:// 프로토콜(convertFileSrc) 활성화 — 로컬 이미지 인라인 표시(#55)
+tauri = { version = "~2.10", features = ["devtools", "protocol-asset"] }
 tauri-plugin-opener = "~2.5"
 tauri-plugin-dialog = "~2.6"
 tauri-plugin-fs = "~2.4"

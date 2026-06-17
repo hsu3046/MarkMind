@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -18,6 +18,8 @@ import { SearchAndReplace } from '@sereneinserenade/tiptap-search-and-replace';
 import { Typography } from '@tiptap/extension-typography';
 import { InlineCheckbox } from '../extensions/InlineCheckbox';
 import { MarkdownTable } from '../extensions/MarkdownTable';
+import { createImageInline } from '../extensions/ImageInline';
+import { resolveImageSrc } from '../lib/imageSrc';
 import { removeFlowchartBlock, hasFlowchartBlock } from '../lib/flowchartBlock';
 import { TableTools } from './TableTools';
 import {
@@ -37,6 +39,8 @@ interface PreviewProps {
     /** 리치텍스트 편집 모드에서 포맷 툴바 바로 아래에 함께 sticky 로 붙일 배너
         (예: MCP 수정 제안). read-only 모드에선 무시. */
     banner?: ReactNode;
+    /** 현재 문서 경로 — 로컬 이미지 상대경로 해석용(#55). 미저장이면 null. */
+    filePath?: string | null;
 }
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
@@ -373,10 +377,12 @@ function ReadOnlyView({
     fields,
     body,
     fontSize,
+    docDir,
 }: {
     fields: { key: string; value: string }[];
     body: string;
     fontSize: number;
+    docDir: string | null;
 }) {
     // 병합 셀 테이블 (HTML 직렬화분) 은 react-markdown 이 리터럴 텍스트로
     // 보여주므로 블록 단위로 분리해 sanitize 후 직접 렌더
@@ -413,6 +419,12 @@ function ReadOnlyView({
                             [remarkGfm, { singleTilde: false }],
                         ]}
                         rehypePlugins={[rehypeHighlight]}
+                        components={{
+                            // 로컬 이미지 경로 → asset:// 변환해 표시 (#55)
+                            img: ({ node: _node, src, ...props }) => (
+                                <img {...props} src={resolveImageSrc(src ?? '', docDir)} />
+                            ),
+                        }}
                     >
                         {seg.text}
                     </ReactMarkdown>
@@ -712,13 +724,40 @@ function RichEditor({
     fontSize,
     onChange,
     banner,
+    docDir,
+    onEditorReady,
 }: {
     body: string;
     rawFrontmatter: string;
     fontSize: number;
     onChange: (markdown: string) => void;
     banner?: ReactNode;
+    docDir: string | null;
+    onEditorReady?: (editor: Editor | null) => void;
 }) {
+    // docDir 은 파일 전환 시 바뀌므로 ref 로 최신값 보관 — Image renderHTML 클로저(#55)가
+    // 항상 최신 docDir 을 읽게 한다(editor 재생성 없이).
+    const docDirRef = useRef(docDir);
+    const editorInstanceRef = useRef<Editor | null>(null);
+    // onUpdate 가 마지막으로 내보낸 body — 외부 content 변경(저장 flush 등) 감지용(#56).
+    const lastEmittedBodyRef = useRef(body);
+    useEffect(() => {
+        docDirRef.current = docDir;
+    }, [docDir]);
+
+    // 붙여넣기 이미지 → $TEMP 임시 저장 후 절대경로 image 노드 삽입(#56).
+    // 미저장이어도 OK — 저장 시 flush 가 assets/ 로 복사·치환. 표시는 #55(asset://).
+    const attachAndInsertImage = useCallback(async (file: File) => {
+        try {
+            const { writeTempImage, extFromMime } = await import('../lib/imageAttach');
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            const path = await writeTempImage(bytes, extFromMime(file.type));
+            editorInstanceRef.current?.chain().focus().setImage({ src: path }).run();
+        } catch (err) {
+            console.error('[RichEditor] 이미지 첨부 실패:', err);
+        }
+    }, []);
+
     const editor = useEditor({
         extensions: [
             StarterKit.configure({
@@ -768,18 +807,43 @@ function RichEditor({
             }),
             // ⌘⌥1~6 헤딩 단축키 — 변환 시 강조 마크 제거 (툴바 버튼과 동작 일치, #58)
             HeadingMarkShortcuts,
+            // 로컬 이미지 표시 — 원본 경로는 보존, 표시만 asset:// 변환 (#55)
+            createImageInline(() => docDirRef.current),
         ],
         content: fixEmphasis(joinBrokenTableRows(body)), // ** 인접 bold 인식되도록 zero-width 삽입 + LLM multi-line table row 정상화
         onUpdate: ({ editor }) => {
             const md: string = editor.storage.markdown?.getMarkdown() ?? '';
             // zero-width 제거 + tiptap-markdown 과잉 escape/hardBreak 정규화
-            onChange(rawFrontmatter + normalizeSerializedMarkdown(stripDisplayHelpers(md)));
+            const outBody = normalizeSerializedMarkdown(stripDisplayHelpers(md));
+            lastEmittedBodyRef.current = outBody; // 외부 변경 감지 기준(#56)
+            onChange(rawFrontmatter + outBody);
         },
         editorProps: {
             attributes: {
                 class: 'markdown-body tiptap-rich',
                 style: `font-size: ${fontSize}px`,
             },
+            // 이미지 붙여넣기 → 임시 저장 후 image 노드 삽입(#56). 이미지 아니면 기본 paste 유지.
+            // ⚠️ DataTransferItemList 는 WKWebView(Safari)에서 for...of 미지원 → 인덱스 순회 필수.
+            handlePaste: (_view, event) => {
+                const items = event.clipboardData?.items;
+                if (!items) return false;
+                for (let i = 0; i < items.length; i++) {
+                    const it = items[i];
+                    if (it.type.startsWith('image/')) {
+                        const file = it.getAsFile();
+                        if (file) {
+                            event.preventDefault();
+                            void attachAndInsertImage(file);
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            },
+            // NOTE: 파일 드롭은 Tauri native(dragDropEnabled 기본 true)가 webview DOM drop 을
+            // 가로채므로 여기 handleDrop 은 파일에 안 불린다. 드롭은 App 의 onDragDropEvent 가
+            // 받아 viewMode 에 맞는 에디터(여기 Tiptap)로 insertImageMarkdown 라우팅(#56).
             // copy 시 fixEmphasis 의 zero-width 가 사용자 클립보드에 섞이지 않도록 제거
             handleDOMEvents: {
                 copy: (_view, event) => {
@@ -794,6 +858,28 @@ function RichEditor({
             },
         },
     });
+
+    // editor 인스턴스를 ref(paste 핸들러용) + 부모(App 의 drop 라우팅용)에 노출(#56)
+    useEffect(() => {
+        editorInstanceRef.current = editor;
+        onEditorReady?.(editor);
+    }, [editor, onEditorReady]);
+
+    // 외부 content 변경 동기화(#56) — body 가 내가 마지막으로 내보낸 것과 다르면
+    // (저장 flush 로 temp→./assets 치환 등) editor 에 반영. 정규화는 idempotent 하므로
+    // 편집 중 자기 출력의 round-trip 은 같아서 setContent 가 안 불려 커서가 유지된다.
+    useEffect(() => {
+        if (!editor) return;
+        if (body === lastEmittedBodyRef.current) return;
+        lastEmittedBodyRef.current = body;
+        const { from, to } = editor.state.selection;
+        editor.commands.setContent(fixEmphasis(joinBrokenTableRows(body)), { emitUpdate: false });
+        try {
+            editor.commands.setTextSelection({ from, to });
+        } catch {
+            /* 길이 변동으로 위치가 무효면 무시 */
+        }
+    }, [body, editor]);
 
     // Rich Text 검색 — App-level SearchBar 가 window event 로 명령 전달.
     // tiptap-search-and-replace 의 storage 타입이 ext 에 없어 any 캐스팅.
@@ -870,8 +956,40 @@ function RichEditor({
     );
 }
 
-export function Preview({ content, fontSize = 14, onChange, banner }: PreviewProps) {
+export interface PreviewHandle {
+    /** Rich Text(Tiptap) 에디터의 현재 커서에 이미지 노드 삽입 — App 의 drop 라우팅용(#56). */
+    insertImageMarkdown: (relPath: string) => void;
+    /** 드롭 좌표(client px)에 해당하는 위치에 이미지 삽입(#56). 좌표 무효면 커서 위치. */
+    insertImageAtCoords: (relPath: string, clientX: number, clientY: number) => void;
+}
+
+export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
+    { content, fontSize = 14, onChange, banner, filePath },
+    ref,
+) {
     const [showFlow, setShowFlow] = useState(false);
+    // Rich Text 모드의 editor 인스턴스 — App 이 drop 이미지를 여기로 삽입(#56)
+    const richEditorRef = useRef<Editor | null>(null);
+    useImperativeHandle(ref, () => ({
+        insertImageMarkdown: (relPath: string) => {
+            richEditorRef.current?.chain().focus().setImage({ src: relPath }).run();
+        },
+        insertImageAtCoords: (relPath: string, clientX: number, clientY: number) => {
+            const editor = richEditorRef.current;
+            if (!editor) return;
+            const coords = editor.view.posAtCoords({ left: clientX, top: clientY });
+            if (coords) {
+                editor.chain().focus().insertContentAt(coords.pos, { type: 'image', attrs: { src: relPath } }).run();
+            } else {
+                editor.chain().focus().setImage({ src: relPath }).run();
+            }
+        },
+    }), []);
+    // 문서 디렉토리(POSIX) — 로컬 이미지 상대경로 해석 기준(#55). 미저장이면 null.
+    const docDir = useMemo(
+        () => (filePath ? filePath.slice(0, filePath.lastIndexOf('/')) : null),
+        [filePath],
+    );
     const { fields, body, rawFrontmatter } = useMemo(() => {
         const split = splitFrontmatter(content);
         return {
@@ -922,6 +1040,8 @@ export function Preview({ content, fontSize = 14, onChange, banner }: PreviewPro
                     fontSize={fontSize}
                     onChange={onChange!}
                     banner={banner}
+                    docDir={docDir}
+                    onEditorReady={(e) => { richEditorRef.current = e; }}
                 />
             </div>
         );
@@ -940,7 +1060,7 @@ export function Preview({ content, fontSize = 14, onChange, banner }: PreviewPro
                     {showFlow ? '흐름도 데이터 숨김' : '흐름도 데이터'}
                 </button>
             )}
-            <ReadOnlyView fields={fields} body={processedBody} fontSize={fontSize} />
+            <ReadOnlyView fields={fields} body={processedBody} fontSize={fontSize} docDir={docDir} />
         </div>
     );
-}
+});

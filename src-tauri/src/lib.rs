@@ -312,7 +312,6 @@ pub fn run() {
             converters::commands::run_audio_job,
             converters::commands::run_ocr_job,
             converters::commands::run_notes_job,
-            converters::commands::run_ocr_inline,
             converters::commands::get_conversions_dir,
             converters::commands::extract_speakers,
             converters::commands::rename_speakers,
