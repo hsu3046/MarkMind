@@ -6,13 +6,13 @@ import {
     Search, ChevronRight, Sparkles, Check, X,
     Mic, ScanText, Settings,
     FileCode, FileText, AlignVerticalSpaceAround,
-    Network, Share2, Workflow,
+    Network, Share2, VectorSquare, ChartBarStacked,
 } from 'lucide-react';
 import * as gdriveService from '../services/gdriveService';
 import type { RecentFile } from '../hooks/useRecentFiles';
 import { BackgroundPicker } from './BackgroundPicker';
 
-export type ViewMode = 'split' | 'editor' | 'preview' | 'mindmap' | 'graph' | 'flowchart';
+export type ViewMode = 'split' | 'editor' | 'preview' | 'mindmap' | 'graph' | 'flowchart' | 'gantt';
 
 function EditableFileName({ fileName, isDirty, onRename }: { fileName: string; isDirty: boolean; onRename: (name: string) => void }) {
     const [editing, setEditing] = useState(false);
@@ -341,14 +341,21 @@ export function Toolbar({
                     onClick={() => onViewModeChange('graph')}
                     title="Vault Graph (⌘5)"
                 >
-                    <Network size={16} strokeWidth={1.5} />
+                    <VectorSquare size={16} strokeWidth={1.5} />
                 </button>
                 <button
                     className={`toolbar-btn${viewMode === 'flowchart' ? ' active' : ''}`}
                     onClick={() => onViewModeChange('flowchart')}
                     title="Flowchart (⌘6)"
                 >
-                    <Workflow size={16} strokeWidth={1.5} />
+                    <Network size={16} strokeWidth={1.5} />
+                </button>
+                <button
+                    className={`toolbar-btn${viewMode === 'gantt' ? ' active' : ''}`}
+                    onClick={() => onViewModeChange('gantt')}
+                    title="Gantt (⌘7)"
+                >
+                    <ChartBarStacked size={16} strokeWidth={1.5} />
                 </button>
 
                 <div className="toolbar-divider" />

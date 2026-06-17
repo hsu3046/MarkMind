@@ -28,6 +28,10 @@ const VERTICAL_GAP = 26;    // gap between sibling rows
 const CENTER_X = 0;
 const CENTER_Y = 0;
 
+/** Shared branch colour palette — used by the mindmap canvas and the gantt view
+ *  so derived visualizations stay visually consistent. Index with `i % length`. */
+export const PALETTE = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6'];
+
 const SLOT_W = MAX_W + HORIZONTAL_GAP;
 const SLOT_H = MAX_H + VERTICAL_GAP;
 

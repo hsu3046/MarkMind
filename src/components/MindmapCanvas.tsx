@@ -25,6 +25,7 @@ import {
 } from '@xyflow/react';
 import { Plus, Pencil, Trash2, FileSymlink, SquareArrowOutUpRight } from 'lucide-react';
 import type { MindmapNode } from '../types/mindmap';
+import { PALETTE } from '../lib/d3-layout';
 import '@xyflow/react/dist/style.css';
 import './MindmapCanvas.css';
 
@@ -54,8 +55,6 @@ export interface MindmapNodeData {
     onOpenLink?: () => void;
     [key: string]: unknown;
 }
-
-const PALETTE = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6'];
 
 /** One-line plain-text preview of a node's description (full text on hover). */
 function descPreview(s: string): string {

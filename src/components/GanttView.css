@@ -1,0 +1,124 @@
+/* #54 간트 차트 뷰 — 자체 SVG. MindmapCanvas/FlowchartView 와 같은 CSS 변수 패턴. */
+.gantt-view {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary, #ffffff);
+}
+
+.gantt-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+.gantt-svg {
+    display: block;
+    background: var(--bg-primary, #ffffff);
+}
+
+/* 시간축 */
+.gantt-axis {
+    stroke: var(--border-primary, #d4d4d4);
+    stroke-width: 1;
+}
+.gantt-grid {
+    stroke: var(--border-primary, #ececec);
+    stroke-width: 1;
+    opacity: 0.4;
+}
+.gantt-grid--major {
+    opacity: 0.85;
+}
+.gantt-tick {
+    fill: var(--text-secondary, #888888);
+    font-size: 11px;
+}
+
+/* 섹션 헤더 */
+.gantt-section {
+    fill: var(--text-primary, #222222);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* 행 */
+.gantt-row-bg {
+    fill: transparent;
+}
+.gantt-row:hover .gantt-row-bg {
+    fill: var(--bg-hover, rgba(0, 0, 0, 0.04));
+}
+.gantt-task-label {
+    fill: var(--text-primary, #333333);
+    font-size: 12px;
+}
+
+/* 막대 + 진행률 */
+.gantt-bar {
+    fill-opacity: 0.28;
+}
+.gantt-bar-progress {
+    fill-opacity: 0.9;
+}
+.gantt-row:hover .gantt-bar {
+    fill-opacity: 0.4;
+}
+.gantt-bar-pct {
+    fill: var(--text-secondary, #888888);
+    font-size: 10px;
+}
+
+/* 마일스톤 다이아몬드 */
+.gantt-milestone {
+    stroke: var(--bg-primary, #ffffff);
+    stroke-width: 1.5;
+}
+
+/* 오늘 세로선 */
+.gantt-today {
+    stroke: #ef4444;
+    stroke-width: 1.5;
+    stroke-dasharray: 4 3;
+}
+.gantt-today-label {
+    fill: #ef4444;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+/* 빈 상태 */
+.gantt-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 40px;
+    text-align: center;
+    color: var(--text-secondary, #888888);
+}
+.gantt-empty-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary, #444444);
+}
+.gantt-empty-hint {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.7;
+    max-width: 460px;
+}
+.gantt-empty-hint code {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--bg-secondary, #f0f0f0);
+    color: var(--text-primary, #444444);
+    font-size: 12px;
+}

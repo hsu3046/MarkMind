@@ -8,6 +8,7 @@ import { Preview, type PreviewHandle } from './components/Preview';
 import { MindmapView } from './components/MindmapView';
 import { VaultGraphView } from './components/VaultGraphView';
 import { FlowchartView } from './components/FlowchartView';
+import { GanttView } from './components/GanttView';
 import { Toolbar, ViewMode } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { OutlinePanel } from './components/OutlinePanel';
@@ -1251,6 +1252,11 @@ function App() {
             setViewMode('flowchart');
             setReadingMode(false);
             break;
+          case '7':
+            e.preventDefault();
+            setViewMode('gantt');
+            setReadingMode(false);
+            break;
           case '=':
           case '+':
             e.preventDefault();
@@ -1559,6 +1565,11 @@ function App() {
             <div className="pane" style={{ width: '100%' }}>
               {mcpBanner}
               <FlowchartView content={content} fileName={fileName} onChange={updateContent} />
+            </div>
+          ) : viewMode === 'gantt' ? (
+            <div className="pane" style={{ width: '100%' }}>
+              {mcpBanner}
+              <GanttView content={content} fileName={fileName} onJumpToSource={handleJumpToSource} />
             </div>
           ) : (
           <>
