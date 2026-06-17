@@ -1,0 +1,166 @@
+import { describe, it, expect } from 'vitest';
+import { markdownToSlides, parseInline, slidesFromLlmJson } from './markdownToSlides';
+
+describe('markdownToSlides — 분할 규칙', () => {
+  it('수평선(---) 으로 슬라이드를 나눈다', () => {
+    const md = ['# A', 'alpha', '', '---', '', '# B', 'beta'].join('\n');
+    const slides = markdownToSlides(md);
+    expect(slides.map((s) => s.title)).toEqual(['A', 'B']);
+  });
+
+  it('--- 없어도 slide-level 헤딩(H1)으로 폴백 분할', () => {
+    const md = ['# One', 'x', '# Two', 'y', '# Three', 'z'].join('\n');
+    const slides = markdownToSlides(md);
+    expect(slides.length).toBe(3);
+    expect(slides.map((s) => s.title)).toEqual(['One', 'Two', 'Three']);
+  });
+
+  it('frontmatter 의 --- 를 슬라이드 경계로 오인하지 않는다', () => {
+    const md = [
+      '---',
+      'title: Deck',
+      'author: me',
+      '---',
+      '# First',
+      'content',
+      '---',
+      '# Second',
+      'more',
+    ].join('\n');
+    const slides = markdownToSlides(md);
+    expect(slides.map((s) => s.title)).toEqual(['First', 'Second']);
+  });
+
+  it('H1 이 바로 H2 로 이어지면 slide-level=2, H1 은 타이틀 슬라이드', () => {
+    const md = ['# Cover', '## Section A', 'a', '## Section B', 'b'].join('\n');
+    const slides = markdownToSlides(md);
+    // Cover(title) + Section A + Section B
+    expect(slides.map((s) => s.title)).toEqual([
+      'Cover',
+      'Section A',
+      'Section B',
+    ]);
+    expect(slides[0].layout).toBe('title');
+    expect(slides[1].layout).toBe('content');
+  });
+
+  it('펜스 코드블록 안의 --- 와 # 은 경계/헤딩이 아니다', () => {
+    const md = [
+      '# Code',
+      '```',
+      '# not a heading',
+      '---',
+      '```',
+      'after',
+    ].join('\n');
+    const slides = markdownToSlides(md);
+    expect(slides.length).toBe(1);
+    expect(slides[0].body.some((b) => b.kind === 'code')).toBe(true);
+  });
+});
+
+describe('markdownToSlides — 본문 블록', () => {
+  it('리스트는 bullet, 단락은 text, 하위 헤딩은 subhead', () => {
+    const md = ['# T', 'para line', '', '- item1', '- item2', '', '## sub'].join(
+      '\n',
+    );
+    const slides = markdownToSlides(md);
+    const kinds = slides[0].body.map((b) => b.kind);
+    expect(kinds).toContain('text');
+    expect(kinds).toContain('bullet');
+    expect(kinds).toContain('subhead');
+  });
+
+  it('표를 table 블록으로(구분행 제거)', () => {
+    const md = ['# T', '| a | b |', '| --- | --- |', '| 1 | 2 |'].join('\n');
+    const slides = markdownToSlides(md);
+    const table = slides[0].body.find((b) => b.kind === 'table');
+    expect(table).toBeDefined();
+    if (table && table.kind === 'table') {
+      expect(table.rows).toEqual([
+        ['a', 'b'],
+        ['1', '2'],
+      ]);
+    }
+  });
+
+  it('이미지 전용 라인을 image 블록으로', () => {
+    const md = ['# T', '![alt text](img/pic.png)'].join('\n');
+    const slides = markdownToSlides(md);
+    const img = slides[0].body.find((b) => b.kind === 'image');
+    expect(img).toBeDefined();
+    if (img && img.kind === 'image') {
+      expect(img.src).toBe('img/pic.png');
+      expect(img.alt).toBe('alt text');
+    }
+  });
+
+  it('::: notes 블록을 발표자 노트로 추출', () => {
+    const md = ['# T', 'body', '', '::: notes', 'speaker note', ':::'].join(
+      '\n',
+    );
+    const slides = markdownToSlides(md);
+    expect(slides[0].notes).toContain('speaker note');
+    // 노트가 본문 text 로 새지 않아야
+    const text = slides[0].body
+      .filter((b) => b.kind === 'text')
+      .map((b) => (b.kind === 'text' ? b.spans.map((s) => s.text).join('') : ''))
+      .join(' ');
+    expect(text).not.toContain('speaker note');
+  });
+
+  it('빈 문서도 최소 1장', () => {
+    expect(markdownToSlides('').length).toBe(1);
+    expect(markdownToSlides('   \n  \n').length).toBe(1);
+  });
+});
+
+describe('slidesFromLlmJson', () => {
+  it('정상 JSON 을 슬라이드로 매핑', () => {
+    const raw = JSON.stringify({
+      slides: [
+        { title: 'Cover', layout: 'title', bullets: ['subtitle'] },
+        { title: 'S1', layout: 'content', bullets: ['a', 'b'] },
+      ],
+    });
+    const slides = slidesFromLlmJson(raw);
+    expect(slides?.map((s) => s.title)).toEqual(['Cover', 'S1']);
+    expect(slides?.[0].layout).toBe('title');
+    expect(slides?.[1].body.filter((b) => b.kind === 'bullet').length).toBe(2);
+  });
+
+  it('코드펜스/잡텍스트로 감싸도 추출', () => {
+    const raw = '```json\n{"slides":[{"title":"T","bullets":["x"]}]}\n```';
+    const slides = slidesFromLlmJson(raw);
+    expect(slides?.length).toBe(1);
+    expect(slides?.[0].title).toBe('T');
+  });
+
+  it('잘린 JSON 에서 완성된 슬라이드만 부분 복구', () => {
+    // 마지막 객체가 토큰 한도로 잘린 상황
+    const raw =
+      '{"slides":[{"title":"A","layout":"title","bullets":["s"]},' +
+      '{"title":"B","layout":"content","bullets":["b1","b2"]},' +
+      '{"title":"C","layout":"content","bullets":["c1",';
+    const slides = slidesFromLlmJson(raw);
+    expect(slides?.map((s) => s.title)).toEqual(['A', 'B']); // C 는 미완성 → 제외
+  });
+
+  it('완전 비 JSON 은 null', () => {
+    expect(slidesFromLlmJson('sorry, I cannot do that')).toBeNull();
+  });
+});
+
+describe('parseInline', () => {
+  it('bold/italic/code 스팬 분리', () => {
+    const spans = parseInline('a **b** c *d* e `f`');
+    expect(spans.find((s) => s.bold)?.text).toBe('b');
+    expect(spans.find((s) => s.italic)?.text).toBe('d');
+    expect(spans.find((s) => s.code)?.text).toBe('f');
+  });
+
+  it('서식 없으면 단일 스팬', () => {
+    const spans = parseInline('plain text');
+    expect(spans).toEqual([{ text: 'plain text' }]);
+  });
+});
