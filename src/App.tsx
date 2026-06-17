@@ -4,7 +4,7 @@ import { AIMode, DiffChunk } from './types/ai';
 import { Editor, EditorHandle } from './components/Editor';
 import { McpProposalView } from './components/McpProposalView';
 import { generateDiff } from './services/aiService';
-import { Preview } from './components/Preview';
+import { Preview, type PreviewHandle } from './components/Preview';
 import { MindmapView } from './components/MindmapView';
 import { VaultGraphView } from './components/VaultGraphView';
 import { FlowchartView } from './components/FlowchartView';
@@ -85,7 +85,14 @@ function App() {
     openFromRecent,
     loadFromMemory,
     renameFile,
-  } = useFileSystem(() => onFileOpenedRef.current?.());
+  } = useFileSystem(
+    () => onFileOpenedRef.current?.(),
+    // 저장 직전: 본문의 임시(절대경로) 이미지를 문서 assets/ 로 복사 + 상대경로 치환(#56)
+    useCallback(async (c: string, path: string) => {
+      const { flushImagesOnSave } = await import('./lib/imageAttach');
+      return (await flushImagesOnSave(c, path)).content;
+    }, []),
+  );
 
   const { recentFiles, addRecentFile, removeRecentFile, clearRecentFiles } =
     useRecentFiles();
@@ -174,6 +181,7 @@ function App() {
   const scrollRatioRef = useRef<number>(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<EditorHandle>(null);
+  const previewRef = useRef<PreviewHandle>(null); // Rich Text 이미지 삽입 라우팅(#56)
 
   // PDF export — 옵션 B1: WKWebView.createPDFWithConfiguration 으로 dialog 없이
   // PDF 생성 + tauri-plugin-dialog 의 save() 로 사용자 저장 위치 지정.
@@ -334,6 +342,12 @@ function App() {
     panelStateRef.current = { audioPanelVisible, ocrPanelVisible };
   }, [audioPanelVisible, ocrPanelVisible]);
 
+  // drop 시 이미지를 활성 에디터로 라우팅하기 위해 viewMode 를 ref 로(#56)
+  const viewModeRef = useRef(viewMode);
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  }, [viewMode]);
+
   // 드래그&드롭 핸들러에서 최신 handleOpenInCurrentEditor 를 stale 없이 호출(#14)
   const handleOpenInCurrentEditorRef = useRef<((path: string) => Promise<void>) | null>(null);
 
@@ -341,12 +355,13 @@ function App() {
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | null = null;
+    let disposed = false;
     (async () => {
       try {
         const { getCurrentWebview } = await import('@tauri-apps/api/webview');
         const { invoke } = await import('@tauri-apps/api/core');
         // 공식 onDragDropEvent — enter/over/drop/leave 를 한 핸들러에서 받는다(Tauri v2).
-        unlisten = await getCurrentWebview().onDragDropEvent(async (event) => {
+        const fn = await getCurrentWebview().onDragDropEvent(async (event) => {
           const p = event.payload;
           // 드롭 영역 시각 피드백(#14): hover 중엔 overlay 표시, drop/cancel 시 해제
           if (p.type === 'enter' || p.type === 'over') { setDragActive(true); return; }
@@ -356,14 +371,37 @@ function App() {
           const paths = p.paths ?? [];
           if (paths.length === 0) return;
           const mdExts = ['md','markdown','mdx','txt'];
+          // 첨부 대상 이미지 확장자 (pdf 제외 — pdf 는 OCR 패널 전용)
+          const imageExts = ['png','jpg','jpeg','webp','heic','heif','gif'];
 
-          // 여러 파일 동시 드롭 → 각각 새 윈도우 (현재 작업 보호). 마크다운 계열만.
+          // 드롭 좌표 → 마우스가 가리킨 문서 위치에 삽입(#56). macOS 의 Tauri drop position 은
+          // 이미 logical(CSS) 좌표라 devicePixelRatio 로 나누면 안 된다(나누면 위쪽으로 쏠림).
+          const dropPos = (p as { position?: { x: number; y: number } }).position;
+          const cx = dropPos ? dropPos.x : null;
+          const cy = dropPos ? dropPos.y : null;
+
+          // 드롭한 외부 이미지(절대경로)를 활성 에디터의 드롭 지점에 `![](절대경로)` 삽입(#56).
+          // Rich Text(preview) 모드면 Tiptap, 그 외(editor/split)면 CodeMirror 로 라우팅.
+          // 표시는 #55(asset://), 실제 assets/ 복사·상대경로 치환은 저장 시 flush 가 처리.
+          const insertImageAbs = (absPath: string) => {
+            if (viewModeRef.current === 'preview') {
+              if (cx != null && cy != null) previewRef.current?.insertImageAtCoords(absPath, cx, cy);
+              else previewRef.current?.insertImageMarkdown(absPath);
+            } else {
+              if (cx != null && cy != null) editorRef.current?.insertAtCoords(`\n![](${absPath})\n`, cx, cy);
+              else editorRef.current?.insertAtCursor(`\n![](${absPath})\n`);
+            }
+          };
+
+          // 여러 파일 동시 드롭: 마크다운은 새 창, 이미지는 전부 삽입(#56), 나머지 무시.
           if (paths.length > 1) {
-            for (const p of paths) {
-              const e = p.split('.').pop()?.toLowerCase() ?? '';
+            for (const fp of paths) {
+              const e = fp.split('.').pop()?.toLowerCase() ?? '';
               if (mdExts.includes(e)) {
-                try { await invoke('open_new_window', { filePath: p }); }
+                try { await invoke('open_new_window', { filePath: fp }); }
                 catch (err) { console.error('[App] 새 창 열기 실패:', err); }
+              } else if (imageExts.includes(e)) {
+                insertImageAbs(fp);
               }
             }
             return;
@@ -376,7 +414,7 @@ function App() {
           const ocrExts = ['png','jpg','jpeg','webp','heic','heif','gif','pdf'];
           const { audioPanelVisible: audOn, ocrPanelVisible: ocrOn } = panelStateRef.current;
 
-          // 1) 활성 사이드바 우선 라우팅
+          // 1) 활성 사이드바 우선 라우팅 (명시적 OCR/음성 패널은 그대로 유지)
           if (audOn && audioExts.includes(ext)) {
             setAudioDropped({ path, name });
             return;
@@ -386,18 +424,10 @@ function App() {
             return;
           }
 
-          // 2) 사이드바 비활성 + 이미지 → 에디터 인라인 OCR
-          if (ocrExts.filter(e => e !== 'pdf').includes(ext)) {
-            try {
-              const text = await converter.runOcrInline(path);
-              if (text && editorRef.current) {
-                editorRef.current.insertAtCursor(`\n${text}\n`);
-              } else if (!text) {
-                alert('인라인 OCR 실패. Gemini API 키 확인.');
-              }
-            } catch (err) {
-              console.error('[App] 인라인 OCR 실패:', err);
-            }
+          // 2) 사이드바 비활성 + 이미지 → 활성 에디터에 삽입(#56, 기존 자동 OCR 대체).
+          //    미저장 문서여도 OK — 저장 시 flush 가 assets/ 로 복사·치환.
+          if (imageExts.includes(ext)) {
+            insertImageAbs(path);
             return;
           }
 
@@ -407,16 +437,19 @@ function App() {
             await handleOpenInCurrentEditorRef.current?.(path);
           }
         });
+        // 등록 완료 전에 cleanup 됐으면(StrictMode/리렌더) 즉시 해제 — 리스너 누수/중복 방지
+        if (disposed) { fn(); return; }
+        unlisten = fn;
       } catch (err) {
         console.warn('[App] drop listener 등록 실패:', err);
       }
     })();
     return () => {
+      disposed = true;
       if (unlisten) unlisten();
     };
-    // converter 만 deps — drop handler 내부는 ref 로 최신 state 접근
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [converter]);
+    // mount 시 1회만 등록 — 핸들러 내부는 ref/setState 로만 접근(외부 의존 없음)
+  }, []);
 
   /**
    * 변환 결과를 현재 에디터에 로드. 기존 파일 처리:
@@ -599,32 +632,18 @@ function App() {
     setSelectionCoords(coords);
   }, []);
 
-  // 클립보드 이미지 붙여넣기 → 임시 파일 저장 후 인라인 OCR (#3).
-  // 에디터 onPaste 가 image item 을 넘기면 $TEMP 에 써서 기존 run_ocr_inline 을 재사용한다.
+  // 클립보드 이미지 붙여넣기(CodeMirror) → $TEMP 에 임시 저장 후 절대경로 `![]()` 삽입(#56).
+  // 미저장 문서여도 OK — 저장 시 flush 가 assets/ 로 복사·치환한다.
   const handleImagePaste = useCallback(async (file: File) => {
     try {
-      const [{ tempDir, join }, { writeFile, remove }] = await Promise.all([
-        import('@tauri-apps/api/path'),
-        import('@tauri-apps/plugin-fs'),
-      ]);
-      const buf = new Uint8Array(await file.arrayBuffer());
-      const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace('svg+xml', 'svg');
-      const path = await join(await tempDir(), `markmind-ocr-paste-${Date.now()}.${ext}`);
-      await writeFile(path, buf);
-      try {
-        const text = await converter.runOcrInline(path);
-        if (text && editorRef.current) {
-          editorRef.current.insertAtCursor(`\n${text}\n`);
-        } else if (!text) {
-          alert('인라인 OCR 에 실패했습니다. Gemini API 키를 확인해주세요.');
-        }
-      } finally {
-        remove(path).catch(() => {});
-      }
+      const { writeTempImage, extFromMime } = await import('./lib/imageAttach');
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const path = await writeTempImage(bytes, extFromMime(file.type));
+      editorRef.current?.insertAtCursor(`\n![](${path})\n`);
     } catch (err) {
-      console.error('[App] 클립보드 이미지 OCR 실패:', err);
+      console.error('[App] 클립보드 이미지 첨부 실패:', err);
     }
-  }, [converter]);
+  }, []);
 
   // MCP propose_edit 수락/거절 결과를 백엔드 tool 에 ack.
   const ackMcpProposal = useCallback((requestId: string, accepted: boolean, charCount: number | null) => {
@@ -1319,7 +1338,7 @@ function App() {
         onClick={() => setReadingMode(false)}
       >
         <div className="reading-mode-content" onClick={(e) => e.stopPropagation()}>
-          <Preview content={content} fontSize={fontSize + 2} />
+          <Preview content={content} fontSize={fontSize + 2} filePath={filePath} />
         </div>
         <div className="reading-mode-hint">
           Press <kbd>Esc</kbd> or click outside to exit
@@ -1616,10 +1635,12 @@ function App() {
               {/* split 모드에선 source 가 CodeMirror 가 담당 — Preview 는 read-only.
                   preview-only 모드에선 onChange 연결해 WYSIWYG 편집 가능. */}
               <Preview
+                ref={previewRef}
                 content={content}
                 fontSize={fontSize}
                 onChange={viewMode === 'preview' ? updateContent : undefined}
                 banner={mcpBanner}
+                filePath={filePath}
               />
             </div>
           )}

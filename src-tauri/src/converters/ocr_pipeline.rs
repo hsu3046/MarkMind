@@ -150,21 +150,6 @@ pub async fn run(emitter: &ProgressEmitter, opts: OcrJobOptions) -> ConverterRes
     })
 }
 
-/// 인라인 OCR — 단일 이미지, quick 모드, .md 저장 안 함. 결과 문자열만 반환.
-pub async fn run_inline(
-    emitter: &ProgressEmitter,
-    image_path: &str,
-) -> ConverterResult<String> {
-    let api_key = get_key(Provider::Gemini)?
-        .ok_or(ConverterError::MissingApiKey("Gemini"))?;
-    let path = std::path::Path::new(image_path).to_path_buf();
-    emitter.emit("🔍 이미지 텍스트 추출 중...", Some(MODEL_OCR_FAST.into()));
-    let mut usages = Vec::new();
-    let text = run_image_pass(&api_key, MODEL_OCR_FAST, PASS1_PROMPT_IMAGE, &path, &mut usages).await?;
-    emitter.emit("✅ 완료", None);
-    Ok(text.trim().to_string())
-}
-
 // ─── 내부: 이미지 / PDF 단일 패스 실행 ───
 
 async fn run_image_pass(

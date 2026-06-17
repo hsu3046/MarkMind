@@ -40,7 +40,12 @@ async function tauriWriteTextFile() {
 // 스코프라 창마다 독립.
 const recentOpenByPath = new Map<string, number>();
 
-export function useFileSystem(onFileOpened?: () => void) {
+export function useFileSystem(
+  onFileOpened?: () => void,
+  /** 저장 직전 본문 변환 (Tauri 저장 경로). 예: 임시 이미지 → assets 복사 + 경로 치환(#56).
+   *  실패 시 throw 하면 원본으로 저장한다. path 는 확정된 저장 경로. */
+  transformOnSave?: (content: string, path: string) => Promise<string>,
+) {
   const [fileState, setFileState] = useState<FileState>({
     content: '',
     filePath: null,
@@ -52,6 +57,7 @@ export function useFileSystem(onFileOpened?: () => void) {
   const filePathRef = useRef(fileState.filePath);
   const fileNameRef = useRef(fileState.fileName);
   const lanModifiedRef = useRef(fileState.lanModified);
+  const transformOnSaveRef = useRef(transformOnSave);
 
   useEffect(() => {
     contentRef.current = fileState.content;
@@ -60,6 +66,21 @@ export function useFileSystem(onFileOpened?: () => void) {
     fileNameRef.current = fileState.fileName;
     lanModifiedRef.current = fileState.lanModified;
   }, [fileState]);
+  useEffect(() => {
+    transformOnSaveRef.current = transformOnSave;
+  }, [transformOnSave]);
+
+  /** 저장 경로 확정 후 본문 변환 — 실패해도 원본 반환(저장은 진행). */
+  const applyTransform = async (content: string, path: string): Promise<string> => {
+    const fn = transformOnSaveRef.current;
+    if (!fn) return content;
+    try {
+      return await fn(content, path);
+    } catch (err) {
+      console.error('[useFileSystem] transformOnSave 실패, 원본 저장:', err);
+      return content;
+    }
+  };
 
   // ─── MCP 읽기 전용 서버에 현재 문서 스냅샷 동기화 ───
   // 각 윈도우가 자기 fileState 를 Rust 공유 상태에 push → Claude Code 등이
@@ -310,10 +331,12 @@ export function useFileSystem(onFileOpened?: () => void) {
         if (!selected) return 'cancelled';
         path = selected;
       }
+      const finalContent = await applyTransform(contentRef.current, path);
       const writeTextFile = await tauriWriteTextFile();
-      await writeTextFile(path, contentRef.current);
+      await writeTextFile(path, finalContent);
       const name = path.split('/').pop() || 'Untitled.md';
-      setFileState((prev) => ({ ...prev, filePath: path, fileName: name, isDirty: false }));
+      // finalContent 로 갱신 — 임시 이미지 경로가 ./assets/ 로 치환된 본문을 에디터에도 반영(#56)
+      setFileState((prev) => ({ ...prev, content: finalContent, filePath: path, fileName: name, isDirty: false }));
       return 'saved';
     } catch (err) {
       console.error('Failed to save file:', err);
@@ -341,10 +364,11 @@ export function useFileSystem(onFileOpened?: () => void) {
       });
       if (!selected) return;
 
+      const finalContent = await applyTransform(contentRef.current, selected);
       const writeTextFile = await tauriWriteTextFile();
-      await writeTextFile(selected, contentRef.current);
+      await writeTextFile(selected, finalContent);
       const name = selected.split('/').pop() || 'Untitled.md';
-      setFileState((prev) => ({ ...prev, filePath: selected, fileName: name, isDirty: false }));
+      setFileState((prev) => ({ ...prev, content: finalContent, filePath: selected, fileName: name, isDirty: false }));
     } catch (err) {
       console.error('Failed to save file:', err);
     }

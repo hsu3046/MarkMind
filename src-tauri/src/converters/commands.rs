@@ -66,20 +66,6 @@ pub async fn run_notes_job(
         .map_err(err_to_string)
 }
 
-/// 인라인 OCR — 결과 markdown 문자열만 반환 (.md 저장 안 함).
-/// 에디터에 이미지 드래그 시 사용.
-#[tauri::command]
-pub async fn run_ocr_inline(
-    app: AppHandle,
-    image_path: String,
-    job_id: Option<String>,
-) -> Result<String, String> {
-    let emitter = new_emitter(app, job_id);
-    ocr_pipeline::run_inline(&emitter, &image_path)
-        .await
-        .map_err(err_to_string)
-}
-
 /// 변환 결과 .md 파일의 기본 저장 디렉토리 반환 (오늘 날짜)
 #[tauri::command]
 pub fn get_conversions_dir() -> String {
