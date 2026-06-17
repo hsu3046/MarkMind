@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
 import rehypeHighlight from 'rehype-highlight';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
+import { Extension } from '@tiptap/core';
 import { StarterKit } from '@tiptap/starter-kit';
 import { Link } from '@tiptap/extension-link';
 import { TaskList } from '@tiptap/extension-task-list';
@@ -21,7 +22,7 @@ import { removeFlowchartBlock, hasFlowchartBlock } from '../lib/flowchartBlock';
 import { TableTools } from './TableTools';
 import {
     Bold, Italic, Strikethrough, Code,
-    Heading1, Heading2, Heading3, Heading4,
+    Heading1, Heading2, Heading3, Heading4, Heading5, Heading6,
     List, ListOrdered, ListChecks,
     Quote, Code2, Link as LinkIcon, Table as TableIcon,
     Undo2, Redo2, Minus,
@@ -37,6 +38,52 @@ interface PreviewProps {
         (예: MCP 수정 제안). read-only 모드에선 무시. */
     banner?: ReactNode;
 }
+
+type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+
+/** 헤딩 토글 + (변환되는 경우에만) 블록 범위의 강조 마크(bold/italic/strike) 제거.
+ *  - 헤딩으로 "켜질" 때만 마크 제거 → 마크다운이 `## **text**` 대신 `## text` 로 직렬화.
+ *  - 헤딩을 끄는(toggle off) 경우엔 마크를 건드리지 않음.
+ *  - 부분 강조 단락도 블록 전체를 헤딩화하므로 selection 을 블록 경계로 확장해 unset.
+ *  툴바 버튼과 키보드 단축키(⌘⌥1~4) 양쪽이 공유. */
+function applyHeadingTo(editor: Editor, level: HeadingLevel) {
+    const wasActive = editor.isActive('heading', { level });
+    const { from, to } = editor.state.selection;
+    const chain = editor.chain().focus().toggleHeading({ level });
+    if (!wasActive) {
+        const { doc } = editor.state;
+        const blockFrom = doc.resolve(from).start();
+        const blockTo = doc.resolve(to).end();
+        chain
+            .setTextSelection({ from: blockFrom, to: blockTo })
+            .unsetBold()
+            .unsetItalic()
+            .unsetStrike()
+            // 마크 제거 후 원래 커서/선택 위치로 복원 (헤딩 변환은 텍스트 길이를 바꾸지 않음)
+            .setTextSelection({ from, to });
+    }
+    chain.run();
+}
+
+/** ⌘⌥1~6 단축키를 applyHeadingTo 로 연결해 툴바 버튼과 동작 일치.
+ *  priority 를 높여 StarterKit Heading 의 기본 Mod-Alt-N 단축키보다 우선 적용. */
+const HeadingMarkShortcuts = Extension.create({
+    name: 'headingMarkShortcuts',
+    priority: 1000,
+    addKeyboardShortcuts() {
+        const levels: HeadingLevel[] = [1, 2, 3, 4, 5, 6];
+        return levels.reduce(
+            (acc, level) => ({
+                ...acc,
+                [`Mod-Alt-${level}`]: () => {
+                    applyHeadingTo(this.editor, level);
+                    return true;
+                },
+            }),
+            {} as Record<string, () => boolean>,
+        );
+    },
+});
 
 // CommonMark 의 emphasis right-flanking 규칙 때문에 닫는 `**` 다음에
 // 비공백/비구두점 글자 (CJK 포함) 가 바로 붙으면 bold 인식 실패.
@@ -521,28 +568,40 @@ function RichToolbar({ editor }: { editor: Editor }) {
             />
             <span className="rich-tool-divider" />
             <ToolBtn
-                onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+                onClick={() => applyHeadingTo(editor, 1)}
                 active={editor.isActive('heading', { level: 1 })}
                 icon={<Heading1 size={14} />}
                 title="Heading 1 (⌘⌥1)"
             />
             <ToolBtn
-                onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+                onClick={() => applyHeadingTo(editor, 2)}
                 active={editor.isActive('heading', { level: 2 })}
                 icon={<Heading2 size={14} />}
                 title="Heading 2 (⌘⌥2)"
             />
             <ToolBtn
-                onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+                onClick={() => applyHeadingTo(editor, 3)}
                 active={editor.isActive('heading', { level: 3 })}
                 icon={<Heading3 size={14} />}
                 title="Heading 3 (⌘⌥3)"
             />
             <ToolBtn
-                onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()}
+                onClick={() => applyHeadingTo(editor, 4)}
                 active={editor.isActive('heading', { level: 4 })}
                 icon={<Heading4 size={14} />}
                 title="Heading 4 (⌘⌥4)"
+            />
+            <ToolBtn
+                onClick={() => applyHeadingTo(editor, 5)}
+                active={editor.isActive('heading', { level: 5 })}
+                icon={<Heading5 size={14} />}
+                title="Heading 5 (⌘⌥5)"
+            />
+            <ToolBtn
+                onClick={() => applyHeadingTo(editor, 6)}
+                active={editor.isActive('heading', { level: 6 })}
+                icon={<Heading6 size={14} />}
+                title="Heading 6 (⌘⌥6)"
             />
             <span className="rich-tool-divider" />
             <ToolBtn
@@ -698,8 +757,17 @@ function RichEditor({
             // 인라인 체크박스 — table cell 안에서도 클릭 가능. Read-only ReactMarkdown
             // 경로에는 적용 안 됨 (Rich Text 모드 전용 기능).
             InlineCheckbox,
-            // Smart typography — `->` → `→`, `--` → `—`, `(c)` → `©` 등 자동 치환
-            Typography,
+            // Smart typography — `->` → `→`, `--` → `—`, `(c)` → `©` 등 자동 치환.
+            // 단, 따옴표는 직선(`"` `'`)으로 유지 — Markdown 이 SSOT 라 둥근(스마트)
+            // 따옴표가 소스에 들어가면 diff/검색/라운드트립이 깨짐 (#59).
+            Typography.configure({
+                openDoubleQuote: false,
+                closeDoubleQuote: false,
+                openSingleQuote: false,
+                closeSingleQuote: false,
+            }),
+            // ⌘⌥1~6 헤딩 단축키 — 변환 시 강조 마크 제거 (툴바 버튼과 동작 일치, #58)
+            HeadingMarkShortcuts,
         ],
         content: fixEmphasis(joinBrokenTableRows(body)), // ** 인접 bold 인식되도록 zero-width 삽입 + LLM multi-line table row 정상화
         onUpdate: ({ editor }) => {
