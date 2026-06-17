@@ -757,8 +757,15 @@ function RichEditor({
             // 인라인 체크박스 — table cell 안에서도 클릭 가능. Read-only ReactMarkdown
             // 경로에는 적용 안 됨 (Rich Text 모드 전용 기능).
             InlineCheckbox,
-            // Smart typography — `->` → `→`, `--` → `—`, `(c)` → `©` 등 자동 치환
-            Typography,
+            // Smart typography — `->` → `→`, `--` → `—`, `(c)` → `©` 등 자동 치환.
+            // 단, 따옴표는 직선(`"` `'`)으로 유지 — Markdown 이 SSOT 라 둥근(스마트)
+            // 따옴표가 소스에 들어가면 diff/검색/라운드트립이 깨짐 (#59).
+            Typography.configure({
+                openDoubleQuote: false,
+                closeDoubleQuote: false,
+                openSingleQuote: false,
+                closeSingleQuote: false,
+            }),
             // ⌘⌥1~6 헤딩 단축키 — 변환 시 강조 마크 제거 (툴바 버튼과 동작 일치, #58)
             HeadingMarkShortcuts,
         ],
