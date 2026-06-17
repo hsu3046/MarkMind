@@ -43,6 +43,15 @@
   --text-xl: 20px;
   --text-2xl: 24px;
   --text-3xl: 32px;
+
+  /* Heading scale (modular 1.4, body-relative) — Preview·Rich Text·Print 공통.
+     h4(1.15em) 기준 위로 1.4배씩 → 위계가 또렷. h5/h6 는 본문 보조라 1/0.9em. */
+  --h1: 3.15em;
+  --h2: 2.25em;
+  --h3: 1.61em;
+  --h4: 1.15em;
+  --h5: 1em;
+  --h6: 0.9em;
 }
 
 /* ---------- Light Theme ---------- */
@@ -1710,12 +1719,14 @@ body.is-resizing .split-pane {
   min-height: 300px;
 }
 /* Rich Text 의 heading 은 em 단위 — 본문 fontSize 변경 시 비례 확대 */
-.tiptap-rich h1 { font-size: 2em; letter-spacing: -0.02em; }
-.tiptap-rich h2 { font-size: 1.55em; letter-spacing: -0.01em; }
-.tiptap-rich h3 { font-size: 1.3em; }
-.tiptap-rich h4 { font-size: 1.12em; }
-.tiptap-rich h5 { font-size: 1em; }
-.tiptap-rich h6 { font-size: 0.9em; color: var(--text-secondary); }
+.tiptap-rich h1 { font-size: var(--h1); letter-spacing: -0.02em; }
+.tiptap-rich h2 { font-size: var(--h2); letter-spacing: -0.01em; }
+.tiptap-rich h3 { font-size: var(--h3); }
+.tiptap-rich h4 { font-size: var(--h4); }
+/* h5/h6 는 본문과 크기가 비슷해 bold 와 헷갈리므로 색으로 위계 구분
+   (h5 = 흐린 secondary, h6 = 더 흐린 tertiary) */
+.tiptap-rich h5 { font-size: var(--h5); color: var(--text-secondary); }
+.tiptap-rich h6 { font-size: var(--h6); color: var(--text-tertiary); }
 
 /* List bullet/번호 ::marker 크게 — 가독성 (task list 제외) */
 .markdown-body ul:not([data-type="taskList"]) li::marker,
@@ -2178,21 +2189,33 @@ body.is-resizing .split-pane {
 }
 
 .markdown-body h1 {
-  font-size: var(--text-3xl);
+  font-size: var(--h1);
   letter-spacing: -0.02em;
 }
 
 .markdown-body h2 {
-  font-size: var(--text-2xl);
+  font-size: var(--h2);
   letter-spacing: -0.01em;
 }
 
 .markdown-body h3 {
-  font-size: var(--text-xl);
+  font-size: var(--h3);
 }
 
 .markdown-body h4 {
-  font-size: var(--text-lg);
+  font-size: var(--h4);
+}
+
+/* h5/h6 는 본문과 크기가 비슷해 bold 와 헷갈리므로 색으로 위계 구분
+   (h5 = 흐린 secondary, h6 = 더 흐린 tertiary) */
+.markdown-body h5 {
+  font-size: var(--h5);
+  color: var(--text-secondary);
+}
+
+.markdown-body h6 {
+  font-size: var(--h6);
+  color: var(--text-tertiary);
 }
 
 .markdown-body p {
