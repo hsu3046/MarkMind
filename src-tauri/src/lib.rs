@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod converters;
+mod export_pptx;
 mod gdrive;
 mod lan_server;
 mod mcp;
@@ -313,6 +314,7 @@ pub fn run() {
             converters::commands::run_ocr_job,
             converters::commands::run_notes_job,
             converters::commands::get_conversions_dir,
+            converters::commands::generate_slides_llm,
             converters::commands::extract_speakers,
             converters::commands::rename_speakers,
             converters::commands::merge_md_files,
@@ -330,6 +332,8 @@ pub fn run() {
             gdrive::commands::gdrive_update,
             // PDF export — macOS NSPrintInfo 명시 + WKWebView native print
             print_pdf::export_pdf,
+            // PPTX export — 프론트 PptxGenJS ArrayBuffer → fs::write (이슈 #6)
+            export_pptx::save_pptx,
             // Vault (옵시디언형 문서 그래프 — 폴더 스캔 + create-on-click)
             vault::scan_vault,
             vault::create_file_at,

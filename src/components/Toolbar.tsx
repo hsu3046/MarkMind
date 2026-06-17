@@ -7,6 +7,7 @@ import {
     Mic, ScanText, Settings,
     FileCode, FileText, AlignVerticalSpaceAround,
     Network, Share2, VectorSquare, ChartBarStacked,
+    Presentation,
 } from 'lucide-react';
 import * as gdriveService from '../services/gdriveService';
 import type { RecentFile } from '../hooks/useRecentFiles';
@@ -98,6 +99,8 @@ interface ToolbarProps {
     onSaveFile: () => void;
     onSaveFileAs: () => void;
     onExportPdf: () => void;
+    onExportPptx: () => void;
+    aiLayoutAvailable: boolean;
     onShowTutorial: () => void;
     onFontSizeChange: (delta: number) => void;
     onFontSizeReset: () => void;
@@ -134,6 +137,8 @@ export function Toolbar({
     onSaveFile,
     onSaveFileAs,
     onExportPdf,
+    onExportPptx,
+    aiLayoutAvailable,
     onShowTutorial,
     onFontSizeChange,
     onFontSizeReset,
@@ -235,6 +240,15 @@ export function Toolbar({
                                 <FileDown size={14} strokeWidth={1.5} />
                                 <span>Export as PDF…</span>
                                 <span className="dropdown-shortcut">⌘P</span>
+                            </button>
+                            <button
+                                className="dropdown-item"
+                                onClick={() => handleMenuItem(onExportPptx)}
+                                disabled={!aiLayoutAvailable}
+                                title={!aiLayoutAvailable ? 'Settings 에서 Claude 또는 Gemini API 키 등록 필요' : ''}
+                            >
+                                <Presentation size={14} strokeWidth={1.5} />
+                                <span>Export as PPTX…</span>
                             </button>
                             {driveAvailable && (
                                 <>

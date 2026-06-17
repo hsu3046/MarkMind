@@ -72,6 +72,67 @@ pub fn get_conversions_dir() -> String {
     super::conversions_dir().to_string_lossy().into_owned()
 }
 
+// ─── PPTX 스마트 레이아웃 (이슈 #6) ─────────────────────────────
+//
+// 마크다운을 슬라이드용으로 "재구성"해 과밀 슬라이드를 막는다(규칙 기반의 약점
+// 보완). 기존 converters 의 키체인 + LLM 클라이언트를 그대로 재사용한다.
+// 반환은 프론트가 파싱하는 단순 슬라이드 JSON 문자열:
+//   { "slides": [ { "title", "layout":"title|content", "bullets":[...], "notes"? } ] }
+
+// 출력 토큰 상한 — 큰 덱(50장+)도 잘리지 않도록 넉넉히. 생성한 만큼만 과금.
+const SLIDES_MAX_TOKENS: u32 = 32000;
+
+const SLIDES_SYSTEM: &str = "You are a presentation designer. Convert the given Markdown document into a concise slide deck. Output STRICT minified JSON only (no prose, no code fences, no markdown) of the form: {\"slides\":[{\"title\":string,\"layout\":\"title\"|\"content\",\"bullets\":string[],\"notes\":string?}]}. Rules: the first slide is layout \"title\" (deck title + optional one-line subtitle as a single bullet); other slides are \"content\"; keep each bullet short (<= ~12 words); at most ~6 bullets per slide; split dense content across multiple slides to avoid overcrowding; omit the \"notes\" field unless it adds real speaker value (keeps output compact); preserve the document's language; do not invent facts.";
+
+#[tauri::command]
+pub async fn generate_slides_llm(
+    markdown: String,
+    provider: super::NotesProvider,
+) -> Result<String, String> {
+    use super::keychain::{get_key, Provider};
+    use super::llm;
+
+    let prompt = format!(
+        "Convert this Markdown document into slides as specified.\n\n<markdown>\n{}\n</markdown>",
+        markdown
+    );
+
+    let text = match provider {
+        super::NotesProvider::Claude => {
+            let key = get_key(Provider::Claude)
+                .map_err(err_to_string)?
+                .ok_or_else(|| "CLAUDE_API_KEY 가 없습니다. Settings 에서 등록하세요.".to_string())?;
+            // 큰 문서(20장+)의 슬라이드 JSON 이 잘리면 프론트 파싱 실패 → 폴백.
+            // 출력 토큰은 생성한 만큼만 과금되므로 상한은 넉넉히(미사용 시 비용 0).
+            let opts = llm::anthropic::ClaudeOptions {
+                max_output_tokens: Some(SLIDES_MAX_TOKENS),
+                system: Some(SLIDES_SYSTEM.to_string()),
+            };
+            llm::anthropic::generate_text(&key, super::MODEL_NOTES_CLAUDE, &prompt, Some(opts))
+                .await
+                .map_err(err_to_string)?
+                .text
+        }
+        super::NotesProvider::Gemini => {
+            let key = get_key(Provider::Gemini)
+                .map_err(err_to_string)?
+                .ok_or_else(|| "GEMINI_API_KEY 가 없습니다. Settings 에서 등록하세요.".to_string())?;
+            // Gemini 는 system 파라미터를 따로 안 받으므로 프롬프트 앞에 지시문 결합.
+            let full = format!("{}\n\n{}", SLIDES_SYSTEM, prompt);
+            let cfg = llm::gemini::GenerationConfig {
+                max_output_tokens: Some(SLIDES_MAX_TOKENS),
+                temperature: Some(0.3),
+            };
+            llm::gemini::generate_text(&key, super::MODEL_NOTES_GEMINI, &full, Vec::new(), Some(cfg))
+                .await
+                .map_err(err_to_string)?
+                .text
+        }
+    };
+
+    Ok(text)
+}
+
 // ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────
 
 #[cfg(test)]

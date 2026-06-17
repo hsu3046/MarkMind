@@ -34,7 +34,7 @@ import { useConverter } from './hooks/useConverter';
 import { isTauri } from './services/platform';
 import { getCallbackPath } from './services/knowaiAuth';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
-import { Link, Unlink, Mic, ScanText, BookOpen, X as IconX, Sparkles } from 'lucide-react';
+import { Link, Unlink, Mic, ScanText, BookOpen, X as IconX, Sparkles, Loader2 } from 'lucide-react';
 import { ConvertSidebar } from './components/sidebar/ConvertSidebar';
 import { AudioTab } from './components/convert/AudioTab';
 import { OcrTab } from './components/convert/OcrTab';
@@ -242,6 +242,80 @@ function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [handleExportPdf]);
+
+  // PPTX export (이슈 #6) — 규칙 기반 + LLM 스마트 레이아웃.
+  // 프론트 PptxGenJS 로 ArrayBuffer 생성 → Rust save_pptx 로 저장(WKWebView blob 버그 우회).
+  const [pptxAiProviders, setPptxAiProviders] = useState<{ claude: boolean; gemini: boolean }>({
+    claude: false,
+    gemini: false,
+  });
+  // PPTX 내보내기 진행 표시(특히 AI 레이아웃은 LLM 호출로 수초~수십초 소요).
+  const [pptxBusy, setPptxBusy] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isTauri()) return;
+    (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const [claude, gemini] = await Promise.all([
+          invoke<boolean>('has_api_key', { provider: 'claude' }),
+          invoke<boolean>('has_api_key', { provider: 'gemini' }),
+        ]);
+        setPptxAiProviders({ claude, gemini });
+      } catch {
+        /* 키 조회 실패 시 AI 옵션 비활성 유지 */
+      }
+    })();
+  }, [settingsVisible]);
+
+  // PPTX 내보내기 — LLM 스마트 레이아웃 단일 경로(디폴트). 규칙 기반은 LLM 응답을
+  // 전혀 해석 못한 catastrophic 실패 시의 안전망으로만 내부 사용한다.
+  const handleExportPptx = useCallback(async () => {
+    if (!pptxAiProviders.claude && !pptxAiProviders.gemini) {
+      alert('PPTX 내보내기는 AI 레이아웃을 사용합니다. Settings 에서 Claude 또는 Gemini API 키를 등록하세요.');
+      return;
+    }
+    const baseName = (fileName || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '');
+    try {
+      const [{ save }, { invoke }, { markdownToSlides, slidesFromLlmJson }, { buildPptx }] =
+        await Promise.all([
+          import('@tauri-apps/plugin-dialog'),
+          import('@tauri-apps/api/core'),
+          import('./lib/markdownToSlides'),
+          import('./lib/buildPptx'),
+        ]);
+      const path = await save({
+        defaultPath: `${baseName}.pptx`,
+        filters: [{ name: 'PowerPoint', extensions: ['pptx'] }],
+        title: 'PPTX로 내보내기',
+      });
+      if (!path) return; // 사용자 취소
+
+      const provider = pptxAiProviders.claude ? 'claude' : 'gemini';
+      setPptxBusy(`AI 슬라이드 생성 중… (${provider === 'claude' ? 'Claude' : 'Gemini'})`);
+
+      const raw = await invoke<string>('generate_slides_llm', { markdown: content, provider });
+      let slides = slidesFromLlmJson(raw);
+      console.log(
+        `[export_pptx] AI(${provider}) 응답 ${raw.length}자 → 슬라이드 ${slides?.length ?? 0}장`,
+      );
+      if (!slides || slides.length === 0) {
+        // 조용한 폴백 금지 — 사용자에게 알리고 원문 로깅(메모리: silent fallback 함정)
+        console.warn('[export_pptx] AI 응답 파싱 실패, 규칙 기반 안전망으로 폴백. 원문:', raw);
+        alert('AI 응답을 해석하지 못해 기본 레이아웃으로 저장합니다.\n(개발자 콘솔에 원문이 로깅되었습니다)');
+        slides = markdownToSlides(content);
+      }
+
+      setPptxBusy('PPTX 파일 생성 중…');
+      const baseDir = filePath ? filePath.replace(/\/[^/]*$/, '') : undefined;
+      const buf = await buildPptx(slides, { title: baseName, baseDir });
+      await invoke('save_pptx', { path, data: Array.from(new Uint8Array(buf)) });
+    } catch (err) {
+      console.error('[export_pptx] failed:', err);
+      alert(`PPTX 내보내기에 실패했습니다.\n${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setPptxBusy(null);
+    }
+  }, [fileName, filePath, content, pptxAiProviders]);
 
   // AI
   const ai = useAI();
@@ -1449,6 +1523,8 @@ function App() {
         onSaveFile={saveFile}
         onSaveFileAs={saveFileAs}
         onExportPdf={handleExportPdf}
+        onExportPptx={handleExportPptx}
+        aiLayoutAvailable={pptxAiProviders.claude || pptxAiProviders.gemini}
         onShowTutorial={() => setTutorialVisible(true)}
         onShowSettings={() => setSettingsVisible(true)}
         onOpenFromDrive={() => setDriveBrowserMode('open')}
@@ -1733,6 +1809,15 @@ function App() {
       </div>
 
       <StatusBar content={content} filePath={filePath} />
+
+      {pptxBusy && (
+        <div className="pptx-busy-overlay" role="status" aria-live="polite">
+          <div className="pptx-busy-card">
+            <Loader2 size={20} className="spinning" />
+            <span>{pptxBusy}</span>
+          </div>
+        </div>
+      )}
 
       <RecentFilesPanel
         files={recentFiles}
