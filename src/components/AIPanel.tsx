@@ -18,6 +18,7 @@ import { initSecureStorage } from '../services/secureStorage';
 import { ModeSelector } from './ai/ModeSelector';
 import { NotesOptions } from './ai/NotesOptions';
 import { NotesResultCard } from './ai/NotesResultCard';
+import { ImageGenPanel } from './ai/ImageGenPanel';
 import { AudioTab } from './convert/AudioTab';
 import { OcrTab } from './convert/OcrTab';
 import './AIPanel.css';
@@ -50,6 +51,10 @@ interface AIPanelProps {
     onExportPptx: () => void;
     pptxAvailable: boolean;
     pptxBusy: string | null;
+    // ── 이미지 생성(image-gen) ──
+    onInsertGeneratedImage: (dataUrl: string) => void;
+    imageGenRefDropped: string[] | null;
+    onConsumeImageGenRefDropped: () => void;
 }
 
 /** stt/ocr 모드 본문 — secureStorage 초기화 가드(기존 ConvertSidebar 패턴). */
@@ -97,6 +102,9 @@ export function AIPanel({
     onExportPptx,
     pptxAvailable,
     pptxBusy,
+    onInsertGeneratedImage,
+    imageGenRefDropped,
+    onConsumeImageGenRefDropped,
 }: AIPanelProps) {
     const [prompt, setPrompt] = useState('');
     const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -130,10 +138,12 @@ export function AIPanel({
         (mode === 'improve' && !prompt.trim()) ||
         (mode === 'meeting-notes' && content.trim().length < 100);
 
-    // stt/ocr/pptx 는 AI 에이전트 키(apiKeySet)와 무관 — 키 게이트를 적용하지 않는다.
+    // stt/ocr/pptx/image-gen 은 AI 에이전트 키(apiKeySet)와 무관 — 키 게이트를 적용하지 않는다.
+    // (image-gen 은 ImageGenPanel 이 gemini/openai 키를 자체 검사한다.)
     const isConvertMode = mode === 'stt' || mode === 'ocr';
     const isPptxMode = mode === 'pptx';
-    const keyGated = !isConvertMode && !isPptxMode && !apiKeySet;
+    const isImageGenMode = mode === 'image-gen';
+    const keyGated = !isConvertMode && !isPptxMode && !isImageGenMode && !apiKeySet;
 
     return (
         <div className="ai-panel">
@@ -169,9 +179,6 @@ export function AIPanel({
 
             {isPptxMode && (
                 <div className="ai-pptx-mode">
-                    <p className="ai-pptx-desc">
-                        현재 문서를 AI 레이아웃으로 분석해 PowerPoint(.pptx) 슬라이드로 내보냅니다.
-                    </p>
                     {!pptxAvailable ? (
                         <div className="ai-no-key">
                             <AlertCircle size={20} />
@@ -197,6 +204,17 @@ export function AIPanel({
                 </div>
             )}
 
+            {isImageGenMode && (
+                <ConvertModeBody visible={visible}>
+                    <ImageGenPanel
+                        onInsertImage={onInsertGeneratedImage}
+                        onShowSettings={onShowSettings}
+                        refDropped={imageGenRefDropped}
+                        onConsumeRefDropped={onConsumeImageGenRefDropped}
+                    />
+                </ConvertModeBody>
+            )}
+
             {keyGated && (
                 <div className="ai-no-key">
                     <AlertCircle size={20} />
@@ -207,7 +225,7 @@ export function AIPanel({
                 </div>
             )}
 
-            {!isConvertMode && !isPptxMode && !keyGated && (
+            {!isConvertMode && !isPptxMode && !isImageGenMode && !keyGated && (
                 <>
                     {mode === 'translate' && (
                         <div className="ai-language-select">

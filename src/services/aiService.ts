@@ -4,7 +4,8 @@ import type { FlowchartNode, FlowchartEdge } from '../types/flowchart';
 import { layoutFlowchart } from '../lib/dagre-layout';
 import { getKey, hasKey, setKey, removeKey } from './secureStorage';
 import { getCachedUserMemory } from './userMemory';
-import { getAIModelSelection } from './aiModelConfig';
+import { getAIModelSelection, AI_CATALOG, resolveUsableSelection, type AIModelSelection } from './aiModelConfig';
+import { detectSubscriptionLogins } from './subscriptionService';
 import FLOWCHART_SYSTEM_PROMPT from './flowchartPrompt.txt?raw';
 
 // ─── API Key Management ───────────────────────────────────
@@ -23,8 +24,23 @@ export async function removeApiKey(): Promise<void> {
     await removeKey('gemini');
 }
 
+/** 현재 선택된 기본 AI 회사의 키 보유 여부(동기). 구독 가용성은 isTextAIUsable 로 별도 확인. */
 export function hasApiKey(): boolean {
-    return hasKey('gemini');
+    return hasKey(getAIModelSelection().company);
+}
+
+/**
+ * 현재 기본 AI 선택이 실제 사용 가능한지 — API 키 OR 구독 연동(async). AIPanel keyGate 판정용.
+ * (예: 키 없이 Claude/ChatGPT 구독만 연동돼도 사용 가능 → keyGate 풀림.)
+ */
+export async function isTextAIUsable(): Promise<boolean> {
+    const sel = getAIModelSelection();
+    if (hasKey(sel.company)) return true;
+    if (AI_CATALOG[sel.company]?.auths.includes('subscription')) {
+        const sub = await detectSubscriptionLogins();
+        return sel.company === 'claude' ? sub.claude : sel.company === 'openai' ? sub.codex : false;
+    }
+    return false;
 }
 
 // ─── System Prompts ───────────────────────────────────────
@@ -353,12 +369,33 @@ export function isAuthError(err: unknown): boolean {
     );
 }
 
+/**
+ * 전역 텍스트 AI 선택을 실제 가용한 회사·방식으로 보정(callAI 용). API 키(hasKey)와
+ * 구독 연동(detectSubscriptionLogins)을 함께 보고 결정 — Settings 의 AIModelPicker 와
+ * 동일한 resolveUsableSelection 을 써서 UI 와 호출이 같은 규칙으로 동작한다.
+ * 예: API 키 없이 구독만 있는 Claude 가 저장돼 있으면 'subscription' 으로 보정 → 호출 성공.
+ */
+async function resolveUsableTextSelection(): Promise<AIModelSelection> {
+    const raw = getAIModelSelection();
+    const sub = await detectSubscriptionLogins();
+    return resolveUsableSelection(AI_CATALOG, raw, (company, auth) =>
+        auth === 'subscription'
+            ? company === 'claude'
+                ? sub.claude
+                : company === 'openai'
+                  ? sub.codex
+                  : false
+            : hasKey(company),
+    );
+}
+
 export async function callAI(
     request: AIRequest,
     onStream?: (text: string) => void,
 ): Promise<AIResponse> {
     // 전역 AI 모델 설정(설정 > 기본 설정)에 따라 회사·인증·모델 결정.
-    const sel = getAIModelSelection();
+    // 저장된 선택이 비가용(키 삭제·구독만)이면 가용한 회사·방식으로 보정 후 호출.
+    const sel = await resolveUsableTextSelection();
     const hasPrompt = !!request.prompt?.trim();
     const systemPrompt = getSystemPrompt(request);
 

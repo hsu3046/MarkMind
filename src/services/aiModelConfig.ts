@@ -100,17 +100,55 @@ export const DEFAULT_SELECTION: AIModelSelection = {
     model: 'gemini-3.1-pro-preview',
 };
 
-/** 선택이 카탈로그상 유효한지(회사·인증·모델 조합) 검사 후 보정. */
-export function normalizeSelection(sel: Partial<AIModelSelection> | null): AIModelSelection {
-    const company: AICompany =
-        sel?.company && sel.company in AI_CATALOG ? sel.company : DEFAULT_SELECTION.company;
-    const def = AI_CATALOG[company];
+/**
+ * 카탈로그 기반 선택 정규화(제네릭) — 회사/인증/모델이 카탈로그상 유효한지 검사 후 보정.
+ * 텍스트(AI_CATALOG)·이미지(IMAGE_AI_CATALOG) 모두 이 한 함수로 처리(단일 로직).
+ * 무효 시 카탈로그의 첫 회사 · 그 회사의 첫 인증 · 첫 모델로 폴백.
+ */
+export function normalizeWithCatalog<C extends string>(
+    catalog: Record<C, AICompanyDef>,
+    sel: Partial<{ company: C; auth: AIAuthMode; model: string }> | null,
+): { company: C; auth: AIAuthMode; model: string } {
+    const companies = Object.keys(catalog) as C[];
+    const company: C = sel?.company && catalog[sel.company] ? sel.company : companies[0];
+    const def = catalog[company];
     const auth: AIAuthMode = sel?.auth && def.auths.includes(sel.auth) ? sel.auth : def.auths[0];
     const models = def.models[auth] ?? [];
-    const model = models.some((m) => m.id === sel?.model)
-        ? (sel!.model as string)
-        : (models[0]?.id ?? DEFAULT_SELECTION.model);
+    const model = models.some((m) => m.id === sel?.model) ? (sel!.model as string) : (models[0]?.id ?? '');
     return { company, auth, model };
+}
+
+/** 선택이 카탈로그상 유효한지(회사·인증·모델 조합) 검사 후 보정. */
+export function normalizeSelection(sel: Partial<AIModelSelection> | null): AIModelSelection {
+    return normalizeWithCatalog(AI_CATALOG, sel);
+}
+
+/**
+ * 저장된 선택을 "실제 사용 가능한" 회사·방식으로 보정. 가용성은 호출부가 `isUsable` 로 주입
+ * (API 키 보유 / 구독 연동 — Settings 는 stored·subStatus, callAI 는 hasKey·구독감지).
+ * - 현재 선택이 가용하면 **그대로(동일 참조)** 반환 → 호출부가 `===` 로 변경 여부 판단.
+ * - 비가용이면: 현재 회사가 가용하면 방식만 교정(구독만 있으면 subscription 으로),
+ *   아니면 첫 가용 회사로 전환(모델은 회사 유지 시 보존, 바뀌면 그 회사 첫 모델).
+ * - 가용한 회사가 하나도 없으면(키·구독 전무) 원본 그대로(키 등록 안내 상태).
+ * AIModelPicker(Settings UI)와 callAI(실제 호출)가 이 함수로 동일하게 보정한다.
+ */
+export function resolveUsableSelection<C extends string>(
+    catalog: Record<C, AICompanyDef>,
+    sel: { company: C; auth: AIAuthMode; model: string },
+    isUsable: (company: C, auth: AIAuthMode) => boolean,
+): { company: C; auth: AIAuthMode; model: string } {
+    const companyOk = (c: C): boolean => catalog[c].auths.some((a) => isUsable(c, a));
+    if (companyOk(sel.company) && isUsable(sel.company, sel.auth)) return sel;
+    const company = companyOk(sel.company)
+        ? sel.company
+        : (Object.keys(catalog) as C[]).find(companyOk);
+    if (!company) return sel;
+    const auth = catalog[company].auths.find((a) => isUsable(company, a)) ?? catalog[company].auths[0];
+    return normalizeWithCatalog(catalog, {
+        company,
+        auth,
+        model: company === sel.company ? sel.model : undefined,
+    });
 }
 
 export function getAIModelSelection(): AIModelSelection {
@@ -134,4 +172,71 @@ export function selectCompany(company: AICompany): AIModelSelection {
 /** 인증 변경 시 모델을 그 인증의 첫 유효값으로 재설정해 반환. */
 export function selectAuth(company: AICompany, auth: AIAuthMode): AIModelSelection {
     return normalizeSelection({ company, auth });
+}
+
+// ─── 이미지 생성 전용 모델 (텍스트와 별개 — Settings "이미지 AI 모델") ──────────
+//
+// 이미지 생성이 가능한 공급사(Gemini / OpenAI). 현재는 API 키만 노출:
+//  - Gemini: 구독 OAuth 연동을 제공사가 차단(텍스트 포함) → API 키 전용.
+//  - OpenAI: ChatGPT 구독(Codex OAuth)으로도 이미지 생성이 가능하나(Codex Responses API
+//    의 image_generation 툴) 구현이 별개라 보류(GitHub 이슈). 현재는 API 키(/v1/images)만.
+// 둘 다 auths=['api_key'] → 방식 토글 자동 숨김(AIModelPicker "2가지 이상일 때만").
+// 모델 ID 는 공식 문서 기준(2026-06): Gemini 2종(generateContent), OpenAI 1종(gpt-image-2).
+// UI 표시는 별칭(Gemini 이미지 = "Nano Banana" 브랜드).
+
+/** 이미지 생성 가능 공급사. */
+export type ImageAICompany = 'gemini' | 'openai';
+
+export const IMAGE_AI_CATALOG: Record<ImageAICompany, AICompanyDef> = {
+    gemini: {
+        label: 'Gemini',
+        auths: ['api_key'],
+        models: {
+            api_key: [
+                { id: 'gemini-3.1-flash-image', label: 'Nano Banana 2' },
+                { id: 'gemini-3-pro-image', label: 'Nano Banana Pro' },
+            ],
+        },
+    },
+    openai: {
+        label: 'ChatGPT',
+        auths: ['api_key'],
+        models: {
+            // alias(자동 최신 스냅샷) — 차후 모델 갱신 자동 추적. dated 스냅샷도 유효.
+            api_key: [{ id: 'gpt-image-2', label: 'GPT Image 2' }],
+        },
+    },
+};
+
+/** 전역 이미지 모델 선택 (회사 + 인증 + 모델 ID). */
+export interface ImageAIModelSelection {
+    company: ImageAICompany;
+    auth: AIAuthMode;
+    model: string;
+}
+
+const IMAGE_STORAGE_KEY = 'markmind-image-ai-model-selection';
+
+/** 기본값 — Nano Banana 2 (Gemini 3.1 Flash Image, API). */
+export const IMAGE_DEFAULT_SELECTION: ImageAIModelSelection = {
+    company: 'gemini',
+    auth: 'api_key',
+    model: 'gemini-3.1-flash-image',
+};
+
+export function normalizeImageSelection(sel: Partial<ImageAIModelSelection> | null): ImageAIModelSelection {
+    return normalizeWithCatalog(IMAGE_AI_CATALOG, sel);
+}
+
+export function getImageAIModelSelection(): ImageAIModelSelection {
+    try {
+        const raw = localStorage.getItem(IMAGE_STORAGE_KEY);
+        return normalizeImageSelection(raw ? (JSON.parse(raw) as ImageAIModelSelection) : null);
+    } catch {
+        return IMAGE_DEFAULT_SELECTION;
+    }
+}
+
+export function setImageAIModelSelection(sel: ImageAIModelSelection): void {
+    localStorage.setItem(IMAGE_STORAGE_KEY, JSON.stringify(sel));
 }

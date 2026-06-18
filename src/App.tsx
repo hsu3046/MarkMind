@@ -387,6 +387,8 @@ function App() {
   // AI 패널(stt/ocr 모드)로 drop된 파일을 자식 컴포넌트에 전달하기 위한 state
   const [audioDropped, setAudioDropped] = useState<DroppedFile | null>(null);
   const [ocrDropped, setOcrDropped] = useState<DroppedFile | null>(null);
+  // 이미지 생성 모드에서 OS 드롭으로 들어온 참조 이미지 경로(ImageGenPanel 이 소비).
+  const [imageGenRefDropped, setImageGenRefDropped] = useState<string[] | null>(null);
   const [dragActive, setDragActive] = useState(false); // #14 파일 드롭 시각 피드백
 
   // 최신 AI 패널 state 를 ref 로 유지 — 드롭 라우팅이 stt/ocr 모드를 참조 (listener 등록/해제 빈도 ↓)
@@ -445,6 +447,20 @@ function App() {
               else editorRef.current?.insertAtCursor(`\n![](${absPath})\n`);
             }
           };
+
+          // AI '이미지 생성' 모드: 드롭한 이미지는 에디터가 아니라 패널의 '참조 이미지'로 보낸다.
+          // (dragDropEnabled=true 라 webview HTML5 onDrop 이 억제돼 OS 드롭을 패널로 위임 →
+          //  에디터 이중 삽입 방지. 이 모드에서 비이미지 드롭은 무시.)
+          {
+            const ps = panelStateRef.current;
+            if (ps.aiVisible && ps.aiMode === 'image-gen') {
+              const imgs = paths.filter(
+                (fp) => imageExts.includes(fp.split('.').pop()?.toLowerCase() ?? ''),
+              );
+              if (imgs.length > 0) setImageGenRefDropped(imgs);
+              return;
+            }
+          }
 
           // 여러 파일 동시 드롭: 마크다운은 새 창, 이미지는 전부 삽입(#56), 나머지 무시.
           if (paths.length > 1) {
@@ -630,6 +646,25 @@ function App() {
       editorRef.current?.insertAtCursor(`\n![](${path})\n`);
     } catch (err) {
       console.error('[App] 클립보드 이미지 첨부 실패:', err);
+    }
+  }, []);
+
+  // AI 이미지 생성 결과를 현재 문서에 삽입(ImageGenPanel "문서에 삽입" 버튼).
+  // base64 data URL → temp 파일 → 활성 에디터(viewMode 분기)에 `![](temp경로)`.
+  // 저장(⌘S) 시 flushImagesOnSave 가 assets/ 로 복사·상대경로 치환(#56 인프라 재사용).
+  const handleInsertGeneratedImage = useCallback(async (dataUrl: string) => {
+    try {
+      const { writeTempImage, extFromMime } = await import('./lib/imageAttach');
+      const mime = dataUrl.match(/^data:([^;]+);base64,/)?.[1] ?? 'image/png';
+      const b64 = dataUrl.split(',')[1] ?? '';
+      const raw = atob(b64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      const path = await writeTempImage(bytes, extFromMime(mime));
+      if (viewModeRef.current === 'preview') previewRef.current?.insertImageMarkdown(path);
+      else editorRef.current?.insertAtCursor(`\n![](${path})\n`);
+    } catch (err) {
+      console.error('[App] 생성 이미지 삽입 실패:', err);
     }
   }, []);
 
@@ -1598,6 +1633,9 @@ function App() {
           onExportPptx={handleExportPptx}
           pptxAvailable={pptxAiReady}
           pptxBusy={pptxBusy}
+          onInsertGeneratedImage={handleInsertGeneratedImage}
+          imageGenRefDropped={imageGenRefDropped}
+          onConsumeImageGenRefDropped={() => setImageGenRefDropped(null)}
         />
 
       </div>

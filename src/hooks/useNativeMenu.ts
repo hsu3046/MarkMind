@@ -79,11 +79,10 @@ export function useNativeMenu(opts: UseNativeMenuOptions) {
             const sep = () => PredefinedMenuItem.new({ item: 'Separator' });
 
             // App menu (first submenu → macOS application menu, titled by app name).
+            // Settings 는 File 메뉴로 옮김(사용자 선호 — File 이 더 직관적). 앱 메뉴엔 Hide/Quit 만.
             const appMenu = await Submenu.new({
                 text: 'MarkMind',
                 items: [
-                    await MenuItem.new({ id: 'settings', text: 'Settings…', accelerator: 'CmdOrCtrl+,', action: () => h().onShowSettings() }),
-                    await sep(),
                     await PredefinedMenuItem.new({ item: 'Hide' }),
                     await PredefinedMenuItem.new({ item: 'Quit' }),
                 ],
@@ -121,6 +120,10 @@ export function useNativeMenu(opts: UseNativeMenuOptions) {
                     await sep(),
                     await MenuItem.new({ id: 'drive-open', text: 'Open from Google Drive…', action: () => h().onOpenFromDrive() }),
                     await MenuItem.new({ id: 'drive-save', text: 'Save to Google Drive…', action: () => h().onSaveToDrive() }),
+                    await sep(),
+                    // Settings — 앱 메뉴(MarkMind) 대신 File 메뉴에 배치(사용자 선호: File 이 직관적).
+                    // ⌘, 단축키도 함께 이동(앱 메뉴 항목을 제거해 중복 없음).
+                    await MenuItem.new({ id: 'file-settings', text: 'Settings…', accelerator: 'CmdOrCtrl+,', action: () => h().onShowSettings() }),
                 ],
             });
 

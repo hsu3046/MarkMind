@@ -1,0 +1,233 @@
+/* ─── Image Generation Panel (AIPanel 'image-gen' 모드) ─────────────── */
+
+.imggen {
+    display: flex;
+    flex-direction: column;
+    /* 자체 스크롤하지 않고 AI 패널 전체 스크롤에 맡김(모드 메뉴와 함께 스크롤). */
+    flex-shrink: 0;
+}
+
+/* 현재 이미지 모델 표시 (Settings 에서 변경) */
+.imggen-model-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    margin: 8px;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    flex-shrink: 0;
+}
+
+.imggen-model-name {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.imggen-model-name strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.imggen-model-change {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid var(--border-primary);
+    border-radius: 5px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.imggen-model-change:hover {
+    border-color: var(--accent, #3b82f6);
+    color: var(--accent, #3b82f6);
+}
+
+/* 섹션 공통 */
+.imggen-section {
+    padding: 4px 8px 8px;
+    flex-shrink: 0;
+}
+
+.imggen-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.imggen-label-hint {
+    font-weight: 400;
+    color: var(--text-tertiary);
+}
+
+/* 참조 이미지 썸네일 */
+.imggen-refs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.imggen-ref {
+    position: relative;
+    width: 56px;
+    height: 56px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border-primary);
+}
+
+.imggen-ref img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.imggen-ref-remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    cursor: pointer;
+    padding: 0;
+}
+
+.imggen-ref-remove:hover {
+    background: rgba(239, 68, 68, 0.9);
+}
+
+.imggen-ref-drop {
+    width: 56px;
+    height: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border: 1px dashed var(--border-primary);
+    border-radius: 6px;
+    color: var(--text-tertiary);
+    font-size: 9px;
+    text-align: center;
+}
+
+/* 비율 그리드 */
+.imggen-aspects {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+}
+
+.imggen-aspect {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 52px;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.imggen-aspect:hover {
+    border-color: var(--accent, #3b82f6);
+    color: var(--text-primary);
+}
+
+.imggen-aspect.active {
+    background: var(--accent-bg, rgba(59, 130, 246, 0.1));
+    border-color: var(--accent, #3b82f6);
+    color: var(--accent, #3b82f6);
+}
+
+.imggen-aspect-box {
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.imggen-aspect-label {
+    font-size: 10px;
+    font-weight: 500;
+}
+
+/* 품질 토글 */
+.imggen-qualities {
+    display: flex;
+    gap: 6px;
+}
+
+.imggen-quality {
+    flex: 1;
+    padding: 7px 8px;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.imggen-quality:hover {
+    border-color: var(--accent, #3b82f6);
+    color: var(--text-primary);
+}
+
+.imggen-quality.active {
+    background: var(--accent-bg, rgba(59, 130, 246, 0.1));
+    border-color: var(--accent, #3b82f6);
+    color: var(--accent, #3b82f6);
+    font-weight: 600;
+}
+
+/* 결과 미리보기 */
+.imggen-result {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    flex-shrink: 0;
+}
+
+.imggen-result-img {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border-primary);
+    display: block;
+}
+
+.imggen-result-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.imggen-result-actions .ai-btn {
+    flex: 1;
+    justify-content: center;
+    padding: 9px 12px;
+    font-size: 12px;
+    font-weight: 600;
+}

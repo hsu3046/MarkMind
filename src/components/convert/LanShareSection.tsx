@@ -122,7 +122,7 @@ export function LanShareSection() {
     return (
         <section className="convert-settings-section">
             <label>
-                아이폰 연결{' '}
+                iOS 디바이스 연결{' '}
                 {info.running ? (
                     <span className="badge badge-ok">연결됨</span>
                 ) : (
@@ -225,7 +225,7 @@ export function LanShareSection() {
             )}
 
             <p className="convert-key-note">
-                신뢰할 수 있는 네트워크에서만 사용하세요. 공용 또는 공유 네트워크에서는 보안상
+                신뢰할 수 있는 네트워크에서만 사용하세요. 공용 네트워크 등에서는 보안상
                 위험이 있을 수 있습니다.
             </p>
 

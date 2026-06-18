@@ -1,6 +1,6 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { AIMode, AIResponse, TranslateLanguage } from '../types/ai';
-import { callAI, hasApiKey, getApiKey, setApiKey, removeApiKey, applyDiff, isAuthError } from '../services/aiService';
+import { callAI, hasApiKey, isTextAIUsable, getApiKey, setApiKey, removeApiKey, applyDiff, isAuthError } from '../services/aiService';
 import { getAIModelSelection } from '../services/aiModelConfig';
 import { setValidationStatus } from '../services/apiValidation';
 import type { NotesJobResult } from '../types/converter';
@@ -17,6 +17,19 @@ export function useAI() {
     // 회의록 작성 (mode === 'meeting-notes') 전용 옵션/결과
     const [notesTemplate, setNotesTemplate] = useState<string>('general');
     const [notesResult, setNotesResult] = useState<NotesJobResult | null>(null);
+
+    // 패널 열림/모드 변경 시 현재 기본 AI 선택의 가용성(API 키 OR 구독)을 재확인 →
+    // keyGate 정확화. (hasApiKey 초기값은 현재 회사 키 동기 판정, 구독은 여기서 보강.)
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            const usable = await isTextAIUsable();
+            if (!cancelled) setApiKeySet(usable);
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [panelVisible, mode]);
 
     // Toggle AI panel
     const togglePanel = useCallback(() => {

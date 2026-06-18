@@ -14,6 +14,27 @@
   box-sizing: border-box;
 }
 
+/* ---------- Scrollbar (전역 통일 — 얇은 회색. AI 패널·Settings 모달 등 커스텀 없던 영역 포함) ---------- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-primary);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-primary) transparent;
+}
+
 :root {
   /* Spacing */
   --toolbar-height: 44px;

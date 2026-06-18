@@ -88,7 +88,7 @@ pub async fn generate_text(
     if !status.is_success() {
         let raw = resp.text().await.unwrap_or_default();
         let snippet: String = raw.chars().take(400).collect();
-        return Err(ConverterError::Codex(format!(
+        return Err(ConverterError::OpenAi(format!(
             "OpenAI HTTP {} — {}",
             status.as_u16(),
             snippet
@@ -98,7 +98,7 @@ pub async fn generate_text(
     let parsed: ChatResponse = resp
         .json()
         .await
-        .map_err(|e| ConverterError::Codex(format!("OpenAI 응답 파싱 실패: {e}")))?;
+        .map_err(|e| ConverterError::OpenAi(format!("OpenAI 응답 파싱 실패: {e}")))?;
     let text = parsed
         .choices
         .into_iter()

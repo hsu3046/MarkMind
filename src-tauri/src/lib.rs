@@ -320,6 +320,8 @@ pub fn run() {
             converters::commands::ai_generate_claude,
             converters::commands::ai_generate_codex,
             converters::commands::ai_generate_openai,
+            converters::commands::generate_image_gemini,
+            converters::commands::generate_image_openai,
             converters::commands::extract_speakers,
             converters::commands::rename_speakers,
             converters::commands::merge_md_files,

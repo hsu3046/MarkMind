@@ -266,6 +266,45 @@ pub async fn ai_generate_openai(
         .map_err(err_to_string)
 }
 
+// ─── 이미지 생성 (Gemini 3.1 Flash Image / OpenAI gpt-image-1) ──────────────
+//
+// React AI "이미지 생성" 모드. 키는 기존 Settings(Keychain)의 gemini/openai 를 재사용한다
+// (새 키 입력 UI 없음). 참조 이미지는 data URL 배열로 전달하고, 반환은 base64 data URL
+// 배열(개수 1)로 정규화 — 프론트의 삽입/저장 코드가 공급사와 무관하게 공통 동작한다.
+// WKWebView 의 fetch CORS 제약을 피하려 네이티브 HTTP(reqwest) 경유한다.
+#[tauri::command]
+pub async fn generate_image_gemini(
+    model: String,
+    prompt: String,
+    aspect_ratio: String,
+    resolution: String,
+    reference_images: Vec<String>,
+) -> Result<Vec<String>, String> {
+    use super::keychain::{get_key, Provider};
+    use super::llm::image_gen;
+    let key = get_key(Provider::Gemini)
+        .map_err(err_to_string)?
+        .ok_or_else(|| "Gemini API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
+    image_gen::generate_gemini(&key, &model, &prompt, &aspect_ratio, &resolution, &reference_images).await
+}
+
+#[tauri::command]
+pub async fn generate_image_openai(
+    model: String,
+    prompt: String,
+    aspect_ratio: String,
+    resolution: String,
+    quality: String,
+    reference_images: Vec<String>,
+) -> Result<Vec<String>, String> {
+    use super::keychain::{get_key, Provider};
+    use super::llm::image_gen;
+    let key = get_key(Provider::Openai)
+        .map_err(err_to_string)?
+        .ok_or_else(|| "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
+    image_gen::generate_openai(&key, &model, &prompt, &aspect_ratio, &resolution, &quality, &reference_images).await
+}
+
 // ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────
 
 #[cfg(test)]
