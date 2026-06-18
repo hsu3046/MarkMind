@@ -8,6 +8,8 @@
  * 참조 이미지 압축(compressImageIfNeeded)은 lumina-studio 에서 그대로 가져옴(canvas 기반).
  */
 
+import type { AIAuthMode } from './aiModelConfig';
+
 export type ImageProvider = 'gemini' | 'openai';
 /** 해상도 — 공통 축. Gemini=imageSize 직접, OpenAI=비율과 함께 size(WxH)로 환산. */
 export type ImageResolution = '1K' | '2K' | '4K';
@@ -56,7 +58,9 @@ export function getPreviewDimensions(ratio: string, maxDim = 28): { w: number; h
 
 export interface GenerateImageOptions {
     provider: ImageProvider;
-    /** 호출에 쓸 모델 ID (예: gemini-3.1-flash-image / gpt-image-2). */
+    /** 인증 방식 — 'subscription'(OpenAI 전용)이면 codex 경로. 기본 'api_key'. */
+    auth?: AIAuthMode;
+    /** 호출에 쓸 모델 ID (예: gemini-3.1-flash-image / gpt-image-2 / 구독 gpt-5.5). */
     model: string;
     prompt: string;
     aspectRatio: string;
@@ -74,7 +78,7 @@ export interface GenerateImageOptions {
  * - OpenAI: aspectRatio + resolution(→ size WxH 환산) + quality 전달.
  */
 export async function generateImage(opts: GenerateImageOptions): Promise<string[]> {
-    const { provider, model, prompt, aspectRatio, resolution, quality, referenceImages } = opts;
+    const { provider, auth, model, prompt, aspectRatio, resolution, quality, referenceImages } = opts;
     if (!prompt.trim()) throw new Error('프롬프트를 입력해주세요.');
 
     const { invoke } = await import('@tauri-apps/api/core');
@@ -82,6 +86,16 @@ export async function generateImage(opts: GenerateImageOptions): Promise<string[
     if (provider === 'gemini') {
         return invoke<string[]>('generate_image_gemini', { model, prompt, aspectRatio, resolution, referenceImages: refs });
     }
+    // OpenAI 구독(codex) — image_generation 툴(size 3종 + quality). resolution·참조 미사용.
+    if (auth === 'subscription') {
+        return invoke<string[]>('generate_image_codex', {
+            model,
+            prompt,
+            aspectRatio,
+            quality: quality ?? 'high',
+        });
+    }
+    // OpenAI API 키 — /v1/images (비율×해상도 size 환산 + quality + 참조).
     return invoke<string[]>('generate_image_openai', {
         model,
         prompt,
@@ -110,6 +124,11 @@ export function humanizeImageGenError(err: unknown, provider: ImageProvider): st
     // GPT Image 모델(gpt-image-2 등)은 API 키와 별개로 "조직 인증"이 필요 — 미인증 시 거부됨.
     if (body.includes('verif') || body.includes('organization must') || body.includes('must be verified'))
         return `${label} 조직 인증(Organization Verification)이 필요합니다. platform.openai.com → 설정 → 조직(General)에서 인증을 완료한 뒤 다시 시도해주세요. (GPT Image 모델 공통 요건)`;
+
+    // 구독(ChatGPT) usage limit 소진 — codex 사용 전반에 누적된 한도(시간 경과로 리셋).
+    // 일반 429(rate limit)보다 구체적이라 먼저 거른다.
+    if (body.includes('usage_limit_reached') || body.includes('usage limit'))
+        return 'ChatGPT 구독 사용 한도에 도달했습니다. 잠시 후 다시 시도하거나, 설정에서 API 키 방식으로 전환해주세요.';
 
     // 결제 한도(billing hard limit) 도달 — OpenAI 계정 측 한도/크레딧 문제(코드·요청 무관).
     if (body.includes('billing') || body.includes('hard limit'))

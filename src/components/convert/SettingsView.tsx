@@ -745,6 +745,8 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                             setImageAIModelSelection(s);
                         }}
                         apiKeyAvailable={(c) => stored[c as Provider]}
+                        // 이미지 구독은 OpenAI(codex)만 — Gemini 는 구독 미지원이라 false.
+                        subscriptionAvailable={(c) => (c === 'openai' ? subStatus.codex : false)}
                     />
 
                     <hr className="settings-divider" />

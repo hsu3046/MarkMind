@@ -176,13 +176,14 @@ export function selectAuth(company: AICompany, auth: AIAuthMode): AIModelSelecti
 
 // ─── 이미지 생성 전용 모델 (텍스트와 별개 — Settings "이미지 AI 모델") ──────────
 //
-// 이미지 생성이 가능한 공급사(Gemini / OpenAI). 현재는 API 키만 노출:
-//  - Gemini: 구독 OAuth 연동을 제공사가 차단(텍스트 포함) → API 키 전용.
-//  - OpenAI: ChatGPT 구독(Codex OAuth)으로도 이미지 생성이 가능하나(Codex Responses API
-//    의 image_generation 툴) 구현이 별개라 보류(GitHub 이슈). 현재는 API 키(/v1/images)만.
-// 둘 다 auths=['api_key'] → 방식 토글 자동 숨김(AIModelPicker "2가지 이상일 때만").
-// 모델 ID 는 공식 문서 기준(2026-06): Gemini 2종(generateContent), OpenAI 1종(gpt-image-2).
-// UI 표시는 별칭(Gemini 이미지 = "Nano Banana" 브랜드).
+// 이미지 생성이 가능한 공급사(Gemini / OpenAI):
+//  - Gemini: 구독 OAuth 연동을 제공사가 차단(텍스트 포함) → API 키 전용(auths 1개 → 토글 숨김).
+//  - OpenAI: API 키(/v1/images, gpt-image-2) + ChatGPT 구독(Codex Responses API 의
+//    image_generation 툴, mainline gpt-5.5) 둘 다 지원 → 방식 토글 노출.
+//    구독 호출은 codex usage limit 에 누적된다(이미지/텍스트 공통).
+// 모델 ID 는 공식 문서·실측 기준(2026-06): Gemini 2종(generateContent),
+// OpenAI api_key=gpt-image-2 / subscription=gpt-5.5(+image_generation 툴).
+// UI 표시는 별칭(Gemini 이미지 = "Nano Banana" 브랜드, OpenAI 구독 = "GPT Image (구독)").
 
 /** 이미지 생성 가능 공급사. */
 export type ImageAICompany = 'gemini' | 'openai';
@@ -200,10 +201,13 @@ export const IMAGE_AI_CATALOG: Record<ImageAICompany, AICompanyDef> = {
     },
     openai: {
         label: 'ChatGPT',
-        auths: ['api_key'],
+        auths: ['api_key', 'subscription'],
         models: {
             // alias(자동 최신 스냅샷) — 차후 모델 갱신 자동 추적. dated 스냅샷도 유효.
             api_key: [{ id: 'gpt-image-2', label: 'GPT Image 2' }],
+            // 구독: mainline 모델 + image_generation 툴(별도 이미지 모델 아님). gpt-5.5 가 내부
+            // GPT Image 를 호출. 모델 선택지는 1개라 사실상 "ChatGPT 구독으로 생성"의 의미.
+            subscription: [{ id: 'gpt-5.5', label: 'GPT Image (구독)' }],
         },
     },
 };

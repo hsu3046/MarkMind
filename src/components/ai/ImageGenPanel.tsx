@@ -13,7 +13,14 @@
 import { useState, useEffect } from 'react';
 import { Loader2, AlertCircle, Sparkles, FileInput, Download, X, ImageIcon, Settings as SettingsIcon } from 'lucide-react';
 import { hasKey } from '../../services/secureStorage';
-import { getImageAIModelSelection, IMAGE_AI_CATALOG, resolveUsableSelection } from '../../services/aiModelConfig';
+import {
+    getImageAIModelSelection,
+    IMAGE_AI_CATALOG,
+    resolveUsableSelection,
+    type ImageAICompany,
+    type AIAuthMode,
+} from '../../services/aiModelConfig';
+import { detectSubscriptionLogins } from '../../services/subscriptionService';
 import {
     generateImage,
     humanizeImageGenError,
@@ -65,15 +72,26 @@ export function ImageGenPanel({
     refDropped,
     onConsumeRefDropped,
 }: ImageGenPanelProps) {
-    // 전역 이미지 모델 선택(Settings) — 매 렌더 읽고, 가용한 공급사로 보정(callAI 와 동일
-    // resolveUsableSelection). 이미지는 구독 미지원이라 API 키(hasKey)만으로 가용성 판정.
-    // 한쪽 키만 있어도 자동 선택되고, 둘 다 없으면 원본 유지 → providerHasKey 가 false 로 안내.
-    const imgModel = resolveUsableSelection(IMAGE_AI_CATALOG, getImageAIModelSelection(), (c) =>
-        hasKey(c),
-    );
+    // 구독 연동(codex) 감지 — 로컬 토큰 확인이라 비동기(state). 텍스트 AI
+    // (resolveUsableTextSelection)와 동일 규칙으로 가용성 판정.
+    const [subCodex, setSubCodex] = useState(false);
+    useEffect(() => {
+        detectSubscriptionLogins()
+            .then((s) => setSubCodex(s.codex))
+            .catch(() => {});
+    }, []);
+
+    // 가용성: 구독은 codex 로그인(OpenAI 전용), API 키는 hasKey.
+    const isUsable = (company: ImageAICompany, auth: AIAuthMode): boolean =>
+        auth === 'subscription' ? company === 'openai' && subCodex : hasKey(company);
+
+    // 전역 이미지 모델 선택(Settings) — 매 렌더 읽고, 가용한 공급사·방식으로 보정(callAI 와
+    // 동일 resolveUsableSelection). 키·구독 둘 다 없으면 원본 유지 → providerUsable=false 안내.
+    const imgModel = resolveUsableSelection(IMAGE_AI_CATALOG, getImageAIModelSelection(), isUsable);
     const provider = imgModel.company; // 'gemini' | 'openai'
-    const providerHasKey = hasKey(provider);
-    // 패널 상단엔 회사명이 아니라 선택된 모델명(예: Nano Banana 2 / GPT Image 2)을 표시.
+    const isSubscription = imgModel.auth === 'subscription';
+    const providerUsable = isUsable(provider, imgModel.auth);
+    // 패널 상단엔 회사명이 아니라 선택된 모델명(예: Nano Banana 2 / GPT Image (구독))을 표시.
     const imgModelLabel =
         IMAGE_AI_CATALOG[provider].models[imgModel.auth]?.find((m) => m.id === imgModel.model)?.label ??
         imgModel.model;
@@ -120,7 +138,7 @@ export function ImageGenPanel({
     }, [refDropped]);
 
     const handleGenerate = async () => {
-        if (!providerHasKey) {
+        if (!providerUsable) {
             onShowSettings();
             return;
         }
@@ -131,12 +149,14 @@ export function ImageGenPanel({
         try {
             const urls = await generateImage({
                 provider,
+                auth: imgModel.auth,
                 model: imgModel.model,
                 prompt: prompt.trim(),
                 aspectRatio,
                 resolution,
                 quality: provider === 'openai' ? quality : undefined,
-                referenceImages: refs,
+                // 구독(codex) 경로는 참조 이미지 미지원(1차) → 빈 배열.
+                referenceImages: isSubscription ? [] : refs,
             });
             if (urls.length === 0) throw new Error('이미지를 생성하지 못했습니다.');
             setResult(urls[0]);
@@ -187,10 +207,14 @@ export function ImageGenPanel({
                 </button>
             </div>
 
-            {!providerHasKey ? (
+            {!providerUsable ? (
                 <div className="ai-no-key">
                     <AlertCircle size={20} />
-                    <p>{IMAGE_AI_CATALOG[provider].label} API 키를 설정해주세요</p>
+                    <p>
+                        {isSubscription
+                            ? 'ChatGPT 구독 로그인을 연결해주세요 (터미널에서 codex 로그인)'
+                            : `${IMAGE_AI_CATALOG[provider].label} API 키를 설정해주세요`}
+                    </p>
                     <button className="ai-btn primary" onClick={onShowSettings}>
                         설정하기
                     </button>
@@ -208,32 +232,34 @@ export function ImageGenPanel({
                         />
                     </div>
 
-                    {/* 참조 이미지 (드롭으로 추가) */}
-                    <div className="imggen-section">
-                        <div className="imggen-label">
-                            참조 이미지 <span className="imggen-label-hint">선택 · 드래그해서 추가</span>
+                    {/* 참조 이미지 (드롭으로 추가) — 구독(codex) 경로는 미지원이라 숨김 */}
+                    {!isSubscription && (
+                        <div className="imggen-section">
+                            <div className="imggen-label">
+                                참조 이미지 <span className="imggen-label-hint">선택 · 드래그해서 추가</span>
+                            </div>
+                            <div className="imggen-refs">
+                                {refs.map((src, i) => (
+                                    <div key={i} className="imggen-ref">
+                                        <img src={src} alt={`참조 ${i + 1}`} />
+                                        <button
+                                            className="imggen-ref-remove"
+                                            onClick={() => removeRef(i)}
+                                            title="참조 이미지 제거"
+                                        >
+                                            <X size={11} />
+                                        </button>
+                                    </div>
+                                ))}
+                                {refs.length < MAX_REFS && (
+                                    <div className="imggen-ref-drop">
+                                        <ImageIcon size={16} />
+                                        <span>여기로 드롭</span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                        <div className="imggen-refs">
-                            {refs.map((src, i) => (
-                                <div key={i} className="imggen-ref">
-                                    <img src={src} alt={`참조 ${i + 1}`} />
-                                    <button
-                                        className="imggen-ref-remove"
-                                        onClick={() => removeRef(i)}
-                                        title="참조 이미지 제거"
-                                    >
-                                        <X size={11} />
-                                    </button>
-                                </div>
-                            ))}
-                            {refs.length < MAX_REFS && (
-                                <div className="imggen-ref-drop">
-                                    <ImageIcon size={16} />
-                                    <span>여기로 드롭</span>
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                    )}
 
                     {/* 비율 */}
                     <div className="imggen-section">
@@ -256,21 +282,24 @@ export function ImageGenPanel({
                         </div>
                     </div>
 
-                    {/* 해상도 (공통 — Gemini imageSize / OpenAI size 환산) */}
-                    <div className="imggen-section">
-                        <div className="imggen-label">해상도</div>
-                        <div className="imggen-qualities">
-                            {IMAGE_RESOLUTIONS.map((r) => (
-                                <button
-                                    key={r.id}
-                                    className={`imggen-quality${resolution === r.id ? ' active' : ''}`}
-                                    onClick={() => setResolution(r.id)}
-                                >
-                                    {r.label}
-                                </button>
-                            ))}
+                    {/* 해상도 — Gemini imageSize / OpenAI(API키) size 환산. 구독(codex)은
+                        size 3종 고정(비율로 매핑)이라 미사용 → 숨김. */}
+                    {!isSubscription && (
+                        <div className="imggen-section">
+                            <div className="imggen-label">해상도</div>
+                            <div className="imggen-qualities">
+                                {IMAGE_RESOLUTIONS.map((r) => (
+                                    <button
+                                        key={r.id}
+                                        className={`imggen-quality${resolution === r.id ? ' active' : ''}`}
+                                        onClick={() => setResolution(r.id)}
+                                    >
+                                        {r.label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* 품질 (OpenAI 전용 — gpt-image-2 quality. Gemini 는 해당 파라미터 없음) */}
                     {provider === 'openai' && (
