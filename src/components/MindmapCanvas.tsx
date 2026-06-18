@@ -23,7 +23,7 @@ import {
     type Edge,
     type NodeProps,
 } from '@xyflow/react';
-import { Plus, Pencil, Trash2, FileSymlink, SquareArrowOutUpRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, SquareArrowOutUpRight } from 'lucide-react';
 import type { MindmapNode } from '../types/mindmap';
 import { PALETTE } from '../lib/d3-layout';
 import '@xyflow/react/dist/style.css';
@@ -42,17 +42,12 @@ export interface MindmapNodeData {
     mdLine?: number;
     // injected by MindmapView
     isEditing?: boolean;
-    hasLinks?: boolean;
-    linkCount?: number;
-    /** When true the drill-in affordance navigates; otherwise it's a passive indicator (M1). */
-    canDrill?: boolean;
     onStartEdit?: () => void;
     onJumpToSource?: () => void;
     onUpdateLabel?: (value: string) => void;
     onCancelEdit?: () => void;
     onAddChild?: () => void;
     onDelete?: () => void;
-    onOpenLink?: () => void;
     [key: string]: unknown;
 }
 
@@ -143,22 +138,6 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
                     <span className="mm-label">{d.label || '(빈 노드)'}</span>
                     {desc && <span className="mm-desc" title={desc}>{descPreview(desc)}</span>}
                 </div>
-            )}
-
-            {d.hasLinks && !d.isEditing && (
-                d.canDrill ? (
-                    <button
-                        className="mm-drill"
-                        title={`연결된 문서 ${d.linkCount ?? 1}개 열기`}
-                        onClick={(e) => { e.stopPropagation(); d.onOpenLink?.(); }}
-                    >
-                        <FileSymlink size={12} />
-                    </button>
-                ) : (
-                    <span className="mm-drill mm-drill-static" title={`연결된 문서 ${d.linkCount ?? 1}개`}>
-                        <FileSymlink size={12} />
-                    </span>
-                )
             )}
 
             {d.onJumpToSource && !d.isEditing && (

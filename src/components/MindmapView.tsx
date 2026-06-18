@@ -25,8 +25,6 @@ interface MindmapViewProps {
     content: string;
     onChange: (md: string) => void;
     fileName: string;
-    /** Drill-in: open a linked document (M2 navigation; M1 may pass a basic opener). */
-    onOpenDocument?: (target: string, isWiki: boolean) => void;
     /** Jump to this node's section (source line) in the editor. */
     onJumpToSource?: (line: number) => void;
     /** 마인드맵 정리(structurize) — 현재 문서를 계층 아웃라인으로 재구성(#60). */
@@ -64,7 +62,7 @@ function findParentById(root: MindmapNode, id: string): { parent: MindmapNode | 
     return { parent: cur ?? null, index };
 }
 
-export function MindmapView({ content, onChange, fileName, onOpenDocument, onJumpToSource, onStructurize, structurizing }: MindmapViewProps) {
+export function MindmapView({ content, onChange, fileName, onJumpToSource, onStructurize, structurizing }: MindmapViewProps) {
     const stem = useMemo(() => stemOf(fileName), [fileName]);
     const charCount = content.trim().length;
 
@@ -130,38 +128,28 @@ export function MindmapView({ content, onChange, fileName, onOpenDocument, onJum
         commitTree(clone);
     }, [commitTree]);
 
-    const openLink = useCallback((node: MindmapNode) => {
-        const link = node.links?.[0];
-        if (link && onOpenDocument) onOpenDocument(link.target, link.isWiki);
-    }, [onOpenDocument]);
-
     const layout = useMemo(() => calculateD3Layout(tree, NOOP), [tree]);
 
     const nodes: Node[] = useMemo(() =>
         layout.nodes.map((n) => {
             const base = n.data as MindmapNodeData;
-            const linkCount = base.node?.links?.length ?? 0;
             return {
                 ...n,
                 data: {
                     ...base,
                     isEditing: n.id === editingId,
-                    hasLinks: linkCount > 0,
-                    linkCount,
-                    canDrill: !!onOpenDocument,
                     onStartEdit: () => setEditingId(n.id),
                     onUpdateLabel: (v: string) => updateLabel(n.id, v),
                     onCancelEdit: () => setEditingId(null),
                     onAddChild: () => addChild(n.id),
                     onDelete: () => deleteNode(n.id),
-                    onOpenLink: () => openLink(base.node),
                     onJumpToSource: base.mdLine !== undefined && onJumpToSource
                         ? () => onJumpToSource(base.mdLine as number)
                         : undefined,
                 } satisfies MindmapNodeData,
             };
         }),
-        [layout, editingId, updateLabel, addChild, deleteNode, openLink, onOpenDocument, onJumpToSource],
+        [layout, editingId, updateLabel, addChild, deleteNode, onJumpToSource],
     );
 
     return (

@@ -132,7 +132,6 @@
 }
 
 .mm-toolbar button,
-.mm-drill,
 .mm-jump {
     display: inline-flex;
     align-items: center;
@@ -151,18 +150,6 @@
 .mm-toolbar button:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
-}
-
-/* drill-in affordance for nodes that link to other docs (Obsidian-style) */
-.mm-drill {
-    width: 20px;
-    height: 20px;
-    color: var(--accent);
-    flex-shrink: 0;
-}
-
-.mm-drill:hover {
-    background: var(--accent-subtle);
 }
 
 /* jump-to-section — absolute top-right corner (equal top/right margin), shown on
@@ -184,16 +171,6 @@
 
 .mm-jump:hover {
     background: color-mix(in srgb, currentColor 18%, transparent);
-}
-
-/* M1: passive link indicator (no navigation yet — M2 wires drill-in) */
-.mm-drill-static {
-    cursor: default;
-    opacity: 0.7;
-}
-
-.mm-drill-static:hover {
-    background: transparent;
 }
 
 /* connecting edges use React Flow's default stroke/width */
