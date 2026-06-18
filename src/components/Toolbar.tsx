@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
     Columns2, BookOpen,
     FilePlus, FolderOpen, Save, Download, FileDown,
-    BookMarked, Maximize, Clock, History,
+    BookMarked, Clock, History,
     Search, ChevronRight, ChevronDown, Sparkles, Check, X,
     Settings,
     FileCode, FileText,
@@ -119,7 +119,6 @@ interface ToolbarProps {
     onExportPdf: () => void;
     onShowTutorial: () => void;
     onToggleOutline: () => void;
-    onToggleReadingMode: () => void;
     onToggleRecentFiles: () => void;
     recentFiles: RecentFile[];
     onOpenRecent: (path: string) => void;
@@ -141,7 +140,6 @@ export function Toolbar({
     onExportPdf,
     onShowTutorial,
     onToggleOutline,
-    onToggleReadingMode,
     onToggleRecentFiles,
     recentFiles,
     onOpenRecent,
@@ -415,16 +413,6 @@ export function Toolbar({
                 {/* Settings — 설정 모달 열기 */}
                 <button className="toolbar-btn" onClick={onShowSettings} title="Settings">
                     <Settings size={16} strokeWidth={1.5} />
-                </button>
-
-                {/* 글자 크기·행간·배경색·본문 폰트·읽기 폭은 설정 → 뷰어 설정 탭으로 이동.
-                    (⌘+/−/0 단축키는 유지) */}
-
-                <div className="toolbar-divider" />
-
-                {/* Full (Reading mode) */}
-                <button className="toolbar-btn" onClick={onToggleReadingMode} title="Full / Reading Mode">
-                    <Maximize size={16} strokeWidth={1.5} />
                 </button>
             </div>
 

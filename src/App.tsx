@@ -104,7 +104,6 @@ function App() {
   // Wire up the file-opened callback now that viewMode/setViewMode exist
   onFileOpenedRef.current = () => {
     setViewMode('preview');
-    setReadingMode(false);
   };
   const { syncEnabled, toggleSync, reattach } = useScrollSync(true);
   const [fontSize, setFontSize] = useState(() => {
@@ -172,9 +171,28 @@ function App() {
     setThemeTransient(luminance < 0.5 ? 'dark' : 'light');
   }, [luminance, setThemeTransient, resetThemeToOS]);
   const [outlineVisible, setOutlineVisible] = useState(false);
-  const [readingMode, setReadingMode] = useState(false);
   const [tutorialVisible, setTutorialVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  // macOS full screen 시 툴바 숨김 — Tauri 윈도우 fullscreen 상태 추적(진입/해제는 resize 동반)
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    (async () => {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const win = getCurrentWindow();
+      const sync = async () => setIsFullscreen(await win.isFullscreen());
+      await sync();
+      const un = await win.onResized(sync);
+      if (disposed) un();
+      else unlisten = un;
+    })();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
   const [driveBrowserMode, setDriveBrowserMode] = useState<'open' | 'save' | null>(null);
   // LAN 서버 모드(아이폰 브라우저 등)에서 공유 폴더 파일 목록 브라우저
   const [lanBrowserVisible, setLanBrowserVisible] = useState(false);
@@ -388,18 +406,9 @@ function App() {
   // converter 는 AudioTab/OcrTab(AIPanel 내부)에 전달.
   const converter = useConverter();
 
-  // 사이드 패널 열 때 reading mode 만 해제 — 현재 viewMode 는 그대로 유지
-  // (이전엔 강제로 editor 모드로 전환했으나 사용자 의도와 어긋남)
-  const exitReadingMode = useCallback(() => {
-    if (readingMode) setReadingMode(false);
-  }, [readingMode]);
-
   const handleToggleAI = useCallback(() => {
-    if (!ai.panelVisible) {
-      exitReadingMode();
-    }
     ai.togglePanel();
-  }, [ai, exitReadingMode]);
+  }, [ai]);
 
   // AI 패널(stt/ocr 모드)로 drop된 파일을 자식 컴포넌트에 전달하기 위한 state
   const [audioDropped, setAudioDropped] = useState<DroppedFile | null>(null);
@@ -589,7 +598,6 @@ function App() {
     } else {
       pendingScrollLineRef.current = line;
       setViewMode('split');
-      setReadingMode(false);
     }
   }, [viewMode]);
 
@@ -773,7 +781,6 @@ function App() {
     if (!ai.panelVisible) {
       if (viewMode !== 'editor') {
         setViewMode('editor');
-        setReadingMode(false);
       }
       ai.setPanelVisible(true);
     }
@@ -974,18 +981,6 @@ function App() {
     localStorage.setItem('md-editor-font-size', String(FONT_SIZE_DEFAULT));
   }, []);
 
-  // Reading mode
-  const toggleReadingMode = useCallback(() => {
-    setReadingMode((prev) => {
-      const next = !prev;
-      if (next) {
-        setViewMode('preview');
-        setOutlineVisible(false);
-      }
-      return next;
-    });
-  }, []);
-
   // Search toggle
   // ─── 통일 검색 (Markdown/CodeMirror + Rich Text/Tiptap 공용 SearchBar) ───
   // 엔진 라우팅: 편집/split → editorRef 프로그램 검색(동기 {count,index}), 프리뷰 →
@@ -1173,7 +1168,6 @@ function App() {
       if (e.key === 'Escape') {
         if (settingsVisible) { setSettingsVisible(false); return; }
         if (tutorialVisible) { setTutorialVisible(false); return; }
-        if (readingMode) { setReadingMode(false); return; }
         if (searchVisible) { toggleSearch(); return; }
         if (recentPanelVisible) { setRecentPanelVisible(false); return; }
       }
@@ -1205,32 +1199,26 @@ function App() {
           case '1':
             e.preventDefault();
             setViewMode('editor');
-            setReadingMode(false);
             break;
           case '2':
             e.preventDefault();
             setViewMode('preview');
-            setReadingMode(false);
             break;
           case '3':
             e.preventDefault();
             setViewMode('split');
-            setReadingMode(false);
             break;
           case '4':
             e.preventDefault();
             setViewMode('mindmap');
-            setReadingMode(false);
             break;
           case '5':
             e.preventDefault();
             setViewMode('flowchart');
-            setReadingMode(false);
             break;
           case '6':
             e.preventDefault();
             setViewMode('gantt');
-            setReadingMode(false);
             break;
           case '=':
           case '+':
@@ -1260,7 +1248,7 @@ function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [
     saveFile, saveFileAs, handleOpenFile, newFile, toggleSearch,
-    handleFontSizeChange, resetFontSize, readingMode, recentPanelVisible,
+    handleFontSizeChange, resetFontSize, recentPanelVisible,
     searchVisible, viewMode, handleToggleAI, tutorialVisible, settingsVisible,
   ]);
 
@@ -1312,29 +1300,6 @@ function App() {
     }
   }, [fileName, isDirty]);
 
-  // Reading mode
-  if (readingMode) {
-    return (
-      <div
-        className="app reading-mode"
-        data-font-family={fontFamily}
-        style={{
-          '--md-line-height': String(lineHeight),
-          '--md-side-margin': readingWidthCss,
-          ...(bgColor ? { '--user-bg': bgColor, '--preview-bg': bgColor } : {}),
-        } as React.CSSProperties}
-        data-custom-bg={bgColor ? 'true' : undefined}
-        onClick={() => setReadingMode(false)}
-      >
-        <div className="reading-mode-content" onClick={(e) => e.stopPropagation()}>
-          <Preview content={content} fontSize={fontSize + 2} filePath={filePath} />
-        </div>
-        <div className="reading-mode-hint">
-          Press <kbd>Esc</kbd> or click outside to exit
-        </div>
-      </div>
-    );
-  }
 
   // 네이티브 macOS 메뉴바에 File/View 미러링(Tauri 한정) — 툴바 dropdown 은 숨김.
   // (조기 return 보다 위에 둬 hooks 호출 순서 보장.)
@@ -1432,6 +1397,7 @@ function App() {
           <EditableFileName fileName={fileName} isDirty={isDirty} onRename={renameFile} />
         </div>
       </div>
+      {!isFullscreen && (
       <Toolbar
         viewMode={viewMode}
         outlineVisible={outlineVisible}
@@ -1446,7 +1412,6 @@ function App() {
         onOpenFromDrive={() => setDriveBrowserMode('open')}
         onSaveToDrive={() => setDriveBrowserMode('save')}
         onToggleOutline={() => setOutlineVisible((v) => !v)}
-        onToggleReadingMode={toggleReadingMode}
         onToggleRecentFiles={() => setRecentPanelVisible((v) => !v)}
         recentFiles={recentFiles}
         onOpenRecent={handleOpenRecentByPath}
@@ -1456,6 +1421,7 @@ function App() {
         aiPanelVisible={ai.panelVisible}
         nativeMenu={isTauri()}
       />
+      )}
 
       {/* 통일 검색+바꾸기 바 (Markdown/Rich Text 공용) */}
       {searchVisible && (

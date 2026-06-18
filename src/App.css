@@ -2758,32 +2758,7 @@ code.hljs {
   text-align: center;
 }
 
-/* ---------- Reading Mode ---------- */
-.reading-mode {
-  background: var(--bg-primary);
-  cursor: pointer;
-  position: relative;
-}
-
-.reading-mode-content {
-  flex: 1;
-  overflow-y: auto;
-  cursor: default;
-  display: flex;
-  justify-content: center;
-}
-
-.reading-mode-content .preview-wrapper {
-  /* 사용자 요청 — 전체 폭 100% 활용 (이전 800px 제한 해제) */
-  max-width: none;
-  width: 100%;
-  padding: 48px 60px;
-}
-/* reading mode 의 markdown-body 도 폭 제한 해제 */
-.reading-mode-content .preview-wrapper .markdown-body {
-  max-width: none;
-}
-
+/* ---------- 오버레이 Esc 힌트 (Tutorial 오버레이가 재사용) ---------- */
 .reading-mode-hint {
   position: fixed;
   bottom: 24px;
