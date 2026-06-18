@@ -93,6 +93,14 @@ export function humanizeImageGenError(err: unknown, provider: ImageProvider): st
     // Rust command 의 "API 키가 없습니다 ..." 안내는 그대로 노출(설정 유도).
     if (body.includes('api 키가 없습니다')) return raw;
 
+    // GPT Image 모델(gpt-image-2 등)은 API 키와 별개로 "조직 인증"이 필요 — 미인증 시 거부됨.
+    if (body.includes('verif') || body.includes('organization must') || body.includes('must be verified'))
+        return `${label} 조직 인증(Organization Verification)이 필요합니다. platform.openai.com → 설정 → 조직(General)에서 인증을 완료한 뒤 다시 시도해주세요. (GPT Image 모델 공통 요건)`;
+
+    // 결제 한도(billing hard limit) 도달 — OpenAI 계정 측 한도/크레딧 문제(코드·요청 무관).
+    if (body.includes('billing') || body.includes('hard limit'))
+        return `${label} 결제 한도에 도달했습니다. platform.openai.com → Settings → Limits 에서 사용 한도를 상향하거나 결제(크레딧)를 확인해주세요.`;
+
     const statusMatch = raw.match(/http\s+(\d{3})/i);
     const status = statusMatch ? Number(statusMatch[1]) : 0;
 
@@ -106,13 +114,17 @@ export function humanizeImageGenError(err: unknown, provider: ImageProvider): st
         return '콘텐츠 안전 정책에 의해 차단되었습니다. 프롬프트를 수정해주세요.';
     if (body.includes('invalid_image') || body.includes('could not process image') || body.includes('참조 이미지'))
         return '참조 이미지를 처리할 수 없습니다. 다른 이미지를 사용해주세요.';
-    if (body.includes('네트워크') || body.includes('network') || body.includes('failed to fetch') || body.includes('timeout') || body.includes('dns'))
+    if (body.includes('timed out') || body.includes('timeout') || body.includes('시간 초과'))
+        return `${label} 응답 시간 초과 — 이미지 생성이 오래 걸리고 있습니다(특히 2K/4K·high 품질). 품질·크기를 낮추거나 잠시 후 다시 시도해주세요.`;
+    if (body.includes('네트워크') || body.includes('network') || body.includes('failed to fetch') || body.includes('dns'))
         return '네트워크 연결에 실패했습니다. 인터넷 연결을 확인해주세요.';
     if (status >= 500)
         return `${label} 서버에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.`;
     if (status === 400) {
         if (body.includes('prompt')) return '프롬프트에 문제가 있습니다. 내용을 확인하고 다시 시도해주세요.';
-        return `${label} 요청이 거부되었습니다. 설정을 확인해주세요.`;
+        // 원인 미상 400 — OpenAI 원본 메시지를 노출해 진단(파라미터/모델/정책 등 구분).
+        const detail = (raw.includes('—') ? raw.split('—').slice(1).join('—') : raw).trim();
+        return `${label} 요청 거부: ${detail.slice(0, 400)}`;
     }
     // 폴백 — Rust 가 만든 한국어 메시지("...생성하지 못했습니다." 등)는 그대로 노출.
     return raw;

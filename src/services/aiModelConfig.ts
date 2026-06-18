@@ -202,6 +202,7 @@ export const IMAGE_AI_CATALOG: Record<ImageAICompany, AICompanyDef> = {
         label: 'ChatGPT',
         auths: ['api_key'],
         models: {
+            // alias(자동 최신 스냅샷) — 차후 모델 갱신 자동 추적. dated 스냅샷도 유효.
             api_key: [{ id: 'gpt-image-2', label: 'GPT Image 2' }],
         },
     },

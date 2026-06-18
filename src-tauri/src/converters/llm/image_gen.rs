@@ -14,8 +14,8 @@ use base64::Engine;
 use serde::Deserialize;
 use std::time::Duration;
 
-/// 이미지 생성은 4K/참조 등으로 텍스트보다 느릴 수 있어 넉넉히.
-const TIMEOUT_SECS: u64 = 180;
+/// 이미지 생성은 4K/참조/high 품질이면 OpenAI 공식 기준 최대 2분+ 소요 → 넉넉히 5분.
+const TIMEOUT_SECS: u64 = 300;
 
 /// data URL(`data:{mime};base64,{data}`) → (mime, base64) 분리. 형식 불일치 시 None.
 fn parse_data_url(s: &str) -> Option<(String, String)> {
