@@ -9,7 +9,10 @@
  */
 
 export type ImageProvider = 'gemini' | 'openai';
-export type ImageQuality = 'standard' | '2k' | '4k';
+/** 해상도 — 공통 축. Gemini=imageSize 직접, OpenAI=비율과 함께 size(WxH)로 환산. */
+export type ImageResolution = '1K' | '2K' | '4K';
+/** 렌더 품질 — OpenAI(gpt-image-2)의 quality 파라미터 전용(Gemini 는 해당 없음). */
+export type ImageQuality = 'low' | 'medium' | 'high';
 
 export interface AspectRatioDef {
     id: string;
@@ -29,15 +32,18 @@ export const ASPECT_RATIOS: readonly AspectRatioDef[] = [
     { id: '21:9', label: '21:9', desc: '울트라' },
 ] as const;
 
-export interface ImageQualityDef {
-    id: ImageQuality;
-    label: string;
-}
+/** 해상도 선택지(공통 — 두 공급사 모두 노출). */
+export const IMAGE_RESOLUTIONS: readonly { id: ImageResolution; label: string }[] = [
+    { id: '1K', label: '1K' },
+    { id: '2K', label: '2K' },
+    { id: '4K', label: '4K' },
+] as const;
 
-export const IMAGE_QUALITIES: readonly ImageQualityDef[] = [
-    { id: 'standard', label: '표준' },
-    { id: '2k', label: '2K' },
-    { id: '4k', label: '4K' },
+/** 품질 선택지(OpenAI 전용 — gpt-image-2 quality). */
+export const IMAGE_QUALITIES: readonly { id: ImageQuality; label: string }[] = [
+    { id: 'low', label: '낮음' },
+    { id: 'medium', label: '보통' },
+    { id: 'high', label: '높음' },
 ] as const;
 
 /** 비율 미리보기 박스 크기(최대 변 maxDim px). */
@@ -54,7 +60,9 @@ export interface GenerateImageOptions {
     model: string;
     prompt: string;
     aspectRatio: string;
-    quality: ImageQuality;
+    resolution: ImageResolution;
+    /** OpenAI 전용 렌더 품질. Gemini 는 무시. */
+    quality?: ImageQuality;
     /** base64 data URL 배열. 비우면 텍스트→이미지. */
     referenceImages?: string[];
 }
@@ -62,19 +70,25 @@ export interface GenerateImageOptions {
 /**
  * 이미지 생성 — provider 에 따라 Rust command 호출. 반환은 base64 data URL 배열(보통 1장).
  * Tauri 가 인자명을 camelCase→snake_case 자동 매핑한다(aspectRatio → aspect_ratio 등).
+ * - Gemini: aspectRatio + resolution(=imageSize) 만 전달(품질 파라미터 없음).
+ * - OpenAI: aspectRatio + resolution(→ size WxH 환산) + quality 전달.
  */
 export async function generateImage(opts: GenerateImageOptions): Promise<string[]> {
-    const { provider, model, prompt, aspectRatio, quality, referenceImages } = opts;
+    const { provider, model, prompt, aspectRatio, resolution, quality, referenceImages } = opts;
     if (!prompt.trim()) throw new Error('프롬프트를 입력해주세요.');
 
     const { invoke } = await import('@tauri-apps/api/core');
-    const command = provider === 'gemini' ? 'generate_image_gemini' : 'generate_image_openai';
-    return invoke<string[]>(command, {
+    const refs = referenceImages ?? [];
+    if (provider === 'gemini') {
+        return invoke<string[]>('generate_image_gemini', { model, prompt, aspectRatio, resolution, referenceImages: refs });
+    }
+    return invoke<string[]>('generate_image_openai', {
         model,
         prompt,
         aspectRatio,
-        quality,
-        referenceImages: referenceImages ?? [],
+        resolution,
+        quality: quality ?? 'high',
+        referenceImages: refs,
     });
 }
 

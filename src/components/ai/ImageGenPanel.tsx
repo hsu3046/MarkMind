@@ -19,8 +19,10 @@ import {
     humanizeImageGenError,
     compressImageIfNeeded,
     ASPECT_RATIOS,
+    IMAGE_RESOLUTIONS,
     IMAGE_QUALITIES,
     getPreviewDimensions,
+    type ImageResolution,
     type ImageQuality,
 } from '../../services/imageGen';
 import './ImageGenPanel.css';
@@ -71,10 +73,15 @@ export function ImageGenPanel({
     );
     const provider = imgModel.company; // 'gemini' | 'openai'
     const providerHasKey = hasKey(provider);
+    // 패널 상단엔 회사명이 아니라 선택된 모델명(예: Nano Banana 2 / GPT Image 2)을 표시.
+    const imgModelLabel =
+        IMAGE_AI_CATALOG[provider].models[imgModel.auth]?.find((m) => m.id === imgModel.model)?.label ??
+        imgModel.model;
 
     const [prompt, setPrompt] = useState('');
     const [aspectRatio, setAspectRatio] = useState('1:1');
-    const [quality, setQuality] = useState<ImageQuality>('standard');
+    const [resolution, setResolution] = useState<ImageResolution>('1K');
+    const [quality, setQuality] = useState<ImageQuality>('high'); // OpenAI 전용
     const [refs, setRefs] = useState<string[]>([]);
     const [status, setStatus] = useState<'idle' | 'generating' | 'done' | 'error'>('idle');
     const [result, setResult] = useState<string | null>(null);
@@ -127,7 +134,8 @@ export function ImageGenPanel({
                 model: imgModel.model,
                 prompt: prompt.trim(),
                 aspectRatio,
-                quality,
+                resolution,
+                quality: provider === 'openai' ? quality : undefined,
                 referenceImages: refs,
             });
             if (urls.length === 0) throw new Error('이미지를 생성하지 못했습니다.');
@@ -172,7 +180,7 @@ export function ImageGenPanel({
             {/* 현재 이미지 모델 — Settings "이미지 AI 모델"에서 변경 */}
             <div className="imggen-model-info">
                 <span className="imggen-model-name">
-                    이미지 모델: <strong>{IMAGE_AI_CATALOG[provider].label}</strong>
+                    이미지 모델: <strong>{imgModelLabel}</strong>
                 </span>
                 <button className="imggen-model-change" onClick={onShowSettings} title="설정에서 변경">
                     <SettingsIcon size={12} /> 변경
@@ -248,21 +256,39 @@ export function ImageGenPanel({
                         </div>
                     </div>
 
-                    {/* 품질 */}
+                    {/* 해상도 (공통 — Gemini imageSize / OpenAI size 환산) */}
                     <div className="imggen-section">
-                        <div className="imggen-label">품질</div>
+                        <div className="imggen-label">해상도</div>
                         <div className="imggen-qualities">
-                            {IMAGE_QUALITIES.map((q) => (
+                            {IMAGE_RESOLUTIONS.map((r) => (
                                 <button
-                                    key={q.id}
-                                    className={`imggen-quality${quality === q.id ? ' active' : ''}`}
-                                    onClick={() => setQuality(q.id)}
+                                    key={r.id}
+                                    className={`imggen-quality${resolution === r.id ? ' active' : ''}`}
+                                    onClick={() => setResolution(r.id)}
                                 >
-                                    {q.label}
+                                    {r.label}
                                 </button>
                             ))}
                         </div>
                     </div>
+
+                    {/* 품질 (OpenAI 전용 — gpt-image-2 quality. Gemini 는 해당 파라미터 없음) */}
+                    {provider === 'openai' && (
+                        <div className="imggen-section">
+                            <div className="imggen-label">품질</div>
+                            <div className="imggen-qualities">
+                                {IMAGE_QUALITIES.map((q) => (
+                                    <button
+                                        key={q.id}
+                                        className={`imggen-quality${quality === q.id ? ' active' : ''}`}
+                                        onClick={() => setQuality(q.id)}
+                                    >
+                                        {q.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {/* 생성 버튼 */}
                     <div className="ai-prompt-actions">
