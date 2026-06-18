@@ -481,6 +481,12 @@ body {
   cursor: not-allowed;
 }
 
+/* 현재 선택된 뷰모드(View 메뉴) — accent 색으로 강조 */
+.dropdown-item.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .dropdown-icon-img {
   width: 14px;
   height: 14px;

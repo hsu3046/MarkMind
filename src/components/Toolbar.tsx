@@ -6,13 +6,23 @@ import {
     Search, ChevronRight, Sparkles, Check, X,
     Settings,
     FileCode, FileText, AlignVerticalSpaceAround,
-    Network, Share2, ChartBarStacked,
+    Network, Share2, ChartBarStacked, type LucideIcon,
 } from 'lucide-react';
 import * as gdriveService from '../services/gdriveService';
 import type { RecentFile } from '../hooks/useRecentFiles';
 import { BackgroundPicker } from './BackgroundPicker';
 
 export type ViewMode = 'split' | 'editor' | 'preview' | 'mindmap' | 'flowchart' | 'gantt';
+
+/** View 메뉴 항목 — 라벨/단축키/아이콘. 사용자가 보는 순서(편집→읽기→분할→…). */
+const VIEW_MODES: { mode: ViewMode; label: string; shortcut: string; Icon: LucideIcon }[] = [
+    { mode: 'editor', label: 'Markdown', shortcut: '⌘1', Icon: FileCode },
+    { mode: 'preview', label: 'Rich Text', shortcut: '⌘3', Icon: FileText },
+    { mode: 'split', label: 'Split View', shortcut: '⌘2', Icon: Columns2 },
+    { mode: 'mindmap', label: 'Mindmap', shortcut: '⌘4', Icon: Share2 },
+    { mode: 'flowchart', label: 'Flowchart', shortcut: '⌘5', Icon: Network },
+    { mode: 'gantt', label: 'Gantt', shortcut: '⌘6', Icon: ChartBarStacked },
+];
 
 export function EditableFileName({ fileName, isDirty, onRename }: { fileName: string; isDirty: boolean; onRename: (name: string) => void }) {
     const [editing, setEditing] = useState(false);
@@ -90,6 +100,8 @@ interface ToolbarProps {
     outlineVisible: boolean;
     showRecent: boolean;
     aiPanelVisible: boolean;
+    /** Tauri: File/View 는 네이티브 메뉴바로 이동했으므로 툴바에서 숨긴다(웹은 표시). */
+    nativeMenu?: boolean;
     onViewModeChange: (mode: ViewMode) => void;
     onNewFile: () => void;
     onOpenFile: () => void;
@@ -144,11 +156,14 @@ export function Toolbar({
     onToggleAI,
     showRecent,
     aiPanelVisible,
+    nativeMenu,
 }: ToolbarProps) {
     const [fileMenuOpen, setFileMenuOpen] = useState(false);
     const [driveAvailable, setDriveAvailable] = useState(false);
     const [driveConnected, setDriveConnected] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
+    const [viewMenuOpen, setViewMenuOpen] = useState(false);
+    const viewMenuRef = useRef<HTMLDivElement>(null);
 
     // Drive 가용성 (OAuth credentials 빌드 주입 + 연결 상태)
     useEffect(() => {
@@ -178,15 +193,34 @@ export function Toolbar({
         return () => document.removeEventListener('mousedown', handler);
     }, [fileMenuOpen]);
 
+    // Close View menu on outside click
+    useEffect(() => {
+        if (!viewMenuOpen) return;
+        const handler = (e: MouseEvent) => {
+            if (viewMenuRef.current && !viewMenuRef.current.contains(e.target as Node)) {
+                setViewMenuOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [viewMenuOpen]);
+
     const handleMenuItem = (action: () => void) => {
         action();
         setFileMenuOpen(false);
+    };
+
+    const handleViewSelect = (mode: ViewMode) => {
+        onViewModeChange(mode);
+        setViewMenuOpen(false);
     };
 
     return (
         <div className="toolbar">
             {/* Left: File dropdown + Tutorial + Recent */}
             <div className="toolbar-group">
+                {/* File·View 메뉴는 Tauri 에선 네이티브 메뉴바로 이동 → 숨김(웹은 유지) */}
+                {!nativeMenu && (<>
                 {/* File dropdown */}
                 <div className="toolbar-dropdown" ref={menuRef}>
                     <button
@@ -291,53 +325,33 @@ export function Toolbar({
                     )}
                 </div>
 
-                <div className="toolbar-divider" />
-
-                {/* View modes — Markdown / Rich Text / Split */}
-                <button
-                    className={`toolbar-btn${viewMode === 'editor' ? ' active' : ''}`}
-                    onClick={() => onViewModeChange('editor')}
-                    title="Markdown (⌘1)"
-                >
-                    <FileCode size={16} strokeWidth={1.5} />
-                </button>
-                <button
-                    className={`toolbar-btn${viewMode === 'preview' ? ' active' : ''}`}
-                    onClick={() => onViewModeChange('preview')}
-                    title="Rich Text (⌘3)"
-                >
-                    <FileText size={16} strokeWidth={1.5} />
-                </button>
-                <button
-                    className={`toolbar-btn${viewMode === 'split' ? ' active' : ''}`}
-                    onClick={() => onViewModeChange('split')}
-                    title="Split View (⌘2)"
-                >
-                    <Columns2 size={16} strokeWidth={1.5} />
-                </button>
-                <button
-                    className={`toolbar-btn${viewMode === 'mindmap' ? ' active' : ''}`}
-                    onClick={() => onViewModeChange('mindmap')}
-                    title="Mindmap (⌘4)"
-                >
-                    <Share2 size={16} strokeWidth={1.5} />
-                </button>
-                <button
-                    className={`toolbar-btn${viewMode === 'flowchart' ? ' active' : ''}`}
-                    onClick={() => onViewModeChange('flowchart')}
-                    title="Flowchart (⌘5)"
-                >
-                    <Network size={16} strokeWidth={1.5} />
-                </button>
-                <button
-                    className={`toolbar-btn${viewMode === 'gantt' ? ' active' : ''}`}
-                    onClick={() => onViewModeChange('gantt')}
-                    title="Gantt (⌘6)"
-                >
-                    <ChartBarStacked size={16} strokeWidth={1.5} />
-                </button>
+                {/* View dropdown — 모든 뷰모드를 한 메뉴로 묶어 툴바 공간 확보 */}
+                <div className="toolbar-dropdown" ref={viewMenuRef}>
+                    <button
+                        className={`toolbar-text-btn${viewMenuOpen ? ' active' : ''}`}
+                        onClick={() => setViewMenuOpen((v) => !v)}
+                    >
+                        <span>View</span>
+                    </button>
+                    {viewMenuOpen && (
+                        <div className="toolbar-dropdown-menu">
+                            {VIEW_MODES.map(({ mode, label, shortcut, Icon }) => (
+                                <button
+                                    key={mode}
+                                    className={`dropdown-item${viewMode === mode ? ' active' : ''}`}
+                                    onClick={() => handleViewSelect(mode)}
+                                >
+                                    <Icon size={14} strokeWidth={1.5} />
+                                    <span>{label}</span>
+                                    <span className="dropdown-shortcut">{shortcut}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
 
                 <div className="toolbar-divider" />
+                </>)}
 
                 {/* Outline + Search */}
                 <button className={`toolbar-btn${outlineVisible ? ' active' : ''}`} onClick={onToggleOutline} title="Outline">

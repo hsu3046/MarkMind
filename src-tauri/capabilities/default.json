@@ -9,6 +9,7 @@
   ],
   "permissions": [
     "core:default",
+    "core:menu:default",
     "core:event:default",
     "core:event:allow-listen",
     "core:event:allow-unlisten",

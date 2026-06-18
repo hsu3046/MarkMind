@@ -32,6 +32,7 @@ import { useAI } from './hooks/useAI';
 import { useAuth } from './hooks/useAuth';
 import { useConverter } from './hooks/useConverter';
 import { isTauri } from './services/platform';
+import { useNativeMenu } from './hooks/useNativeMenu';
 import { getCallbackPath } from './services/knowaiAuth';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
 import { Link, Unlink, BookOpen, X as IconX, Sparkles, Loader2 } from 'lucide-react';
@@ -1333,6 +1334,25 @@ function App() {
     );
   }
 
+  // 네이티브 macOS 메뉴바에 File/View 미러링(Tauri 한정) — 툴바 dropdown 은 숨김.
+  // (조기 return 보다 위에 둬 hooks 호출 순서 보장.)
+  useNativeMenu({
+    enabled: isTauri(),
+    viewMode,
+    recentFiles,
+    onNewFile: newFile,
+    onOpenFile: handleOpenFile,
+    onSaveFile: saveFile,
+    onSaveFileAs: saveFileAs,
+    onExportPdf: handleExportPdf,
+    onShowSettings: () => setSettingsVisible(true),
+    onShowTutorial: () => setTutorialVisible(true),
+    onOpenFromDrive: () => setDriveBrowserMode('open'),
+    onSaveToDrive: () => setDriveBrowserMode('save'),
+    onOpenRecent: handleOpenRecentByPath,
+    onViewModeChange: setViewMode,
+  });
+
   // Auth callback route — show only the callback handler
   if (isAuthCallback) {
     return (
@@ -1441,6 +1461,7 @@ function App() {
         onToggleAI={handleToggleAI}
         showRecent={isTauri()}
         aiPanelVisible={ai.panelVisible}
+        nativeMenu={isTauri()}
       />
 
       {/* Search bar */}
