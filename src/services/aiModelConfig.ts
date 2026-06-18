@@ -9,7 +9,7 @@
  */
 
 /** LLM 공급사. 새 회사 추가 시 여기 + AI_CATALOG 에만 손대면 된다. */
-export type AICompany = 'gemini' | 'claude' | 'openai';
+export type AICompany = 'gemini' | 'claude' | 'openai' | 'grok';
 
 /** 인증 방식 — API 키(공식) 또는 구독(로컬 CLI 토큰 재사용). */
 export type AIAuthMode = 'api_key' | 'subscription';
@@ -86,6 +86,15 @@ export const AI_CATALOG: Record<AICompany, AICompanyDef> = {
                 { id: 'gpt-5.4', label: 'GPT-5.4 (균형)' },
                 { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini (가성비)' },
             ],
+        },
+    },
+    grok: {
+        label: 'Grok',
+        // 구독(Grok Build CLI OAuth)은 tier-gating(Heavy 한정 가능)이라 추후 추가 — 현재 API 키만.
+        auths: ['api_key'],
+        // 텍스트는 grok-4.3(플래그십·vision, OpenAI 호환). docs.x.ai 확인(2026-06).
+        models: {
+            api_key: [{ id: 'grok-4.3', label: 'Grok 4.3' }],
         },
     },
 };
@@ -192,7 +201,7 @@ export function selectAuth(company: AICompany, auth: AIAuthMode): AIModelSelecti
 // UI 표시는 별칭(Gemini 이미지 = "Nano Banana" 브랜드, OpenAI 구독 = "GPT Image (구독)").
 
 /** 이미지 생성 가능 공급사. */
-export type ImageAICompany = 'gemini' | 'openai';
+export type ImageAICompany = 'gemini' | 'openai' | 'grok';
 
 export const IMAGE_AI_CATALOG: Record<ImageAICompany, AICompanyDef> = {
     gemini: {
@@ -214,6 +223,18 @@ export const IMAGE_AI_CATALOG: Record<ImageAICompany, AICompanyDef> = {
             // 구독: mainline 모델 + image_generation 툴(별도 이미지 모델 아님). gpt-5.5 가 내부
             // GPT Image 를 호출. 모델 선택지는 1개라 사실상 "ChatGPT 구독으로 생성"의 의미.
             subscription: [{ id: 'gpt-5.5', label: 'GPT Image (구독)' }],
+        },
+    },
+    grok: {
+        label: 'Grok',
+        // grok-imagine-* (api.x.ai/v1/images/generations). 비율·해상도(1k/2k) 직접 지원.
+        // 구독 이미지는 추후(tier-gating) — 현재 API 키만. docs.x.ai 확인(2026-06).
+        auths: ['api_key'],
+        models: {
+            api_key: [
+                { id: 'grok-imagine-image-quality', label: 'Grok Imagine (고품질)' },
+                { id: 'grok-imagine-image', label: 'Grok Imagine (기본)' },
+            ],
         },
     },
 };

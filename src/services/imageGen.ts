@@ -10,7 +10,7 @@
 
 import type { AIAuthMode } from './aiModelConfig';
 
-export type ImageProvider = 'gemini' | 'openai';
+export type ImageProvider = 'gemini' | 'openai' | 'grok';
 /** 해상도 — 공통 축. Gemini=imageSize 직접, OpenAI=비율과 함께 size(WxH)로 환산. */
 export type ImageResolution = '1K' | '2K' | '4K';
 /** 렌더 품질 — OpenAI(gpt-image-2)의 quality 파라미터 전용(Gemini 는 해당 없음). */
@@ -86,6 +86,10 @@ export async function generateImage(opts: GenerateImageOptions): Promise<string[
     if (provider === 'gemini') {
         return invoke<string[]>('generate_image_gemini', { model, prompt, aspectRatio, resolution, referenceImages: refs });
     }
+    if (provider === 'grok') {
+        // Grok Imagine — 비율·해상도(1k/2k)를 직접 지원. 품질·참조 이미지는 미지원이라 안 보낸다.
+        return invoke<string[]>('generate_image_grok', { model, prompt, aspectRatio, resolution });
+    }
     // OpenAI 구독(codex) — codex 는 size/quality 를 무시하므로(항상 1254x1254/low, 실측)
     // 비율은 프롬프트로 후처리하고 품질은 보내지 않는다. 1:1 은 기본 정사각이라 후처리 생략.
     if (auth === 'subscription') {
@@ -113,7 +117,7 @@ export async function generateImage(opts: GenerateImageOptions): Promise<string[
  * `... API 키가 없습니다 ...` 등)을 한국어 메시지로 변환. raw 는 콘솔에 남긴다.
  */
 export function humanizeImageGenError(err: unknown, provider: ImageProvider): string {
-    const label = provider === 'gemini' ? 'Gemini' : 'OpenAI';
+    const label = provider === 'gemini' ? 'Gemini' : provider === 'grok' ? 'Grok' : 'OpenAI';
     const raw = err instanceof Error ? err.message : String(err);
     const body = raw.toLowerCase();
     console.error(`[imageGen/${provider}]`, raw.slice(0, 500));

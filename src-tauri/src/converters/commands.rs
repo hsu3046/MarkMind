@@ -280,6 +280,24 @@ pub async fn ai_generate_openai(
         .map_err(err_to_string)
 }
 
+// ─── Grok(xAI) API 키 텍스트 생성 ──────────────────────────────────────────
+//
+// OpenAI 호환 chat completions(api.x.ai). React AI 모드가 Grok + API 키 선택 시 사용.
+// 구독(Grok Build CLI 토큰) 경로와 별개. grok 모듈은 String 에러를 직접 반환.
+#[tauri::command]
+pub async fn ai_generate_grok(
+    system: Option<String>,
+    prompt: String,
+    model: String,
+) -> Result<String, String> {
+    use super::keychain::{get_key, Provider};
+    use super::llm::grok;
+    let key = get_key(Provider::Grok)
+        .map_err(err_to_string)?
+        .ok_or_else(|| "Grok API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
+    grok::generate_text(&key, &model, system.as_deref(), &prompt).await
+}
+
 // ─── 이미지 생성 (Gemini 3.1 Flash Image / OpenAI gpt-image-1) ──────────────
 //
 // React AI "이미지 생성" 모드. 키는 기존 Settings(Keychain)의 gemini/openai 를 재사용한다
@@ -336,6 +354,25 @@ pub async fn generate_image_codex(model: String, prompt: String) -> Result<Vec<S
         &prompt,
     )
     .await
+}
+
+// ─── Grok(xAI) 이미지 생성 ──────────────────────────────────────────────────
+//
+// grok-imagine-*(api.x.ai/v1/images/generations). 비율·해상도(1k/2k)를 직접 받아
+// gpt-image 처럼 size 환산이 필요 없다. 참조 이미지는 grok-imagine 미지원이라 받지 않는다.
+#[tauri::command]
+pub async fn generate_image_grok(
+    model: String,
+    prompt: String,
+    aspect_ratio: String,
+    resolution: String,
+) -> Result<Vec<String>, String> {
+    use super::keychain::{get_key, Provider};
+    use super::llm::grok;
+    let key = get_key(Provider::Grok)
+        .map_err(err_to_string)?
+        .ok_or_else(|| "Grok API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
+    grok::generate_image(&key, &model, &prompt, &aspect_ratio, &resolution).await
 }
 
 // ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────

@@ -460,6 +460,15 @@ export async function callAI(
             prompt: userContent,
             model: sel.model,
         });
+    } else if (sel.company === 'grok') {
+        // Grok(xAI) — API 키 전용(구독은 추후 tier 검증 후). OpenAI 호환 chat completions, Rust 경유.
+        const { invoke } = await import('@tauri-apps/api/core');
+        modifiedText = await invoke<string>('ai_generate_grok', {
+            system: systemPrompt,
+            prompt: userContent,
+            model: sel.model,
+        });
+        if (onStream) onStream(modifiedText);
     } else {
         // Claude — 구독 OAuth 또는 API 키. Rust 경유. 스트리밍 미지원(완료 후 diff).
         const { invoke } = await import('@tauri-apps/api/core');

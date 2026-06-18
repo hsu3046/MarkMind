@@ -91,6 +91,13 @@ const KEY_SPECS: KeySpec[] = [
         issueLabel: 'platform.openai.com/api-keys',
     },
     {
+        provider: 'grok',
+        label: 'Grok (xAI) API 키',
+        placeholder: 'xai-...',
+        issueUrl: 'https://console.x.ai',
+        issueLabel: 'console.x.ai',
+    },
+    {
         provider: 'pyannoteai',
         label: 'pyannote.ai API 키',
         placeholder: 'sk_...',
@@ -101,7 +108,7 @@ const KEY_SPECS: KeySpec[] = [
 
 type SettingsTab = 'basic' | 'ai' | 'viewer' | 'extra';
 /** AI 등록 탭에 노출할 API 키 (나머지 키는 추가 기능 탭). */
-const AI_PROVIDERS: Provider[] = ['gemini', 'claude', 'openai'];
+const AI_PROVIDERS: Provider[] = ['gemini', 'claude', 'openai', 'grok'];
 
 function maskClientId(id: string): string {
     if (id.length <= 12) return id;
@@ -123,12 +130,14 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
         gemini: '',
         claude: '',
         openai: '',
+        grok: '',
         pyannoteai: '',
     });
     const [show, setShow] = useState<Record<Provider, boolean>>({
         gemini: false,
         claude: false,
         openai: false,
+        grok: false,
         pyannoteai: false,
     });
     // lazy init — 첫 렌더부터 키 보유 반영(회사 버튼 disabled 깜빡임 방지). useEffect 가 재확인.
@@ -136,12 +145,14 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
         gemini: hasKey('gemini'),
         claude: hasKey('claude'),
         openai: hasKey('openai'),
+        grok: hasKey('grok'),
         pyannoteai: hasKey('pyannoteai'),
     }));
     const [validation, setValidation] = useState<Record<Provider | 'gdrive', ValidationResult | null>>({
         gemini: null,
         claude: null,
         openai: null,
+        grok: null,
         pyannoteai: null,
         gdrive: null,
     });
@@ -183,18 +194,21 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
             gemini: getKey('gemini') || '',
             claude: getKey('claude') || '',
             openai: getKey('openai') || '',
+            grok: getKey('grok') || '',
             pyannoteai: getKey('pyannoteai') || '',
         });
         setStored({
             gemini: hasKey('gemini'),
             claude: hasKey('claude'),
             openai: hasKey('openai'),
+            grok: hasKey('grok'),
             pyannoteai: hasKey('pyannoteai'),
         });
         setValidation({
             gemini: getValidationStatus('gemini'),
             claude: getValidationStatus('claude'),
             openai: getValidationStatus('openai'),
+            grok: getValidationStatus('grok'),
             pyannoteai: getValidationStatus('pyannoteai'),
             gdrive: getValidationStatus('gdrive'),
         });
@@ -329,6 +343,7 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                 if (changedKeys.includes('gemini')) payload.gemini = values.gemini.trim();
                 if (changedKeys.includes('claude')) payload.claude = values.claude.trim();
                 if (changedKeys.includes('openai')) payload.openai = values.openai.trim();
+                if (changedKeys.includes('grok')) payload.grok = values.grok.trim();
                 if (changedKeys.includes('pyannoteai')) payload.pyannoteai = values.pyannoteai.trim();
                 if (diarChanged) payload.diarPython = diarPython.trim();
                 if (driveBoth) {

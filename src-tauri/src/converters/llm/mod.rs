@@ -3,6 +3,7 @@
 pub mod anthropic;
 pub mod gemini;
 pub mod gemini_agy;
+pub mod grok;
 pub mod image_gen;
 pub mod openai_api;
 pub mod openai_codex;

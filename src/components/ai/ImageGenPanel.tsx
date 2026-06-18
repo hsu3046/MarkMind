@@ -88,8 +88,10 @@ export function ImageGenPanel({
     // 전역 이미지 모델 선택(Settings) — 매 렌더 읽고, 가용한 공급사·방식으로 보정(callAI 와
     // 동일 resolveUsableSelection). 키·구독 둘 다 없으면 원본 유지 → providerUsable=false 안내.
     const imgModel = resolveUsableSelection(IMAGE_AI_CATALOG, getImageAIModelSelection(), isUsable);
-    const provider = imgModel.company; // 'gemini' | 'openai'
+    const provider = imgModel.company; // 'gemini' | 'openai' | 'grok'
     const isSubscription = imgModel.auth === 'subscription';
+    // 참조 이미지: Gemini·OpenAI(API키)만 지원. 구독(codex)·Grok(imagine)은 미지원 → 숨김.
+    const supportsReference = !isSubscription && provider !== 'grok';
     const providerUsable = isUsable(provider, imgModel.auth);
     // 패널 상단엔 회사명이 아니라 선택된 모델명(예: Nano Banana 2 / GPT Image (구독))을 표시.
     const imgModelLabel =
@@ -156,7 +158,7 @@ export function ImageGenPanel({
                 resolution,
                 quality: provider === 'openai' ? quality : undefined,
                 // 구독(codex) 경로는 참조 이미지 미지원(1차) → 빈 배열.
-                referenceImages: isSubscription ? [] : refs,
+                referenceImages: supportsReference ? refs : [],
             });
             if (urls.length === 0) throw new Error('이미지를 생성하지 못했습니다.');
             setResult(urls[0]);
@@ -232,8 +234,8 @@ export function ImageGenPanel({
                         />
                     </div>
 
-                    {/* 참조 이미지 (드롭으로 추가) — 구독(codex) 경로는 미지원이라 숨김 */}
-                    {!isSubscription && (
+                    {/* 참조 이미지 (드롭으로 추가) — 구독(codex)·Grok(imagine)은 미지원이라 숨김 */}
+                    {supportsReference && (
                         <div className="imggen-section">
                             <div className="imggen-label">
                                 참조 이미지 <span className="imggen-label-hint">선택 · 드래그해서 추가</span>
