@@ -14,10 +14,22 @@ const API_VERSION: &str = "2023-06-01";
 const DEFAULT_MAX_TOKENS: u32 = 16000;
 const MAX_RETRIES: u32 = 3;
 
+/// 구독(OAuth) 모드 헤더 — Claude Code 가 보내는 beta 플래그 쌍.
+const OAUTH_BETA: &str = "claude-code-20250219,oauth-2025-04-20";
+/// 구독(OAuth) 모드에서 non-Haiku 모델이 요구하는 system 블록 0 의 정확한 리터럴.
+/// 누락 시 HTTP 400 — 실제 지시는 블록 1 이후로 append 한다. (Haiku 는 면제이나 무해)
+const CLAUDE_CODE_IDENTITY: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
+
 #[derive(Default)]
 pub struct ClaudeOptions {
     pub max_output_tokens: Option<u32>,
     pub system: Option<String>,
+}
+
+/// 인증 방식 — API 키(공식) 또는 구독 OAuth(로컬 Claude Code 토큰 재사용).
+pub enum ClaudeAuth<'a> {
+    ApiKey(&'a str),
+    Subscription(&'a str),
 }
 
 #[derive(Serialize)]
@@ -25,8 +37,23 @@ struct MessageRequest<'a> {
     model: &'a str,
     max_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<&'a str>,
+    system: Option<SystemField<'a>>,
     messages: Vec<UserMessage<'a>>,
+}
+
+/// system 필드는 단일 텍스트(API 키 모드) 또는 블록 배열(OAuth spoof) 둘 다 직렬화 가능.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum SystemField<'a> {
+    Text(&'a str),
+    Blocks(Vec<SystemBlock<'a>>),
+}
+
+#[derive(Serialize)]
+struct SystemBlock<'a> {
+    #[serde(rename = "type")]
+    kind: &'a str,
+    text: &'a str,
 }
 
 #[derive(Serialize)]
@@ -68,7 +95,7 @@ struct AnthropicErrorBody {
 }
 
 pub async fn generate_text(
-    api_key: &str,
+    auth: ClaudeAuth<'_>,
     model: &str,
     prompt: &str,
     options: Option<ClaudeOptions>,
@@ -76,10 +103,28 @@ pub async fn generate_text(
     let opts = options.unwrap_or_default();
     let max_tokens = opts.max_output_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
 
+    // OAuth(구독) 모드는 system 블록 0 에 Claude Code identity 를 강제(non-Haiku 400 회피)하고
+    // 실제 지시는 블록 1 이후로 둔다. API 키 모드는 기존대로 단일 텍스트.
+    let system: Option<SystemField> = match &auth {
+        ClaudeAuth::Subscription(_) => {
+            let mut blocks = vec![SystemBlock {
+                kind: "text",
+                text: CLAUDE_CODE_IDENTITY,
+            }];
+            if let Some(s) = opts.system.as_deref() {
+                if !s.trim().is_empty() {
+                    blocks.push(SystemBlock { kind: "text", text: s });
+                }
+            }
+            Some(SystemField::Blocks(blocks))
+        }
+        ClaudeAuth::ApiKey(_) => opts.system.as_deref().map(SystemField::Text),
+    };
+
     let body = MessageRequest {
         model,
         max_tokens,
-        system: opts.system.as_deref(),
+        system,
         messages: vec![UserMessage {
             role: "user",
             content: prompt,
@@ -92,14 +137,17 @@ pub async fn generate_text(
 
     let mut last_err: Option<ConverterError> = None;
     for attempt in 1..=MAX_RETRIES {
-        let resp = client
+        let mut rb = client
             .post(API_URL)
-            .header("x-api-key", api_key)
             .header("anthropic-version", API_VERSION)
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
-            .await;
+            .header("content-type", "application/json");
+        rb = match &auth {
+            ClaudeAuth::ApiKey(k) => rb.header("x-api-key", *k),
+            ClaudeAuth::Subscription(t) => rb
+                .header("authorization", format!("Bearer {}", t))
+                .header("anthropic-beta", OAUTH_BETA),
+        };
+        let resp = rb.json(&body).send().await;
 
         match resp {
             Ok(r) => {
@@ -161,7 +209,7 @@ pub async fn generate_text(
 
 fn classify_error(status: u16, body_msg: &str) -> ConverterError {
     match status {
-        401 | 403 => ConverterError::Claude("CLAUDE_API_KEY 가 잘못되었습니다. Settings 에서 확인하세요.".into()),
+        401 | 403 => ConverterError::Claude("Claude 인증 실패 — API 키 또는 구독 로그인을 확인하세요.".into()),
         429 => ConverterError::RateLimit,
         503 | 529 => ConverterError::Overloaded,
         _ => ConverterError::Claude(format!("HTTP {} — {}", status, body_msg)),

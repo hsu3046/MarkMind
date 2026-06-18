@@ -8,7 +8,7 @@ use super::templates::{
     build_evidence_markdown, get_template, strip_frontmatter, EvidenceMeta,
 };
 use super::{
-    conversions_dir, CostSummary, DetailLevel, EvidenceType, NotesProvider, MODEL_NOTES_CLAUDE,
+    conversions_dir, CostSummary, DetailLevel, EvidenceType, MODEL_CODEX, MODEL_NOTES_CLAUDE,
     MODEL_NOTES_GEMINI,
 };
 use serde::{Deserialize, Serialize};
@@ -23,8 +23,13 @@ pub struct NotesJobOptions {
     pub source: String,
     #[serde(default)]
     pub detail: DetailLevel,
+    /// 전역 AI 모델 설정 — 회사 / 인증 / 모델 ID.
     #[serde(default)]
-    pub provider: NotesProvider,
+    pub company: crate::subscription_auth::AICompany,
+    #[serde(default)]
+    pub auth: crate::subscription_auth::ClaudeAuthMode,
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(rename = "outputDir", skip_serializing_if = "Option::is_none")]
     pub output_dir: Option<String>,
 }
@@ -64,10 +69,15 @@ pub async fn run(
     } else {
         "사용자 정의"
     };
+    let company_label = match opts.company {
+        crate::subscription_auth::AICompany::Gemini => "Gemini",
+        crate::subscription_auth::AICompany::Claude => "Claude",
+        crate::subscription_auth::AICompany::Openai => "ChatGPT",
+    };
     emitter.emit(
         format!(
             "✅ 템플릿: {} · 상세도: {} · 모델: {}",
-            template.info.name, opts.detail, opts.provider
+            template.info.name, opts.detail, company_label
         ),
         Some(source_label.to_string()),
     );
@@ -79,42 +89,25 @@ pub async fn run(
         detail = opts.detail.instruction(),
     );
 
-    let (model, generate_result) = match opts.provider {
-        NotesProvider::Claude => {
-            let api_key = get_key(Provider::Claude)?
-                .ok_or(ConverterError::MissingApiKey("Claude"))?;
-            emitter.emit(
-                "🧠 미팅 노트 생성 중...",
-                Some(format!("{} · max {} tok", MODEL_NOTES_CLAUDE, MAX_OUTPUT_TOKENS)),
-            );
-            let start = std::time::Instant::now();
-            let result = anthropic::generate_text(
-                &api_key,
-                MODEL_NOTES_CLAUDE,
-                &prompt,
-                Some(anthropic::ClaudeOptions {
-                    max_output_tokens: Some(MAX_OUTPUT_TOKENS),
-                    system: None,
-                }),
-            )
-            .await?;
-            emitter.emit(
-                format!("✅ 노트 생성 완료 ({:.1}초)", start.elapsed().as_secs_f64()),
-                Some(format!("{} 토큰 출력", format_num(result.usage.output_tokens as usize))),
-            );
-            (MODEL_NOTES_CLAUDE, result)
-        }
-        NotesProvider::Gemini => {
+    use crate::subscription_auth::{AICompany, ClaudeAuthMode};
+    let auth_label = match opts.auth {
+        ClaudeAuthMode::Subscription => "구독",
+        ClaudeAuthMode::ApiKey => "API 키",
+    };
+
+    let generate_result = match opts.company {
+        AICompany::Gemini => {
             let api_key = get_key(Provider::Gemini)?
                 .ok_or(ConverterError::MissingApiKey("Gemini"))?;
+            let model = opts.model.as_deref().unwrap_or(MODEL_NOTES_GEMINI);
             emitter.emit(
                 "🧠 미팅 노트 생성 중...",
-                Some(format!("{} · max {} tok", MODEL_NOTES_GEMINI, MAX_OUTPUT_TOKENS)),
+                Some(format!("{} · max {} tok", model, MAX_OUTPUT_TOKENS)),
             );
             let start = std::time::Instant::now();
             let result = gemini::generate_text(
                 &api_key,
-                MODEL_NOTES_GEMINI,
+                model,
                 &prompt,
                 vec![],
                 Some(gemini::GenerationConfig {
@@ -127,7 +120,85 @@ pub async fn run(
                 format!("✅ 노트 생성 완료 ({:.1}초)", start.elapsed().as_secs_f64()),
                 Some(format!("{} 토큰 출력", format_num(result.usage.output_tokens as usize))),
             );
-            (MODEL_NOTES_GEMINI, result)
+            result
+        }
+        AICompany::Claude => {
+            let model = opts
+                .model
+                .clone()
+                .unwrap_or_else(|| MODEL_NOTES_CLAUDE.to_string());
+            emitter.emit(
+                "🧠 미팅 노트 생성 중...",
+                Some(format!("{} · {} · max {} tok", model, auth_label, MAX_OUTPUT_TOKENS)),
+            );
+            let start = std::time::Instant::now();
+            let claude_opts = anthropic::ClaudeOptions {
+                max_output_tokens: Some(MAX_OUTPUT_TOKENS),
+                system: None,
+            };
+            let result = match opts.auth {
+                ClaudeAuthMode::Subscription => {
+                    let token = crate::subscription_auth::claude_access_token()
+                        .await
+                        .map_err(ConverterError::Claude)?;
+                    anthropic::generate_text(
+                        anthropic::ClaudeAuth::Subscription(&token),
+                        &model,
+                        &prompt,
+                        Some(claude_opts),
+                    )
+                    .await?
+                }
+                ClaudeAuthMode::ApiKey => {
+                    let api_key = get_key(Provider::Claude)?
+                        .ok_or(ConverterError::MissingApiKey("Claude"))?;
+                    anthropic::generate_text(
+                        anthropic::ClaudeAuth::ApiKey(&api_key),
+                        &model,
+                        &prompt,
+                        Some(claude_opts),
+                    )
+                    .await?
+                }
+            };
+            emitter.emit(
+                format!("✅ 노트 생성 완료 ({:.1}초)", start.elapsed().as_secs_f64()),
+                Some(format!("{} 토큰 출력", format_num(result.usage.output_tokens as usize))),
+            );
+            result
+        }
+        AICompany::Openai => {
+            use super::llm::{openai_api, openai_codex};
+            let model = opts.model.clone().unwrap_or_else(|| MODEL_CODEX.to_string());
+            emitter.emit(
+                "🧠 미팅 노트 생성 중...",
+                Some(format!("{} · {} · ChatGPT", model, auth_label)),
+            );
+            let start = std::time::Instant::now();
+            let result = match opts.auth {
+                ClaudeAuthMode::Subscription => {
+                    let tokens =
+                        crate::subscription_auth::read_codex_tokens().map_err(ConverterError::Codex)?;
+                    openai_codex::generate_text(
+                        &tokens.access_token,
+                        tokens.account_id.as_deref(),
+                        &model,
+                        None,
+                        &prompt,
+                    )
+                    .await?
+                }
+                ClaudeAuthMode::ApiKey => {
+                    let api_key = get_key(Provider::Openai)?
+                        .ok_or(ConverterError::MissingApiKey("OpenAI"))?;
+                    openai_api::generate_text(&api_key, &model, None, &prompt).await?
+                }
+            };
+            emitter.emit(
+                format!("✅ 노트 생성 완료 ({:.1}초)", start.elapsed().as_secs_f64()),
+                Some(format!("{} 토큰 출력", format_num(result.usage.output_tokens as usize))),
+            );
+            result
         }
     };
 
@@ -152,7 +223,6 @@ pub async fn run(
     std::fs::write(&target_path, &markdown)?;
     // doc-converter 와 동일: 저장 step 은 표시 안 함 (결과 카드의 경로로 충분)
 
-    let _ = model; // 단일 호출이라 cost는 generate_result.usage 그대로
 
     Ok(NotesJobResult {
         markdown_path: target_path.to_string_lossy().into_owned(),

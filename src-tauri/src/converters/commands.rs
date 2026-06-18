@@ -72,6 +72,159 @@ pub fn get_conversions_dir() -> String {
     super::conversions_dir().to_string_lossy().into_owned()
 }
 
+// ─── PPTX 스마트 레이아웃 (이슈 #6) ─────────────────────────────
+//
+// 마크다운을 슬라이드용으로 "재구성"해 과밀 슬라이드를 막는다(규칙 기반의 약점
+// 보완). 기존 converters 의 키체인 + LLM 클라이언트를 그대로 재사용한다.
+// 반환은 프론트가 파싱하는 단순 슬라이드 JSON 문자열:
+//   { "slides": [ { "title", "layout":"title|content", "bullets":[...], "notes"? } ] }
+
+// 출력 토큰 상한 — 큰 덱(50장+)도 잘리지 않도록 넉넉히. 생성한 만큼만 과금.
+const SLIDES_MAX_TOKENS: u32 = 32000;
+
+const SLIDES_SYSTEM: &str = "You are a presentation designer. Convert the given Markdown document into a concise slide deck. Output STRICT minified JSON only (no prose, no code fences, no markdown) of the form: {\"slides\":[{\"title\":string,\"layout\":\"title\"|\"content\",\"bullets\":string[],\"notes\":string?}]}. Rules: the first slide is layout \"title\" (deck title + optional one-line subtitle as a single bullet); other slides are \"content\"; keep each bullet short (<= ~12 words); at most ~6 bullets per slide; split dense content across multiple slides to avoid overcrowding; omit the \"notes\" field unless it adds real speaker value (keeps output compact); preserve the document's language; do not invent facts.";
+
+#[tauri::command]
+pub async fn generate_slides_llm(
+    markdown: String,
+    provider: super::NotesProvider,
+) -> Result<String, String> {
+    use super::keychain::{get_key, Provider};
+    use super::llm;
+
+    let prompt = format!(
+        "Convert this Markdown document into slides as specified.\n\n<markdown>\n{}\n</markdown>",
+        markdown
+    );
+
+    let text = match provider {
+        super::NotesProvider::Claude => {
+            let key = get_key(Provider::Claude)
+                .map_err(err_to_string)?
+                .ok_or_else(|| "CLAUDE_API_KEY 가 없습니다. Settings 에서 등록하세요.".to_string())?;
+            // 큰 문서(20장+)의 슬라이드 JSON 이 잘리면 프론트 파싱 실패 → 폴백.
+            // 출력 토큰은 생성한 만큼만 과금되므로 상한은 넉넉히(미사용 시 비용 0).
+            let opts = llm::anthropic::ClaudeOptions {
+                max_output_tokens: Some(SLIDES_MAX_TOKENS),
+                system: Some(SLIDES_SYSTEM.to_string()),
+            };
+            llm::anthropic::generate_text(
+                llm::anthropic::ClaudeAuth::ApiKey(&key),
+                super::MODEL_NOTES_CLAUDE,
+                &prompt,
+                Some(opts),
+            )
+            .await
+            .map_err(err_to_string)?
+            .text
+        }
+        super::NotesProvider::Gemini => {
+            let key = get_key(Provider::Gemini)
+                .map_err(err_to_string)?
+                .ok_or_else(|| "GEMINI_API_KEY 가 없습니다. Settings 에서 등록하세요.".to_string())?;
+            // Gemini 는 system 파라미터를 따로 안 받으므로 프롬프트 앞에 지시문 결합.
+            let full = format!("{}\n\n{}", SLIDES_SYSTEM, prompt);
+            let cfg = llm::gemini::GenerationConfig {
+                max_output_tokens: Some(SLIDES_MAX_TOKENS),
+                temperature: Some(0.3),
+            };
+            llm::gemini::generate_text(&key, super::MODEL_NOTES_GEMINI, &full, Vec::new(), Some(cfg))
+                .await
+                .map_err(err_to_string)?
+                .text
+        }
+    };
+
+    Ok(text)
+}
+
+// ─── 범용 Claude 텍스트 생성 (문법/번역/문서개선/구조화 — React AI 모드) ─────
+//
+// system + prompt 는 프론트(aiService)가 모드별로 구성해 전달하고, 백엔드는 인증
+// (구독 OAuth or API 키) + 호출만 담당한다. 구독 토큰은 Rust(keychain/refresh)에만
+// 있으므로 Claude 경로는 반드시 이 command 를 거친다. 반환은 변환된 텍스트(diff 는 프론트).
+#[tauri::command]
+pub async fn ai_generate_claude(
+    system: Option<String>,
+    prompt: String,
+    claude_auth: crate::subscription_auth::ClaudeAuthMode,
+    max_tokens: Option<u32>,
+    model: Option<String>,
+) -> Result<String, String> {
+    use super::keychain::{get_key, Provider};
+    use super::llm::anthropic::{self, ClaudeAuth, ClaudeOptions};
+    use crate::subscription_auth::ClaudeAuthMode;
+
+    let model_id = model.as_deref().unwrap_or(super::MODEL_NOTES_CLAUDE);
+    let opts = ClaudeOptions {
+        max_output_tokens: Some(max_tokens.unwrap_or(16000)),
+        system,
+    };
+
+    let result = match claude_auth {
+        ClaudeAuthMode::Subscription => {
+            let token = crate::subscription_auth::claude_access_token().await?;
+            anthropic::generate_text(ClaudeAuth::Subscription(&token), model_id, &prompt, Some(opts))
+                .await
+        }
+        ClaudeAuthMode::ApiKey => {
+            let key = get_key(Provider::Claude)
+                .map_err(err_to_string)?
+                .ok_or_else(|| {
+                    "Claude API 키가 없습니다. Settings 에서 등록하거나 구독 로그인을 사용하세요."
+                        .to_string()
+                })?;
+            anthropic::generate_text(ClaudeAuth::ApiKey(&key), model_id, &prompt, Some(opts)).await
+        }
+    };
+    result.map(|r| r.text).map_err(err_to_string)
+}
+
+// ─── 범용 ChatGPT(Codex 구독) 텍스트 생성 (React AI 모드) ────────────────────
+//
+// 본인 Codex CLI 로그인 토큰을 재사용해 ChatGPT 구독으로 호출(비공개 Responses API).
+// 미검증 경로 — API 키 fallback 은 호출부(프론트)에서 모델 전환으로 처리한다.
+#[tauri::command]
+pub async fn ai_generate_codex(
+    system: Option<String>,
+    prompt: String,
+    model: Option<String>,
+) -> Result<String, String> {
+    use super::llm::openai_codex;
+    let tokens = crate::subscription_auth::read_codex_tokens()?;
+    let model_id = model.as_deref().unwrap_or(super::MODEL_CODEX);
+    openai_codex::generate_text(
+        &tokens.access_token,
+        tokens.account_id.as_deref(),
+        model_id,
+        system.as_deref(),
+        &prompt,
+    )
+    .await
+    .map(|r| r.text)
+    .map_err(err_to_string)
+}
+
+// ─── OpenAI API 키 텍스트 생성 (구독 codex 와 별개 경로) ─────────────────────
+//
+// 표준 chat completions(api.openai.com). React AI 모드가 OpenAI + API 키 선택 시 사용.
+#[tauri::command]
+pub async fn ai_generate_openai(
+    system: Option<String>,
+    prompt: String,
+    model: String,
+) -> Result<String, String> {
+    use super::keychain::{get_key, Provider};
+    use super::llm::openai_api;
+    let key = get_key(Provider::Openai)
+        .map_err(err_to_string)?
+        .ok_or_else(|| "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
+    openai_api::generate_text(&key, &model, system.as_deref(), &prompt)
+        .await
+        .map(|r| r.text)
+        .map_err(err_to_string)
+}
+
 // ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────
 
 #[cfg(test)]

@@ -1,8 +1,9 @@
 import { useState, useCallback, useMemo } from 'react';
 import { AIMode, AIResponse, TranslateLanguage } from '../types/ai';
-import { callAI, hasApiKey, getApiKey, setApiKey, removeApiKey, applyDiff } from '../services/aiService';
+import { callAI, hasApiKey, getApiKey, setApiKey, removeApiKey, applyDiff, isAuthError } from '../services/aiService';
+import { getAIModelSelection } from '../services/aiModelConfig';
+import { setValidationStatus } from '../services/apiValidation';
 import type { NotesJobResult } from '../types/converter';
-import type { Provider } from '../services/secureStorage';
 
 export function useAI() {
     const [mode, setMode] = useState<AIMode>('grammar');
@@ -13,8 +14,6 @@ export function useAI() {
     const [streamingText, setStreamingText] = useState<string>('');
     const [apiKeySet, setApiKeySet] = useState(hasApiKey());
     const [panelVisible, setPanelVisible] = useState(false);
-    // 공통 LLM 모델 선택 — 회의록 모드에서 실제 사용. 그 외 모드는 항상 Gemini.
-    const [selectedModel, setSelectedModel] = useState<Provider>('gemini');
     // 회의록 작성 (mode === 'meeting-notes') 전용 옵션/결과
     const [notesTemplate, setNotesTemplate] = useState<string>('general');
     const [notesResult, setNotesResult] = useState<NotesJobResult | null>(null);
@@ -65,7 +64,20 @@ export function useAI() {
             setResponse(result);
             return result;
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'AI 요청 중 오류가 발생했습니다.';
+            // 실제 사용 중 인증 실패(키 무효)면 설정 검증 상태를 invalid 로 갱신(정상→확인 필요).
+            // API 키 인증일 때만 — 구독 인증은 별개(설정의 "연결됨" 표시로 관리).
+            const sel = getAIModelSelection();
+            if (sel.auth === 'api_key' && isAuthError(err)) {
+                setValidationStatus(sel.company, 'invalid');
+            }
+            // Tauri invoke 실패는 string 으로 reject(Err(String)) — Error 가 아니라
+            // 그대로 두면 fallback 으로 뭉개진다. string 이면 그 원문(HTTP status 등)을 표면화.
+            const message =
+                err instanceof Error
+                    ? err.message
+                    : typeof err === 'string'
+                        ? err
+                        : 'AI 요청 중 오류가 발생했습니다.';
             setError(message);
             return null;
         } finally {
@@ -144,7 +156,6 @@ export function useAI() {
         panelVisible,
         allDecided,
         undecidedCount,
-        selectedModel,
         notesTemplate,
         notesResult,
 
@@ -164,7 +175,6 @@ export function useAI() {
         getFinalText,
         setResponse,
         setError,
-        setSelectedModel,
         setNotesTemplate,
         setNotesResult,
         setIsLoading,

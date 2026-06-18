@@ -122,11 +122,11 @@ export function LanShareSection() {
     return (
         <section className="convert-settings-section">
             <label>
-                아이폰 연결 — LAN 파일 공유{' '}
+                아이폰 연결{' '}
                 {info.running ? (
                     <span className="badge badge-ok">연결됨</span>
                 ) : (
-                    <span className="badge badge-warn">꺼짐</span>
+                    <span className="badge badge-warn">연결 안됨</span>
                 )}
             </label>
 
@@ -166,7 +166,7 @@ export function LanShareSection() {
                 ) : (
                     <button className="primary" onClick={handleConnect} disabled={busy}>
                         <Wifi size={14} />
-                        <span>{busy ? '연결 중...' : '연결 (Connect)'}</span>
+                        <span>{busy ? '연결 중...' : '연결하기'}</span>
                     </button>
                 )}
             </div>
@@ -225,9 +225,8 @@ export function LanShareSection() {
             )}
 
             <p className="convert-key-note">
-                지정한 <strong>폴더 하나</strong>의 마크다운만 노출되며, PIN 이 있어야 접근됩니다.
-                <strong> 신뢰하는 집 Wi-Fi 에서만</strong> 사용하고, 끝나면 연결을 해제하세요.
-                카페·회사 등 공유 네트워크에서는 켜두지 마세요.
+                신뢰할 수 있는 네트워크에서만 사용하세요. 공용 또는 공유 네트워크에서는 보안상
+                위험이 있을 수 있습니다.
             </p>
 
             {error && <p className="drive-error">{error}</p>}

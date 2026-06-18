@@ -504,6 +504,101 @@
     font-size: 13px;
     margin: 0;
 }
+.settings-tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--border-color, #e5e5e0);
+}
+.settings-tab {
+    padding: 8px 14px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-bottom: -1px;
+}
+.settings-tab:hover {
+    color: var(--text-primary);
+}
+.settings-tab.active {
+    color: var(--text-primary);
+    border-bottom-color: var(--text-primary);
+}
+/* 섹션 그룹 구분선 (회색 실선) */
+.settings-divider {
+    border: none;
+    border-top: 1px solid var(--border-primary);
+    margin: 2px 0;
+}
+
+/* AI 모델 선택 (회사 → 인증 → 모델 단계형) */
+.ai-model-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.ai-model-key {
+    width: 38px;
+    flex-shrink: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+.ai-seg {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+.ai-seg-btn {
+    padding: 5px 12px;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+}
+.ai-seg-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+.ai-seg-btn.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+.ai-seg-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.ai-model-row select {
+    flex: 1;
+}
+
+/* 구독 연동 — provider 별 행 */
+.sub-link-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.sub-link-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 0;
+}
+.sub-link-name {
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+.sub-link-hint {
+    margin: -2px 0 4px;
+    padding-left: 2px;
+}
+
 .convert-settings-section {
     display: flex;
     flex-direction: column;
@@ -530,6 +625,10 @@
 .convert-settings-section .badge-warn {
     background: rgba(239, 68, 68, 0.15);
     color: #dc2626;
+}
+.convert-settings-section .badge-muted {
+    background: rgba(120, 120, 120, 0.14);
+    color: var(--text-secondary);
 }
 .convert-key-note.warn {
     color: #dc2626;
@@ -759,8 +858,6 @@
     align-items: center;
     gap: 8px;
     margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px dashed var(--border-primary);
 }
 
 .drive-connect-row button {

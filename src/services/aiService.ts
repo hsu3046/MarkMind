@@ -1,9 +1,10 @@
 import { GoogleGenAI } from '@google/genai';
-import { AIRequest, AIResponse, DiffChunk, DiffSeg, getModelForMode, AI_MODELS } from '../types/ai';
+import { AIRequest, AIResponse, DiffChunk, DiffSeg, AI_MODELS } from '../types/ai';
 import type { FlowchartNode, FlowchartEdge } from '../types/flowchart';
 import { layoutFlowchart } from '../lib/dagre-layout';
 import { getKey, hasKey, setKey, removeKey } from './secureStorage';
 import { getCachedUserMemory } from './userMemory';
+import { getAIModelSelection } from './aiModelConfig';
 import FLOWCHART_SYSTEM_PROMPT from './flowchartPrompt.txt?raw';
 
 // ─── API Key Management ───────────────────────────────────
@@ -338,19 +339,27 @@ export function applyDiff(chunks: DiffChunk[]): string {
 
 // ─── AI API Call ──────────────────────────────────────────
 
+/**
+ * 인증 실패(키/토큰 무효) 에러인지 판별 — 실제 사용 중 키가 안 되면 설정 검증 상태를
+ * 갱신하기 위함(정상→확인 필요). Gemini(@google/genai)는 status 필드, Rust 경유
+ * (Claude/OpenAI)는 에러 문자열(HTTP status / "인증 실패")로 온다.
+ */
+export function isAuthError(err: unknown): boolean {
+    const status = (err as { status?: number } | null)?.status;
+    if (status === 400 || status === 401 || status === 403) return true;
+    const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+    return /\b(401|403)\b|unauthorized|인증\s*실패|invalid[\s_-]*api[\s_-]*key|api[\s_-]*key[^.]*invalid/i.test(
+        msg,
+    );
+}
+
 export async function callAI(
     request: AIRequest,
     onStream?: (text: string) => void,
 ): Promise<AIResponse> {
-    const apiKey = getApiKey();
-    if (!apiKey) {
-        throw new Error('API 키가 설정되지 않았습니다. 설정에서 Gemini API 키를 입력해주세요.');
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
+    // 전역 AI 모델 설정(설정 > 기본 설정)에 따라 회사·인증·모델 결정.
+    const sel = getAIModelSelection();
     const hasPrompt = !!request.prompt?.trim();
-    const model = getModelForMode(request.mode, hasPrompt, request.improveQuality);
-
     const systemPrompt = getSystemPrompt(request);
 
     let userContent = request.content;
@@ -360,32 +369,51 @@ export async function callAI(
 
     let modifiedText = '';
 
-    if (onStream) {
-        // Streaming mode
-        const response = await ai.models.generateContentStream({
-            model,
-            contents: userContent,
-            config: {
-                systemInstruction: systemPrompt,
-            },
-        });
-
-        for await (const chunk of response) {
-            const text = chunk.text || '';
-            modifiedText += text;
-            onStream(modifiedText);
+    if (sel.company === 'gemini') {
+        const apiKey = getApiKey();
+        if (!apiKey) {
+            throw new Error('Gemini API 키가 설정되지 않았습니다. 설정에서 입력해주세요.');
         }
-    } else {
-        // Non-streaming mode
-        const response = await ai.models.generateContent({
-            model,
-            contents: userContent,
-            config: {
-                systemInstruction: systemPrompt,
-            },
-        });
+        const ai = new GoogleGenAI({ apiKey });
 
-        modifiedText = response.text || '';
+        if (onStream) {
+            const response = await ai.models.generateContentStream({
+                model: sel.model,
+                contents: userContent,
+                config: { systemInstruction: systemPrompt },
+            });
+            for await (const chunk of response) {
+                const text = chunk.text || '';
+                modifiedText += text;
+                onStream(modifiedText);
+            }
+        } else {
+            const response = await ai.models.generateContent({
+                model: sel.model,
+                contents: userContent,
+                config: { systemInstruction: systemPrompt },
+            });
+            modifiedText = response.text || '';
+        }
+    } else if (sel.company === 'openai') {
+        // ChatGPT — 구독(codex)이면 ai_generate_codex, API 키면 ai_generate_openai. Rust 경유.
+        const { invoke } = await import('@tauri-apps/api/core');
+        const command = sel.auth === 'subscription' ? 'ai_generate_codex' : 'ai_generate_openai';
+        modifiedText = await invoke<string>(command, {
+            system: systemPrompt,
+            prompt: userContent,
+            model: sel.model,
+        });
+    } else {
+        // Claude — 구독 OAuth 또는 API 키. Rust 경유. 스트리밍 미지원(완료 후 diff).
+        const { invoke } = await import('@tauri-apps/api/core');
+        modifiedText = await invoke<string>('ai_generate_claude', {
+            system: systemPrompt,
+            prompt: userContent,
+            claudeAuth: sel.auth,
+            maxTokens: 16000,
+            model: sel.model,
+        });
     }
 
     // Clean up: remove markdown code block wrappers if present

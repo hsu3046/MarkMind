@@ -14,6 +14,9 @@ pub enum ConverterError {
     #[error("Claude API 오류: {0}")]
     Claude(String),
 
+    #[error("ChatGPT(Codex) API 오류: {0}")]
+    Codex(String),
+
     #[error("네트워크 연결이 불안정합니다. 잠시 후 다시 시도해주세요. ({0})")]
     Network(String),
 

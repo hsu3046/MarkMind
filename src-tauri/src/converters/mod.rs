@@ -37,8 +37,11 @@ pub const MODEL_OCR_ENHANCE: &str = "gemini-3-pro-image-preview";
 pub const MODEL_AUDIO: &str = "gemini-3.1-flash-lite";
 pub const MODEL_NOTES_GEMINI: &str = "gemini-3.1-pro-preview";
 pub const MODEL_NOTES_CLAUDE: &str = "claude-sonnet-4-6";
-#[allow(dead_code)] // OpenAI 호출 아직 미구현 — 미래 사용용 default
+#[allow(dead_code)] // OpenAI API 키 호출은 아직 미구현 — 미래 사용용 default
 pub const MODEL_OPENAI_DEFAULT: &str = "gpt-5.4-mini-2026-03-17";
+/// ChatGPT(Codex 구독) backend 호출 모델. `~/.codex/models_cache.json` 의 실제 id 기반
+/// (gpt-5.4 / gpt-5.4-mini / gpt-5.5). 최신 gpt-5.5 사용.
+pub const MODEL_CODEX: &str = "gpt-5.5";
 
 /// 단가 — USD per 1M tokens
 pub fn pricing(model: &str) -> Option<(f64, f64)> {

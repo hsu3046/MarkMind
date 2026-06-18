@@ -29,7 +29,6 @@ export function SettingsModal({ visible, onClose }: SettingsModalProps) {
                         <X size={18} />
                     </button>
                 </div>
-                <p className="settings-modal-note">입력한 정보는 본인 컴퓨터에만 저장됩니다.</p>
                 <div className="settings-modal-body">
                     <SettingsView onDone={onClose} />
                 </div>

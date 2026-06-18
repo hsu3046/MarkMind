@@ -7,9 +7,7 @@ import { useState, useRef, useEffect } from 'react';
 import { AIMode, TranslateLanguage } from '../types/ai';
 import { Sparkles, Send, Loader2, AlertCircle } from 'lucide-react';
 import type { NotesJobResult, TemplateInfo } from '../types/converter';
-import type { Provider } from '../services/secureStorage';
 import { ModeSelector } from './ai/ModeSelector';
-import { LlmSelector } from './ai/LlmSelector';
 import { NotesOptions } from './ai/NotesOptions';
 import { NotesResultCard } from './ai/NotesResultCard';
 import './AIPanel.css';
@@ -23,8 +21,6 @@ interface AIPanelProps {
     streamingText: string;
     apiKeySet: boolean;
     content: string;
-    selectedModel: Provider;
-    onSelectedModelChange: (p: Provider) => void;
     notesTemplate: string;
     notesResult: NotesJobResult | null;
     loadTemplates: () => Promise<TemplateInfo[]>;
@@ -45,8 +41,6 @@ export function AIPanel({
     streamingText,
     apiKeySet,
     content,
-    selectedModel,
-    onSelectedModelChange,
     notesTemplate,
     notesResult,
     loadTemplates,
@@ -107,8 +101,6 @@ export function AIPanel({
                 </div>
             ) : (
                 <>
-                    <LlmSelector mode={mode} selected={selectedModel} onChange={onSelectedModelChange} />
-
                     <ModeSelector mode={mode} onChange={onModeChange} />
 
                     {mode === 'translate' && (

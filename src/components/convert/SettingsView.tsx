@@ -12,11 +12,13 @@
 import { useEffect, useState } from 'react';
 import { Eye, EyeOff, Trash2, Cloud, CloudOff } from 'lucide-react';
 import { getKey, hasKey, Provider, removeKey, updateCacheAfterBatch } from '../../services/secureStorage';
+import { detectSubscriptionLogins, SubscriptionStatus } from '../../services/subscriptionService';
 import * as gdrive from '../../services/gdriveService';
 import * as secretsBatch from '../../services/secretsService';
 import { confirmAction } from '../../services/dialogService';
 import { isTauri } from '../../services/platform';
 import { LanShareSection } from './LanShareSection';
+import { AIModelPicker } from './AIModelPicker';
 import { loadUserMemory, saveUserMemory, USER_MEMORY_MAX_CHARS } from '../../services/userMemory';
 import {
     ValidationResult,
@@ -42,14 +44,14 @@ interface KeySpec {
 const KEY_SPECS: KeySpec[] = [
     {
         provider: 'gemini',
-        label: 'Google Gemini API 키',
+        label: 'Gemini API 키',
         placeholder: 'AIza...',
         issueUrl: 'https://aistudio.google.com/apikey',
         issueLabel: 'aistudio.google.com/apikey',
     },
     {
         provider: 'claude',
-        label: 'Anthropic Claude API 키',
+        label: 'Claude API 키',
         placeholder: 'sk-ant-...',
         issueUrl: 'https://console.anthropic.com/settings/keys',
         issueLabel: 'console.anthropic.com/settings/keys',
@@ -63,12 +65,16 @@ const KEY_SPECS: KeySpec[] = [
     },
     {
         provider: 'pyannoteai',
-        label: 'pyannote.ai API 키 (화자 분리)',
+        label: 'pyannote.ai API 키',
         placeholder: 'sk_...',
         issueUrl: 'https://dashboard.pyannote.ai',
         issueLabel: 'dashboard.pyannote.ai',
     },
 ];
+
+type SettingsTab = 'basic' | 'ai' | 'extra';
+/** AI 설정 탭에 노출할 API 키 (나머지 키는 추가 기능 탭). */
+const AI_PROVIDERS: Provider[] = ['gemini', 'claude', 'openai'];
 
 function maskClientId(id: string): string {
     if (id.length <= 12) return id;
@@ -129,7 +135,12 @@ export function SettingsView({ onDone }: SettingsViewProps) {
     // 사용자 메모리(#15) — AI system prompt 주입용 "내 정보"
     const [userMemory, setUserMemory] = useState('');
     const [memoryOrig, setMemoryOrig] = useState('');
-    const [memorySaving, setMemorySaving] = useState(false);
+
+    // 구독 연동 — 로컬 Claude Code / Codex CLI 로그인 감지 현황
+    const [subStatus, setSubStatus] = useState<SubscriptionStatus>({ claude: false, codex: false });
+
+    // 설정 탭 (기본 / AI / 추가 기능). AI 가 가장 자주 쓰이므로 기본 진입 탭.
+    const [activeTab, setActiveTab] = useState<SettingsTab>('ai');
 
     useEffect(() => {
         setValues({
@@ -163,24 +174,9 @@ export function SettingsView({ onDone }: SettingsViewProps) {
             const mem = await loadUserMemory();
             setUserMemory(mem);
             setMemoryOrig(mem);
+            setSubStatus(await detectSubscriptionLogins());
         })();
     }, []);
-
-    // 사용자 메모리(#15) 저장 — API 키 저장과 독립.
-    const handleSaveMemory = async () => {
-        setMemorySaving(true);
-        try {
-            await saveUserMemory(userMemory);
-            setMemoryOrig(userMemory);
-        } catch (e) {
-            await confirmAction(
-                `내 정보 저장에 실패했습니다: ${e instanceof Error ? e.message : String(e)}`,
-                { title: '저장 실패', kind: 'error' },
-            );
-        } finally {
-            setMemorySaving(false);
-        }
-    };
 
     // ─── 입력 빠른 초기화 (휴지통) ───
     const handleClearKeyInput = async (provider: Provider) => {
@@ -319,6 +315,12 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                 }
             }
 
+            // 나의 정보(옵션) — 변경 시 함께 저장(키 변경 여부와 독립).
+            if (userMemory.trim() !== memoryOrig.trim()) {
+                await saveUserMemory(userMemory);
+                setMemoryOrig(userMemory);
+            }
+
             // 3) 변경된 키 검증 — 네트워크 ping (Keychain 미접근)
             for (const p of changedKeys) {
                 setValidation((v) => ({ ...v, [p]: null }));
@@ -379,107 +381,163 @@ export function SettingsView({ onDone }: SettingsViewProps) {
         }
     };
 
-    return (
-        <div className="convert-settings">
-            {KEY_SPECS.map((spec) => {
-                const badge = statusBadge(stored[spec.provider], validation[spec.provider]);
-                return (
-                    <section key={spec.provider} className="convert-settings-section">
-                        <label>
-                            {spec.label} {badge && <span className={badge.cls}>{badge.text}</span>}
-                        </label>
-                        <div className="convert-key-row">
-                            <input
-                                type={show[spec.provider] ? 'text' : 'password'}
-                                placeholder={spec.placeholder}
-                                value={values[spec.provider]}
-                                onChange={(e) =>
-                                    setValues((v) => ({ ...v, [spec.provider]: e.target.value }))
-                                }
-                            />
-                            <button
-                                onClick={() =>
-                                    setShow((s) => ({ ...s, [spec.provider]: !s[spec.provider] }))
-                                }
-                                title="표시/숨김"
-                            >
-                                {show[spec.provider] ? <EyeOff size={14} /> : <Eye size={14} />}
-                            </button>
-                            <button
-                                onClick={() => handleClearKeyInput(spec.provider)}
-                                className="danger"
-                                disabled={!stored[spec.provider]}
-                                title="삭제"
-                            >
-                                <Trash2 size={14} />
-                            </button>
-                        </div>
-                        <p className="convert-key-note">
-                            발급:{' '}
-                            <a href={spec.issueUrl} target="_blank" rel="noopener noreferrer">
-                                {spec.issueLabel}
-                            </a>
-                        </p>
-                    </section>
-                );
-            })}
-
-            {/* === 내 정보 (AI 컨텍스트, #15) === */}
-            <section className="convert-settings-section">
+    const renderKeySpec = (spec: KeySpec) => {
+        const badge = statusBadge(stored[spec.provider], validation[spec.provider]);
+        return (
+            <section key={spec.provider} className="convert-settings-section">
                 <label>
-                    내 정보 (AI 컨텍스트){' '}
-                    {memoryOrig && <span className="badge badge-ok">설정됨</span>}
-                </label>
-                <textarea
-                    className="convert-memory-input"
-                    placeholder="예: 한국어 사용자, B2B SaaS 분야, 존댓말 선호. 자주 쓰는 용어·약어 등"
-                    value={userMemory}
-                    rows={4}
-                    maxLength={USER_MEMORY_MAX_CHARS}
-                    onChange={(e) => setUserMemory(e.target.value)}
-                />
-                <p className="convert-key-note">
-                    AI(문법·번역·개선·구조화) 호출 시 참고 정보로 전달됩니다. {userMemory.length}/
-                    {USER_MEMORY_MAX_CHARS}자
-                </p>
-                <button
-                    className="convert-btn primary"
-                    onClick={handleSaveMemory}
-                    disabled={memorySaving || userMemory === memoryOrig}
-                >
-                    {memorySaving ? '저장 중…' : '내 정보 저장'}
-                </button>
-            </section>
-
-            {/* === 로컬 화자분리 (pyannote, 무료/오프라인) === */}
-            <section className="convert-settings-section">
-                <label>
-                    로컬 화자분리 — Python 경로{' '}
-                    {diarPythonOrig && <span className="badge badge-ok">설정됨</span>}
+                    {spec.label} {badge && <span className={badge.cls}>{badge.text}</span>}
                 </label>
                 <div className="convert-key-row">
                     <input
-                        type="text"
-                        placeholder="/path/to/venv/bin/python3 (pyannote.audio 설치된 Python)"
-                        value={diarPython}
-                        onChange={(e) => setDiarPython(e.target.value)}
+                        type={show[spec.provider] ? 'text' : 'password'}
+                        placeholder={spec.placeholder}
+                        value={values[spec.provider]}
+                        onChange={(e) => setValues((v) => ({ ...v, [spec.provider]: e.target.value }))}
                     />
                     <button
-                        onClick={() => setDiarPython('')}
+                        onClick={() => setShow((s) => ({ ...s, [spec.provider]: !s[spec.provider] }))}
+                        title="표시/숨김"
+                    >
+                        {show[spec.provider] ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                    <button
+                        onClick={() => handleClearKeyInput(spec.provider)}
                         className="danger"
-                        disabled={!diarPython}
-                        title="입력 비우기"
+                        disabled={!stored[spec.provider]}
+                        title="삭제"
                     >
                         <Trash2 size={14} />
                     </button>
                 </div>
                 <p className="convert-key-note">
-                    입력하면 무료·오프라인 <strong>로컬 pyannote</strong> 로 화자 분리 (pyannote.ai 키보다 우선).
-                    해당 Python 에 <code>pyannote.audio</code> 가 설치돼 있어야 합니다. 비우면 클라우드 키 또는 기본 동작.
+                    발급:{' '}
+                    <a href={spec.issueUrl} target="_blank" rel="noopener noreferrer">
+                        {spec.issueLabel}
+                    </a>
                 </p>
             </section>
+        );
+    };
 
-            {/* === Google Drive === */}
+    return (
+        <div className="convert-settings">
+            <div className="settings-tabs">
+                <button
+                    type="button"
+                    className={`settings-tab${activeTab === 'basic' ? ' active' : ''}`}
+                    onClick={() => setActiveTab('basic')}
+                >
+                    기본 설정
+                </button>
+                <button
+                    type="button"
+                    className={`settings-tab${activeTab === 'ai' ? ' active' : ''}`}
+                    onClick={() => setActiveTab('ai')}
+                >
+                    AI 설정
+                </button>
+                <button
+                    type="button"
+                    className={`settings-tab${activeTab === 'extra' ? ' active' : ''}`}
+                    onClick={() => setActiveTab('extra')}
+                >
+                    추가 설정
+                </button>
+            </div>
+
+            {activeTab === 'ai' && (
+                <>
+                    {KEY_SPECS.filter((s) => AI_PROVIDERS.includes(s.provider)).map(renderKeySpec)}
+
+            <hr className="settings-divider" />
+
+            {/* === 구독 연동 (Claude / ChatGPT — 로컬 CLI 토큰 재사용) === */}
+            <section className="convert-settings-section">
+                <div className="sub-link-list">
+                    {/* Claude */}
+                    <div className="sub-link-row">
+                        <span className="sub-link-name">Claude 구독 연동</span>
+                        <span className={subStatus.claude ? 'badge badge-ok' : 'badge badge-warn'}>
+                            {subStatus.claude
+                                ? `${subStatus.claudePlan ? subStatus.claudePlan + ' · ' : ''}연결됨`
+                                : '연결 안 됨'}
+                        </span>
+                    </div>
+                    {!subStatus.claude && (
+                        <p className="convert-key-note sub-link-hint">
+                            연결하려면 터미널에서 <code>claude</code> 로 로그인하세요 (
+                            <a href="https://code.claude.com" target="_blank" rel="noopener noreferrer">
+                                Claude Code 설치 안내
+                            </a>
+                            ).
+                        </p>
+                    )}
+
+                    {/* ChatGPT (Codex) */}
+                    <div className="sub-link-row">
+                        <span className="sub-link-name">ChatGPT 구독 연동</span>
+                        <span className={subStatus.codex ? 'badge badge-ok' : 'badge badge-warn'}>
+                            {subStatus.codex
+                                ? `${subStatus.codexPlan ? subStatus.codexPlan + ' · ' : ''}연결됨`
+                                : '연결 안 됨'}
+                        </span>
+                    </div>
+                    {!subStatus.codex && (
+                        <p className="convert-key-note sub-link-hint">
+                            연결하려면 터미널에서 <code>codex</code> 로 로그인하세요 (
+                            <a href="https://developers.openai.com/codex" target="_blank" rel="noopener noreferrer">
+                                Codex 설치 안내
+                            </a>
+                            ).
+                        </p>
+                    )}
+
+                    {/* Grok — 구독 연동 준비중. 고정 표시. */}
+                    <div className="sub-link-row">
+                        <span className="sub-link-name">Grok 구독 연동</span>
+                        <span className="badge badge-muted">준비중</span>
+                    </div>
+
+                    {/* Gemini — 구독 연동 미지원(제공사 차단). 고정 표시. */}
+                    <div className="sub-link-row">
+                        <span className="sub-link-name">Gemini 구독 연동</span>
+                        <span className="badge badge-muted">지원 안함</span>
+                    </div>
+                </div>
+
+                <p className="convert-key-note">
+                    현재 이용 중인 AI 구독 플랜과 연동할 수 있습니다. 단, 제공사 정책에 따라 연동이 중단될
+                    수 있습니다.
+                </p>
+            </section>
+                </>
+            )}
+
+            {activeTab === 'extra' && (
+                <>
+                    {/* === 나의 정보 (AI 컨텍스트) — 추가 설정 맨 위 === */}
+                    <section className="convert-settings-section">
+                        <label>
+                            나의 정보 (옵션){' '}
+                            {memoryOrig && <span className="badge badge-ok">설정됨</span>}
+                        </label>
+                        <textarea
+                            className="convert-memory-input"
+                            placeholder="예: 한국어 사용자, B2B SaaS 분야, 존댓말 선호. 자주 쓰는 용어·약어 등"
+                            value={userMemory}
+                            rows={4}
+                            maxLength={USER_MEMORY_MAX_CHARS}
+                            onChange={(e) => setUserMemory(e.target.value)}
+                        />
+                        <p className="convert-key-note">
+                            {userMemory.length}/{USER_MEMORY_MAX_CHARS}자
+                        </p>
+                    </section>
+
+                    <hr className="settings-divider" />
+
+                    {/* === Google Drive === */}
             <section className="convert-settings-section drive-section">
                 <label>
                     Google Drive 연동
@@ -610,8 +668,58 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                 {driveError && <p className="drive-error">{driveError}</p>}
             </section>
 
-            {/* === 아이폰 연결 (LAN 파일 공유) — 데스크탑 앱 전용 === */}
-            {isTauri() && <LanShareSection />}
+            <hr className="settings-divider" />
+
+                    {KEY_SPECS.filter((s) => !AI_PROVIDERS.includes(s.provider)).map(renderKeySpec)}
+
+            {/* === pyannote.ai 로컬 설치 경로 === */}
+            <section className="convert-settings-section">
+                <label>
+                    pyannote.ai 로컬 설치 경로{' '}
+                    {diarPythonOrig && <span className="badge badge-ok">설정됨</span>}
+                </label>
+                <div className="convert-key-row">
+                    <input
+                        type="text"
+                        placeholder="/path/to/venv/bin/python3 (pyannote.audio 설치된 Python)"
+                        value={diarPython}
+                        onChange={(e) => setDiarPython(e.target.value)}
+                    />
+                    <button
+                        onClick={() => setDiarPython('')}
+                        className="danger"
+                        disabled={!diarPython}
+                        title="입력 비우기"
+                    >
+                        <Trash2 size={14} />
+                    </button>
+                </div>
+                <p className="convert-key-note">
+                    해당 Python 에 <code>pyannote.audio</code> 가 설치돼 있어야 합니다. 비우면 클라우드 키 또는
+                    기본 동작.
+                </p>
+            </section>
+                </>
+            )}
+
+            {/* === 기본 설정 — AI 모델 + 아이폰 연결 === */}
+            {activeTab === 'basic' && (
+                <>
+                    <AIModelPicker />
+
+                    <hr className="settings-divider" />
+
+                    {isTauri() ? (
+                        <LanShareSection />
+                    ) : (
+                        <section className="convert-settings-section">
+                            <p className="convert-key-note">
+                                아이폰 연결은 데스크탑 앱에서만 사용할 수 있습니다.
+                            </p>
+                        </section>
+                    )}
+                </>
+            )}
 
             {postSaveWarn && <p className="convert-key-note warn">{postSaveWarn}</p>}
 

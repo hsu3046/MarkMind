@@ -3413,3 +3413,31 @@ code.hljs {
   font-size: 17px;
   font-weight: 600;
 }
+
+/* PPTX 내보내기 진행 오버레이 (이슈 #6 — LLM 슬라이드 생성은 수초~수십초 소요) */
+.pptx-busy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(1.5px);
+  animation: fadeIn 120ms ease-out;
+}
+.pptx-busy-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 22px;
+  border-radius: 12px;
+  background: var(--bg-elevated, #ffffff);
+  color: var(--text-primary, #1a1a2e);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+  font-size: 14px;
+  font-weight: 500;
+}
+.pptx-busy-card .spinning {
+  color: #2f6fed;
+}

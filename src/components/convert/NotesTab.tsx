@@ -6,8 +6,9 @@
 
 import { useEffect, useState } from 'react';
 import { Upload, Play, RotateCcw } from 'lucide-react';
-import { DetailLevel, NotesJobResult, NotesProvider, TemplateInfo } from '../../types/converter';
+import { DetailLevel, NotesJobResult, TemplateInfo } from '../../types/converter';
 import { useConverter } from '../../hooks/useConverter';
+import { getAIModelSelection } from '../../services/aiModelConfig';
 import { ProgressPanel } from './ProgressPanel';
 import { ResultCard } from './ResultCard';
 import { pickTextFile } from './pickFile';
@@ -28,7 +29,6 @@ export function NotesTab({ converter, droppedFile, onConsumeDropped, onOpenResul
     const [source, setSource] = useState('paste.md');
     const [template, setTemplate] = useState('general');
     const [detail, setDetail] = useState<DetailLevel>('standard');
-    const [provider, setProvider] = useState<NotesProvider>('claude');
     const [templates, setTemplates] = useState<TemplateInfo[]>([]);
     const [result, setResult] = useState<NotesJobResult | null>(null);
 
@@ -91,12 +91,15 @@ export function NotesTab({ converter, droppedFile, onConsumeDropped, onOpenResul
     const handleRun = async () => {
         if (transcript.trim().length < MIN_CHARS) return;
         setResult(null);
+        const sel = getAIModelSelection();
         const r = await converter.runNotes({
             transcript,
             template,
             source,
             detail,
-            provider,
+            company: sel.company,
+            auth: sel.auth,
+            model: sel.model,
         });
         if (r) setResult(r);
     };
@@ -158,25 +161,10 @@ export function NotesTab({ converter, droppedFile, onConsumeDropped, onOpenResul
                 </div>
 
                 <div className="convert-option-field">
-                    <label>LLM 모델</label>
-                    <div className="convert-provider-row">
-                        <label className={`convert-provider${provider === 'claude' ? ' active' : ''}`}>
-                            <input
-                                type="radio"
-                                checked={provider === 'claude'}
-                                onChange={() => setProvider('claude')}
-                            />
-                            Claude Sonnet 4.6
-                        </label>
-                        <label className={`convert-provider${provider === 'gemini' ? ' active' : ''}`}>
-                            <input
-                                type="radio"
-                                checked={provider === 'gemini'}
-                                onChange={() => setProvider('gemini')}
-                            />
-                            Gemini 3.1 Pro
-                        </label>
-                    </div>
+                    <label>모델</label>
+                    <p className="convert-key-note" style={{ margin: 0 }}>
+                        설정 &gt; 기본 설정의 AI 모델을 사용합니다.
+                    </p>
                 </div>
             </div>
 
