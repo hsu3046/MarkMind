@@ -39,12 +39,16 @@ MarkMindは、手書きのメモ、音声録音、スキャンされたPDFなど
 
 ## ✨ What It Does
 
-### AI Editing (selected text or full document)
+### AI Agent (⌘I)
+
+One side panel with eight modes — speech recognition, image OCR, meeting notes, slides, image generation, plus three text-editing modes. The model used follows a global selection in Settings (company / auth / model).
 
 - **Fixes grammar in-place** — Select text, pick "문법 교정," and see word-level highlights of every correction — accept or reject one by one.
 - **Translates seamlessly** — Korean ↔ English ↔ Japanese with paragraph-by-paragraph before/after diffs.
 - **Improves entire documents** — Free-form prompt with Gemini 3.1 Pro for deep rewrites.
 - **Generates meeting notes** — Full document as transcript → structured Markdown notes via Claude Sonnet 4.6 or Gemini 3.1 Pro. Built-in templates (general / detailed / team-sync) + user-defined templates.
+- **Generates slide decks** — Export the current document as a `.pptx` with an AI-planned layout (Claude or Gemini).
+- **Generates images** — Text-to-image (plus reference images) via Gemini (Nano Banana) or ChatGPT (GPT Image); insert into the document or save to file. Works with an API key **or a ChatGPT subscription**.
 - **Pops up an AI bar on selection** — Highlight any text in the editor and a floating action bar appears instantly.
 - **Streams AI responses live** — Watch the rewrite appear in real time, then review the smart diff.
 
@@ -55,6 +59,12 @@ MarkMindは、手書きのメモ、音声録音、スキャンされたPDFなど
 - **Inline OCR drag-drop** — Drop an image directly into the editor (when no sidebar active) → OCR result inserted at cursor.
 - **Sidebar drag-drop** — Drop audio/PDF/image files into the active sidebar → file auto-attached by extension.
 - **Speaker diarization (화자 분리)** — Verified **pyannote**, two ways: local (free/offline `pyannote.audio` Python sidecar) or cloud (pyannote.ai API). Post-transcription speaker rename/merge; falls back to Gemini's own speaker guesses if neither is configured.
+
+### Visualization
+
+- **Mindmap (⌘4)** — Render the document's heading/bullet hierarchy as an interactive node graph; edit nodes to update the document.
+- **Flowchart (⌘5)** — AI reinterprets the document as a flow diagram.
+- **Gantt (⌘6)** — Visualize the schedule/phases described in the document as a Gantt chart.
 
 ### Editor Experience
 
@@ -72,6 +82,7 @@ MarkMindは、手書きのメモ、音声録音、スキャンされたPDFなど
 - **Unified Settings modal** — One place for Gemini, Claude, OpenAI keys (File → Settings).
 - **macOS Keychain storage** — All API keys live in the OS Keychain (`space.knowai.markmind`), never in localStorage on the desktop app.
 - **Legacy migration** — First launch auto-migrates any old `localStorage` keys to Keychain.
+- **Subscription OAuth** — Reuse an existing Claude (Max/Pro) or ChatGPT (Plus) subscription by reading the local `claude` / `codex` CLI login — no API key needed for those. Used for both text and image generation.
 
 ### Claude Integration (MCP) — new in 0.4.0
 
@@ -167,9 +178,12 @@ npm run dev
 | Save | `⌘S` |
 | Save As | `⌘⇧S` |
 | Find | `⌘F` |
-| Editor Mode | `⌘1` |
-| Split View | `⌘2` |
-| Preview Mode | `⌘3` |
+| Markdown (Editor) | `⌘1` |
+| Rich Text (Preview) | `⌘2` |
+| Split View | `⌘3` |
+| Mindmap | `⌘4` |
+| Flowchart | `⌘5` |
+| Gantt | `⌘6` |
 | Zoom In | `⌘+` |
 | Zoom Out | `⌘-` |
 | Reset Zoom | `⌘0` |
@@ -275,7 +289,9 @@ markmind/
 - [x] **Phase 6 (partial)**: Export — PDF (native WKWebView print). Google Docs / PPTX still planned.
 - [x] **Phase 7 (partial)**: Cloud sync — Google Drive (auto-upload + browse). Share links still planned.
 - [x] **Phase 8**: Claude integration — in-process MCP server (read + edit open documents, diff-gated proposals)
-- [ ] **Next**: MCPB bundle (Claude Desktop icon/one-click install), Google Docs / PPTX export, share links
+- [x] **Phase 9**: Generation & visualization — slide (`.pptx`) export, AI image generation (Gemini / ChatGPT, API key or subscription), mindmap / flowchart / Gantt views
+- [x] **Phase 10**: Subscription OAuth — reuse Claude (Max) / ChatGPT (Plus) logins for text & image generation
+- [ ] **Next**: Google Docs export, share links, Grok integration
 
 See [docs/TODO.md](docs/TODO.md) for the detailed roadmap.
 
