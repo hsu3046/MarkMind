@@ -10,7 +10,7 @@ import { Preview, type PreviewHandle } from './components/Preview';
 import { MindmapView } from './components/MindmapView';
 import { FlowchartView } from './components/FlowchartView';
 import { GanttView } from './components/GanttView';
-import { Toolbar, ViewMode } from './components/Toolbar';
+import { Toolbar, EditableFileName, ViewMode } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { OutlinePanel } from './components/OutlinePanel';
 import { RecentFilesPanel } from './components/RecentFilesPanel';
@@ -1405,10 +1405,14 @@ function App() {
             }
           });
         }}
-      />
+      >
+        {/* 파일명을 타이틀바(신호등 줄) 중앙에 표시 — 클릭 시 이름변경.
+            no-drag + stopPropagation 으로 클릭은 편집, 빈 영역은 창 드래그. */}
+        <div className="titlebar-filename" onMouseDown={(e) => e.stopPropagation()}>
+          <EditableFileName fileName={fileName} isDirty={isDirty} onRename={renameFile} />
+        </div>
+      </div>
       <Toolbar
-        fileName={fileName}
-        isDirty={isDirty}
         viewMode={viewMode}
         fontSize={fontSize}
         outlineVisible={outlineVisible}
@@ -1437,7 +1441,6 @@ function App() {
         onToggleAI={handleToggleAI}
         showRecent={isTauri()}
         aiPanelVisible={ai.panelVisible}
-        onRename={renameFile}
       />
 
       {/* Search bar */}

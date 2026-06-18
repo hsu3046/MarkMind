@@ -14,7 +14,7 @@ import { BackgroundPicker } from './BackgroundPicker';
 
 export type ViewMode = 'split' | 'editor' | 'preview' | 'mindmap' | 'flowchart' | 'gantt';
 
-function EditableFileName({ fileName, isDirty, onRename }: { fileName: string; isDirty: boolean; onRename: (name: string) => void }) {
+export function EditableFileName({ fileName, isDirty, onRename }: { fileName: string; isDirty: boolean; onRename: (name: string) => void }) {
     const [editing, setEditing] = useState(false);
     const [editValue, setEditValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
@@ -85,8 +85,6 @@ function EditableFileName({ fileName, isDirty, onRename }: { fileName: string; i
 }
 
 interface ToolbarProps {
-    fileName: string;
-    isDirty: boolean;
     viewMode: ViewMode;
     fontSize: number;
     outlineVisible: boolean;
@@ -115,12 +113,9 @@ interface ToolbarProps {
     onSaveToDrive: () => void;
     onToggleSearch: () => void;
     onToggleAI: () => void;
-    onRename: (newName: string) => void;
 }
 
 export function Toolbar({
-    fileName,
-    isDirty,
     viewMode,
     fontSize,
     outlineVisible,
@@ -147,7 +142,6 @@ export function Toolbar({
     onSaveToDrive,
     onToggleSearch,
     onToggleAI,
-    onRename,
     showRecent,
     aiPanelVisible,
 }: ToolbarProps) {
@@ -390,13 +384,6 @@ export function Toolbar({
                     <Maximize size={16} strokeWidth={1.5} />
                 </button>
             </div>
-
-            {/* Center: File name (editable) */}
-            <EditableFileName
-                fileName={fileName}
-                isDirty={isDirty}
-                onRename={onRename}
-            />
 
             {/* Right: AI 에이전트 단일 진입점(#60 — 음성/이미지 인식·슬라이드 모두 패널 모드로 흡수) */}
             <div className="toolbar-group">
