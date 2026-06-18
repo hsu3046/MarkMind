@@ -582,13 +582,44 @@ body {
 /* ---------- Search Bar ---------- */
 .search-bar {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   padding: 6px 16px;
   background: var(--bg-toolbar);
   border-bottom: 1px solid var(--border-primary);
   flex-shrink: 0;
   animation: fadeIn 150ms ease-out;
+}
+
+.search-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-replace-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.search-replace-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.search-replace-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .search-input {
@@ -709,7 +740,17 @@ body {
   background: rgba(255, 200, 0, 0.35);
   border-radius: 2px;
 }
-.search-result-current {
+.rich-search-highlight-current {
+  background: rgba(255, 140, 0, 0.7);
+  outline: 1.5px solid rgba(255, 140, 0, 0.9);
+}
+
+/* CodeMirror 검색 매치 — 통일 SearchBar 가 setSearchQuery 로 구동(네이티브 패널 없음) */
+.cm-searchMatch {
+  background: rgba(255, 200, 0, 0.35);
+  border-radius: 2px;
+}
+.cm-searchMatch-selected {
   background: rgba(255, 140, 0, 0.7);
   outline: 1.5px solid rgba(255, 140, 0, 0.9);
 }
@@ -1243,15 +1284,12 @@ body {
 
 /* 검색창 닫기 X 버튼 — 크고 명확하게 */
 .search-close-btn {
-  width: 32px;
-  height: 32px;
-  margin-left: 6px;
+  width: 24px;
+  height: 24px;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
   color: var(--text-secondary);
-  font-size: 16px;
-  font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;

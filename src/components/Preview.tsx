@@ -897,19 +897,34 @@ function RichEditor({
             );
         };
 
+        // 현재 매치(-current)를 화면 중앙으로 스크롤(데코레이션 적용 후 다음 frame).
+        const scrollToCurrent = () => {
+            requestAnimationFrame(() => {
+                const el = editor.view.dom.querySelector('.rich-search-highlight-current') as HTMLElement | null;
+                el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            });
+        };
+        // 명령 후 storage 갱신은 다음 frame — setTimeout 0 으로 카운트 보고 + 스크롤.
+        const after = () => { reportCount(); scrollToCurrent(); };
+
         const onSearch = (e: Event) => {
             const detail = (e as CustomEvent<{ query: string }>).detail;
             editor.commands.setSearchTerm(detail.query ?? '');
-            // setSearchTerm 후 storage 갱신은 다음 frame — setTimeout 0
-            setTimeout(reportCount, 0);
+            setTimeout(after, 0);
         };
-        const onNext = () => {
-            editor.commands.nextSearchResult();
-            setTimeout(reportCount, 0);
+        const onNext = () => { editor.commands.nextSearchResult(); setTimeout(after, 0); };
+        const onPrev = () => { editor.commands.previousSearchResult(); setTimeout(after, 0); };
+        const onReplace = (e: Event) => {
+            const detail = (e as CustomEvent<{ replace: string }>).detail;
+            editor.commands.setReplaceTerm(detail.replace ?? '');
+            editor.commands.replace();
+            setTimeout(after, 0);
         };
-        const onPrev = () => {
-            editor.commands.previousSearchResult();
-            setTimeout(reportCount, 0);
+        const onReplaceAll = (e: Event) => {
+            const detail = (e as CustomEvent<{ replace: string }>).detail;
+            editor.commands.setReplaceTerm(detail.replace ?? '');
+            editor.commands.replaceAll();
+            setTimeout(after, 0);
         };
         const onClear = () => {
             editor.commands.setSearchTerm('');
@@ -918,11 +933,15 @@ function RichEditor({
         window.addEventListener('markmind:rich-search', onSearch);
         window.addEventListener('markmind:rich-search-next', onNext);
         window.addEventListener('markmind:rich-search-prev', onPrev);
+        window.addEventListener('markmind:rich-search-replace', onReplace);
+        window.addEventListener('markmind:rich-search-replace-all', onReplaceAll);
         window.addEventListener('markmind:rich-search-clear', onClear);
         return () => {
             window.removeEventListener('markmind:rich-search', onSearch);
             window.removeEventListener('markmind:rich-search-next', onNext);
             window.removeEventListener('markmind:rich-search-prev', onPrev);
+            window.removeEventListener('markmind:rich-search-replace', onReplace);
+            window.removeEventListener('markmind:rich-search-replace-all', onReplaceAll);
             window.removeEventListener('markmind:rich-search-clear', onClear);
         };
     }, [editor]);

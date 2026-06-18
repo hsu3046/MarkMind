@@ -4,7 +4,7 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
 import { EditorView } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
-import { openSearchPanel, closeSearchPanel } from '@codemirror/search';
+import { search, setSearchQuery, getSearchQuery, SearchQuery, findNext, findPrevious, replaceNext, replaceAll } from '@codemirror/search';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 
@@ -34,12 +34,22 @@ interface EditorProps {
     onImagePaste?: (file: File) => void;
 }
 
+/** 검색 결과 요약 — 총 매치 수 + 현재 매치 0-based index(-1=없음). */
+export interface SearchInfo {
+    count: number;
+    index: number;
+}
+
 export interface EditorHandle {
-    openSearch: () => void;
-    closeSearch: () => void;
-    /** 검색 panel 토글 — 열려있으면 닫고, 닫혀있으면 엶 */
-    toggleSearch: () => void;
-    isSearchOpen: () => boolean;
+    /** 검색어 설정(+첫 매치로 이동). 전체 매치 하이라이트. */
+    searchSetQuery: (query: string, replace: string) => SearchInfo;
+    searchNext: () => SearchInfo;
+    searchPrev: () => SearchInfo;
+    /** 현재 매치를 바꾸고 다음으로. */
+    searchReplaceCurrent: (replace: string) => SearchInfo;
+    searchReplaceAll: (replace: string) => SearchInfo;
+    /** 검색 상태/하이라이트 해제. */
+    searchClear: () => void;
     scrollToLine: (line: number) => void;
     /** 현재 커서 위치에 텍스트 삽입 (이미지 첨부 `![]()` 등) */
     insertAtCursor: (text: string) => void;
@@ -133,37 +143,84 @@ const darkHighlight = HighlightStyle.define([
     { tag: tags.definition(tags.variableName), color: '#FFB86C' },
 ]);
 
+/** 현재 검색 쿼리의 매치 수 + 현재 선택이 몇 번째 매치인지 계산. */
+function computeSearchInfo(view: EditorView): SearchInfo {
+    const query = getSearchQuery(view.state);
+    if (!query.search) return { count: 0, index: -1 };
+    const cur = view.state.selection.main;
+    let count = 0;
+    let index = -1;
+    try {
+        const cursor = query.getCursor(view.state.doc) as Iterator<{ from: number; to: number }>;
+        for (let r = cursor.next(); !r.done; r = cursor.next()) {
+            if (r.value.from === cur.from && r.value.to === cur.to) index = count;
+            count += 1;
+        }
+    } catch {
+        return { count: 0, index: -1 };
+    }
+    return { count, index };
+}
+
+/** 안정 참조 — 인라인 객체면 매 렌더 reconfigure 돼 검색 상태가 리셋된다(과거 버그).
+ *  searchKeymap=false 로 ⌘F 가 네이티브 패널을 열지 않게 함(App 이 통일 SearchBar 토글). */
+const BASIC_SETUP = {
+    lineNumbers: true,
+    highlightActiveLineGutter: true,
+    highlightActiveLine: true,
+    foldGutter: true,
+    autocompletion: false,
+    bracketMatching: true,
+    indentOnInput: true,
+    searchKeymap: false,
+};
+
 export const Editor = forwardRef<EditorHandle, EditorProps>(
     function Editor({ content, onChange, theme, onSelectionChange, onImagePaste }, ref) {
         const cmRef = useRef<ReactCodeMirrorRef>(null);
+        // onChange via ref → handleChange 가 안정 참조라 부모 리렌더 시 reconfigure 안 됨.
+        const onChangeRef = useRef(onChange);
+        onChangeRef.current = onChange;
 
         useImperativeHandle(ref, () => ({
-            openSearch: () => {
+            searchSetQuery: (query: string, replace: string): SearchInfo => {
                 const view = cmRef.current?.view;
-                if (view) {
-                    openSearchPanel(view);
-                }
+                if (!view) return { count: 0, index: -1 };
+                view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: query, replace, caseSensitive: false })) });
+                if (query) findNext(view); // 입력 즉시 첫 매치로(브라우저 찾기와 동일)
+                return computeSearchInfo(view);
             },
-            closeSearch: () => {
+            searchNext: (): SearchInfo => {
                 const view = cmRef.current?.view;
-                if (view) {
-                    closeSearchPanel(view);
-                }
+                if (!view) return { count: 0, index: -1 };
+                findNext(view);
+                return computeSearchInfo(view);
             },
-            toggleSearch: () => {
+            searchPrev: (): SearchInfo => {
                 const view = cmRef.current?.view;
-                if (!view) return;
-                const panel = view.dom.querySelector('.cm-search.cm-panel');
-                if (panel) {
-                    closeSearchPanel(view);
-                } else {
-                    openSearchPanel(view);
-                }
+                if (!view) return { count: 0, index: -1 };
+                findPrevious(view);
+                return computeSearchInfo(view);
             },
-            isSearchOpen: () => {
+            searchReplaceCurrent: (replace: string): SearchInfo => {
                 const view = cmRef.current?.view;
-                if (!view) return false;
-                return !!view.dom.querySelector('.cm-search.cm-panel');
+                if (!view) return { count: 0, index: -1 };
+                const q = getSearchQuery(view.state);
+                view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: q.search, replace, caseSensitive: q.caseSensitive, regexp: q.regexp, wholeWord: q.wholeWord })) });
+                replaceNext(view);
+                return computeSearchInfo(view);
+            },
+            searchReplaceAll: (replace: string): SearchInfo => {
+                const view = cmRef.current?.view;
+                if (!view) return { count: 0, index: -1 };
+                const q = getSearchQuery(view.state);
+                view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: q.search, replace, caseSensitive: q.caseSensitive, regexp: q.regexp, wholeWord: q.wholeWord })) });
+                replaceAll(view);
+                return computeSearchInfo(view);
+            },
+            searchClear: () => {
+                const view = cmRef.current?.view;
+                if (view) view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: '' })) });
             },
             scrollToLine: (line: number) => {
                 const view = cmRef.current?.view;
@@ -197,17 +254,18 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                 });
                 view.focus();
             },
-        }));
+        }), []);
 
         const handleChange = useCallback((value: string) => {
-            onChange(value);
-        }, [onChange]);
+            onChangeRef.current(value);
+        }, []);
 
         const extensions = useMemo(() => {
             const exts = [
                 markdown({ base: markdownLanguage, codeLanguages: languages }),
                 EditorView.lineWrapping,
                 KO_PHRASES,
+                search(), // 검색 상태 + 전체 매치 하이라이트(패널은 안 띄움 — 통일 SearchBar 가 구동)
                 ...(theme === 'dark' ? [syntaxHighlighting(darkHighlight)] : []),
             ];
 
@@ -270,16 +328,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                     onChange={handleChange}
                     extensions={extensions}
                     theme={theme === 'dark' ? darkTheme : lightTheme}
-                    basicSetup={{
-                        lineNumbers: true,
-                        highlightActiveLineGutter: true,
-                        highlightActiveLine: true,
-                        foldGutter: true,
-                        autocompletion: false,
-                        bracketMatching: true,
-                        indentOnInput: true,
-                        searchKeymap: true,
-                    }}
+                    basicSetup={BASIC_SETUP}
                 />
             </div>
         );
