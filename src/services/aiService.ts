@@ -38,7 +38,13 @@ export async function isTextAIUsable(): Promise<boolean> {
     if (hasKey(sel.company)) return true;
     if (AI_CATALOG[sel.company]?.auths.includes('subscription')) {
         const sub = await detectSubscriptionLogins();
-        return sel.company === 'claude' ? sub.claude : sel.company === 'openai' ? sub.codex : false;
+        return sel.company === 'claude'
+            ? sub.claude
+            : sel.company === 'openai'
+              ? sub.codex
+              : sel.company === 'gemini'
+                ? sub.gemini
+                : false;
     }
     return false;
 }
@@ -384,7 +390,9 @@ async function resolveUsableTextSelection(): Promise<AIModelSelection> {
                 ? sub.claude
                 : company === 'openai'
                   ? sub.codex
-                  : false
+                  : company === 'gemini'
+                    ? sub.gemini
+                    : false
             : hasKey(company),
     );
 }
@@ -407,30 +415,41 @@ export async function callAI(
     let modifiedText = '';
 
     if (sel.company === 'gemini') {
-        const apiKey = getApiKey();
-        if (!apiKey) {
-            throw new Error('Gemini API 키가 설정되지 않았습니다. 설정에서 입력해주세요.');
-        }
-        const ai = new GoogleGenAI({ apiKey });
-
-        if (onStream) {
-            const response = await ai.models.generateContentStream({
+        if (sel.auth === 'subscription') {
+            // Gemini 구독 = Antigravity CLI(agy) — Rust 경유(PTY). 스트리밍 미지원(완료 후 반환).
+            const { invoke } = await import('@tauri-apps/api/core');
+            modifiedText = await invoke<string>('ai_generate_gemini_agy', {
+                system: systemPrompt,
+                prompt: userContent,
                 model: sel.model,
-                contents: userContent,
-                config: { systemInstruction: systemPrompt },
             });
-            for await (const chunk of response) {
-                const text = chunk.text || '';
-                modifiedText += text;
-                onStream(modifiedText);
-            }
+            if (onStream) onStream(modifiedText);
         } else {
-            const response = await ai.models.generateContent({
-                model: sel.model,
-                contents: userContent,
-                config: { systemInstruction: systemPrompt },
-            });
-            modifiedText = response.text || '';
+            const apiKey = getApiKey();
+            if (!apiKey) {
+                throw new Error('Gemini API 키가 설정되지 않았습니다. 설정에서 입력해주세요.');
+            }
+            const ai = new GoogleGenAI({ apiKey });
+
+            if (onStream) {
+                const response = await ai.models.generateContentStream({
+                    model: sel.model,
+                    contents: userContent,
+                    config: { systemInstruction: systemPrompt },
+                });
+                for await (const chunk of response) {
+                    const text = chunk.text || '';
+                    modifiedText += text;
+                    onStream(modifiedText);
+                }
+            } else {
+                const response = await ai.models.generateContent({
+                    model: sel.model,
+                    contents: userContent,
+                    config: { systemInstruction: systemPrompt },
+                });
+                modifiedText = response.text || '';
+            }
         }
     } else if (sel.company === 'openai') {
         // ChatGPT — 구독(codex)이면 ai_generate_codex, API 키면 ai_generate_openai. Rust 경유.

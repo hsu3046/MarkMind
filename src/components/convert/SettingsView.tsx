@@ -164,8 +164,12 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
     const [userMemory, setUserMemory] = useState('');
     const [memoryOrig, setMemoryOrig] = useState('');
 
-    // 구독 연동 — 로컬 Claude Code / Codex CLI 로그인 감지 현황
-    const [subStatus, setSubStatus] = useState<SubscriptionStatus>({ claude: false, codex: false });
+    // 구독 연동 — 로컬 Claude Code / Codex / Antigravity(agy) CLI 로그인 감지 현황
+    const [subStatus, setSubStatus] = useState<SubscriptionStatus>({
+        claude: false,
+        codex: false,
+        gemini: false,
+    });
 
     // 전역 모델 선택 — 기본 AI(텍스트) / 이미지 AI. 기본 설정 탭의 picker 와 연동.
     const [aiSel, setAiSel] = useState<AIModelSelection>(getAIModelSelection());
@@ -532,16 +536,30 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                         </p>
                     )}
 
+                    {/* Gemini (Antigravity CLI) */}
+                    <div className="sub-link-row">
+                        <span className="sub-link-name">Gemini 구독 연동</span>
+                        <span className={subStatus.gemini ? 'badge badge-ok' : 'badge badge-warn'}>
+                            {subStatus.gemini
+                                ? `${subStatus.geminiPlan ? subStatus.geminiPlan + ' · ' : ''}연결됨`
+                                : '연결 안 됨'}
+                        </span>
+                    </div>
+                    {!subStatus.gemini && (
+                        <p className="convert-key-note sub-link-hint">
+                            연결하려면 <code>brew install --cask antigravity-cli</code> 설치 후 터미널에서{' '}
+                            <code>agy</code> 로 로그인하세요 (
+                            <a href="https://antigravity.google" target="_blank" rel="noopener noreferrer">
+                                Antigravity 안내
+                            </a>
+                            ).
+                        </p>
+                    )}
+
                     {/* Grok — 구독 연동 준비중. 고정 표시. */}
                     <div className="sub-link-row">
                         <span className="sub-link-name">Grok 구독 연동</span>
                         <span className="badge badge-muted">준비중</span>
-                    </div>
-
-                    {/* Gemini — 구독 연동 미지원(제공사 차단). 고정 표시. */}
-                    <div className="sub-link-row">
-                        <span className="sub-link-name">Gemini 구독 연동</span>
-                        <span className="badge badge-muted">지원 안함</span>
                     </div>
                 </div>
 
@@ -842,7 +860,13 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                         }}
                         apiKeyAvailable={(c) => stored[c as Provider]}
                         subscriptionAvailable={(c) =>
-                            c === 'claude' ? subStatus.claude : c === 'openai' ? subStatus.codex : false
+                            c === 'claude'
+                                ? subStatus.claude
+                                : c === 'openai'
+                                  ? subStatus.codex
+                                  : c === 'gemini'
+                                    ? subStatus.gemini
+                                    : false
                         }
                     />
 

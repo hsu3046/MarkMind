@@ -246,6 +246,20 @@ pub async fn ai_generate_codex(
     .map_err(err_to_string)
 }
 
+// ─── Gemini 구독(Antigravity CLI) 텍스트 생성 ───────────────────────────────
+//
+// `agy` CLI 를 PTY 로 호출한다(비TTY 출력 버그 회피). 인증은 agy 가 macOS Keychain
+// (Antigravity IDE 공유)에서 읽으므로 토큰을 직접 다루지 않는다. model 은 agy 모델명.
+#[tauri::command]
+pub async fn ai_generate_gemini_agy(
+    system: Option<String>,
+    prompt: String,
+    model: String,
+) -> Result<String, String> {
+    use super::llm::gemini_agy;
+    gemini_agy::generate_text(&model, system.as_deref(), &prompt).await
+}
+
 // ─── OpenAI API 키 텍스트 생성 (구독 codex 와 별개 경로) ─────────────────────
 //
 // 표준 chat completions(api.openai.com). React AI 모드가 OpenAI + API 키 선택 시 사용.

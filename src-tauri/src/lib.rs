@@ -319,6 +319,7 @@ pub fn run() {
             converters::commands::generate_slides_llm,
             converters::commands::ai_generate_claude,
             converters::commands::ai_generate_codex,
+            converters::commands::ai_generate_gemini_agy,
             converters::commands::ai_generate_openai,
             converters::commands::generate_image_gemini,
             converters::commands::generate_image_openai,

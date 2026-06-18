@@ -39,12 +39,18 @@ export interface AICompanyDef {
 export const AI_CATALOG: Record<AICompany, AICompanyDef> = {
     gemini: {
         label: 'Gemini',
-        auths: ['api_key'], // 구독 연동 미지원(제공사 차단)
+        auths: ['api_key', 'subscription'], // 구독 = Antigravity CLI(agy) headless 호출
         models: {
             api_key: [
                 { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (고급)' },
                 { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash (균형)' },
                 { id: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite (가성비)' },
+            ],
+            // 구독: agy 모델명(`agy models` 실측)을 그대로 --model 에 전달.
+            subscription: [
+                { id: 'Gemini 3.1 Pro (High)', label: 'Gemini 3.1 Pro (고급)' },
+                { id: 'Gemini 3.5 Flash (High)', label: 'Gemini 3.5 Flash (균형)' },
+                { id: 'Gemini 3.5 Flash (Low)', label: 'Gemini 3.5 Flash (가성비)' },
             ],
         },
     },

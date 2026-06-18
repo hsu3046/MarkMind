@@ -278,16 +278,42 @@ fn codex_plan_label() -> Option<String> {
     }
 }
 
+/// Gemini 구독 사용 가능 여부 — agy 바이너리 설치 + Antigravity 인증(Keychain) 추정.
+/// agy 는 Antigravity IDE 와 Keychain 을 공유하므로 "Antigravity Safe Storage" 존재로
+/// 인증을 추정한다(토큰 값은 안 읽고 존재 여부만). 실제 인증 확정은 호출 시 빈 응답으로 판별.
+fn gemini_agy_available() -> bool {
+    let installed = ["/opt/homebrew/bin/agy", "/usr/local/bin/agy"]
+        .iter()
+        .any(|p| std::path::Path::new(p).exists())
+        || std::process::Command::new("which")
+            .arg("agy")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+    if !installed {
+        return false;
+    }
+    std::process::Command::new("security")
+        .args(["find-generic-password", "-s", "Antigravity Safe Storage"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// 구독 로그인 감지 결과 (UI 배지용 — 토큰 값은 절대 포함하지 않음, 플랜명만).
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionStatus {
     pub claude: bool,
     pub codex: bool,
+    /// Gemini(Antigravity CLI) — agy 설치 + 인증(IDE Keychain 공유) 시 true.
+    pub gemini: bool,
     /// Claude 플랜명 ("Max" 등). 미연결/미상이면 None.
     pub claude_plan: Option<String>,
     /// ChatGPT 플랜명 ("Plus" 등). 미연결/미상이면 None.
     pub codex_plan: Option<String>,
+    /// Gemini 플랜명. agy 는 플랜 정보를 안 주므로 "Antigravity" 고정 또는 None.
+    pub gemini_plan: Option<String>,
 }
 
 #[tauri::command]
@@ -299,10 +325,13 @@ pub fn detect_subscription_logins() -> SubscriptionStatus {
         .unwrap_or(false);
     let claude_plan = claude_creds.as_ref().and_then(claude_plan_label);
     let codex = codex_logged_in();
+    let gemini = gemini_agy_available();
     SubscriptionStatus {
         claude,
         codex,
+        gemini,
         claude_plan: if claude { claude_plan } else { None },
         codex_plan: if codex { codex_plan_label() } else { None },
+        gemini_plan: if gemini { Some("Antigravity".to_string()) } else { None },
     }
 }
