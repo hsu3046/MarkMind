@@ -1,6 +1,5 @@
 //! 통합 에러 타입. Tauri command 결과에서 직렬화 가능하도록 String 화.
 
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -79,14 +78,4 @@ impl From<keyring::Error> for ConverterError {
     fn from(err: keyring::Error) -> Self {
         ConverterError::Keychain(err.to_string())
     }
-}
-
-/// Frontend 에 전달할 구조화된 에러 정보 (level/context/message)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ErrorReport {
-    pub level: String,
-    pub context: String,
-    pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
 }

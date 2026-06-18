@@ -4,7 +4,7 @@ import { AIMode, DiffChunk } from './types/ai';
 import { Editor, EditorHandle } from './components/Editor';
 import { McpProposalView } from './components/McpProposalView';
 import { generateDiff, isAuthError } from './services/aiService';
-import { getAIModelSelection } from './services/aiModelConfig';
+import { getAIModelSelection, AI_CATALOG } from './services/aiModelConfig';
 import { setValidationStatus } from './services/apiValidation';
 import { Preview, type PreviewHandle } from './components/Preview';
 import { MindmapView } from './components/MindmapView';
@@ -244,24 +244,26 @@ function App() {
 
   // PPTX export (이슈 #6) — 규칙 기반 + LLM 스마트 레이아웃.
   // 프론트 PptxGenJS 로 ArrayBuffer 생성 → Rust save_pptx 로 저장(WKWebView blob 버그 우회).
-  const [pptxAiProviders, setPptxAiProviders] = useState<{ claude: boolean; gemini: boolean }>({
-    claude: false,
-    gemini: false,
-  });
+  // 전역 AI 선택(회사/인증)이 슬라이드 생성에 쓸 준비가 됐는지.
+  // API 키 인증이면 그 회사 키 등록 여부, 구독 인증이면 백엔드가 호출 시 검증(여기선 준비로 간주).
+  const [pptxAiReady, setPptxAiReady] = useState(false);
   // PPTX 내보내기 진행 표시(특히 AI 레이아웃은 LLM 호출로 수초~수십초 소요).
   const [pptxBusy, setPptxBusy] = useState<string | null>(null);
   useEffect(() => {
     if (!isTauri()) return;
     (async () => {
       try {
+        const sel = getAIModelSelection();
+        if (sel.auth === 'subscription') {
+          // 구독 인증은 백엔드가 호출 시 검증 — 사전엔 준비된 것으로 간주.
+          setPptxAiReady(true);
+          return;
+        }
         const { invoke } = await import('@tauri-apps/api/core');
-        const [claude, gemini] = await Promise.all([
-          invoke<boolean>('has_api_key', { provider: 'claude' }),
-          invoke<boolean>('has_api_key', { provider: 'gemini' }),
-        ]);
-        setPptxAiProviders({ claude, gemini });
+        const ready = await invoke<boolean>('has_api_key', { provider: sel.company });
+        setPptxAiReady(ready);
       } catch {
-        /* 키 조회 실패 시 AI 옵션 비활성 유지 */
+        setPptxAiReady(false);
       }
     })();
   }, [settingsVisible]);
@@ -269,10 +271,8 @@ function App() {
   // PPTX 내보내기 — LLM 스마트 레이아웃 단일 경로(디폴트). 규칙 기반은 LLM 응답을
   // 전혀 해석 못한 catastrophic 실패 시의 안전망으로만 내부 사용한다.
   const handleExportPptx = useCallback(async () => {
-    if (!pptxAiProviders.claude && !pptxAiProviders.gemini) {
-      alert('PPTX 내보내기는 AI 레이아웃을 사용합니다. Settings 에서 Claude 또는 Gemini API 키를 등록하세요.');
-      return;
-    }
+    // 모든 AI 작업은 전역 회사/인증/모델 선택(Settings > 기본 설정)을 따른다.
+    const sel = getAIModelSelection();
     const baseName = (fileName || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '');
     try {
       const [{ save }, { invoke }, { markdownToSlides, slidesFromLlmJson }, { buildPptx }] =
@@ -289,13 +289,18 @@ function App() {
       });
       if (!path) return; // 사용자 취소
 
-      const provider = pptxAiProviders.claude ? 'claude' : 'gemini';
-      setPptxBusy(`AI 슬라이드 생성 중… (${provider === 'claude' ? 'Claude' : 'Gemini'})`);
+      const companyLabel = AI_CATALOG[sel.company].label;
+      setPptxBusy(`AI 슬라이드 생성 중… (${companyLabel})`);
 
-      const raw = await invoke<string>('generate_slides_llm', { markdown: content, provider });
+      const raw = await invoke<string>('generate_slides_llm', {
+        markdown: content,
+        company: sel.company,
+        auth: sel.auth,
+        model: sel.model,
+      });
       let slides = slidesFromLlmJson(raw);
       console.log(
-        `[export_pptx] AI(${provider}) 응답 ${raw.length}자 → 슬라이드 ${slides?.length ?? 0}장`,
+        `[export_pptx] AI(${sel.company}/${sel.auth}) 응답 ${raw.length}자 → 슬라이드 ${slides?.length ?? 0}장`,
       );
       if (!slides || slides.length === 0) {
         // 조용한 폴백 금지 — 사용자에게 알리고 원문 로깅(메모리: silent fallback 함정)
@@ -314,7 +319,7 @@ function App() {
     } finally {
       setPptxBusy(null);
     }
-  }, [fileName, filePath, content, pptxAiProviders]);
+  }, [fileName, filePath, content]);
 
   // AI
   const ai = useAI();
@@ -1762,7 +1767,7 @@ function App() {
           onConsumeAudioDropped={() => setAudioDropped(null)}
           onConsumeOcrDropped={() => setOcrDropped(null)}
           onExportPptx={handleExportPptx}
-          pptxAvailable={pptxAiProviders.claude || pptxAiProviders.gemini}
+          pptxAvailable={pptxAiReady}
           pptxBusy={pptxBusy}
         />
 

@@ -67,6 +67,7 @@ struct TokenResponse {
     #[serde(default)]
     refresh_token: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)] // OAuth 응답 스키마 보존 — 값은 현재 미사용
     scope: Option<String>,
 }
 

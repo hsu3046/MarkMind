@@ -84,7 +84,8 @@ struct DedupGroup {
 pub struct DedupOutcome {
     pub text: String,
     pub usage: Option<UsageInfo>,
-    /// alias → primary 통합된 라벨 수
+    /// alias → primary 통합된 라벨 수 (현재 미소비 — 향후 "N명 통합" 표시용 보존)
+    #[allow(dead_code)]
     pub merged_count: usize,
 }
 
