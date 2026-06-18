@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Eye, EyeOff, Trash2, Cloud, CloudOff } from 'lucide-react';
+import { Eye, EyeOff, Trash2, Cloud, CloudOff, Minus, Plus, RotateCcw } from 'lucide-react';
 import { getKey, hasKey, Provider, removeKey, updateCacheAfterBatch } from '../../services/secureStorage';
 import { detectSubscriptionLogins, SubscriptionStatus } from '../../services/subscriptionService';
 import * as gdrive from '../../services/gdriveService';
@@ -19,6 +19,7 @@ import { confirmAction } from '../../services/dialogService';
 import { isTauri } from '../../services/platform';
 import { LanShareSection } from './LanShareSection';
 import { AIModelPicker } from './AIModelPicker';
+import { BackgroundPicker } from '../BackgroundPicker';
 import {
     AI_CATALOG,
     getAIModelSelection,
@@ -39,8 +40,24 @@ import {
     clearValidationStatus,
 } from '../../services/apiValidation';
 
+/** 뷰어 설정 — App 상태(폰트크기/행간/배경/본문폰트/읽기폭)를 뷰어 설정 탭이 제어. */
+export interface ViewerSettings {
+    fontSize: number;
+    onFontSizeChange: (delta: number) => void;
+    onFontSizeReset: () => void;
+    lineHeight: number;
+    onLineHeightChange: (v: number) => void;
+    bgColor: string;
+    onBgColorChange: (color: string) => void;
+    fontFamily: 'sans' | 'serif';
+    onFontFamilyChange: (v: 'sans' | 'serif') => void;
+    readingWidth: number;
+    onReadingWidthChange: (v: number) => void;
+}
+
 interface SettingsViewProps {
     onDone: () => void;
+    viewer: ViewerSettings;
 }
 
 interface KeySpec {
@@ -82,7 +99,7 @@ const KEY_SPECS: KeySpec[] = [
     },
 ];
 
-type SettingsTab = 'basic' | 'ai' | 'extra';
+type SettingsTab = 'basic' | 'ai' | 'viewer' | 'extra';
 /** AI 등록 탭에 노출할 API 키 (나머지 키는 추가 기능 탭). */
 const AI_PROVIDERS: Provider[] = ['gemini', 'claude', 'openai'];
 
@@ -101,7 +118,7 @@ function statusBadge(stored: boolean, result: ValidationResult | null): StatusBa
     return { text: '확인 필요', cls: 'badge badge-warn' };
 }
 
-export function SettingsView({ onDone }: SettingsViewProps) {
+export function SettingsView({ onDone, viewer }: SettingsViewProps) {
     const [values, setValues] = useState<Record<Provider, string>>({
         gemini: '',
         claude: '',
@@ -454,10 +471,17 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                 </button>
                 <button
                     type="button"
+                    className={`settings-tab${activeTab === 'viewer' ? ' active' : ''}`}
+                    onClick={() => setActiveTab('viewer')}
+                >
+                    뷰어 설정
+                </button>
+                <button
+                    type="button"
                     className={`settings-tab${activeTab === 'extra' ? ' active' : ''}`}
                     onClick={() => setActiveTab('extra')}
                 >
-                    추가 설정
+                    추가 기능
                 </button>
             </div>
 
@@ -529,9 +553,97 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                 </>
             )}
 
+            {activeTab === 'viewer' && (
+                <>
+                    {/* 글자 크기 — 원형 −/+ + reset 아이콘. ⌘+/−/0 단축키도 동일 동작 */}
+                    <section className="convert-settings-section viewer-section">
+                        <label>글자 크기</label>
+                        <div className="viewer-fontsize">
+                            <button type="button" className="viewer-step" onClick={() => viewer.onFontSizeChange(-1)} title="작게" aria-label="작게">
+                                <Minus size={15} strokeWidth={2} />
+                            </button>
+                            <span className="viewer-fontsize-value">{viewer.fontSize}</span>
+                            <button type="button" className="viewer-step" onClick={() => viewer.onFontSizeChange(1)} title="크게" aria-label="크게">
+                                <Plus size={15} strokeWidth={2} />
+                            </button>
+                            <button type="button" className="viewer-reset" onClick={viewer.onFontSizeReset} title="기본값(14)으로" aria-label="기본값으로">
+                                <RotateCcw size={14} strokeWidth={1.75} />
+                            </button>
+                        </div>
+                    </section>
+
+                    {/* 행간 — 슬라이더 + 배율(1.2~3.0) */}
+                    <section className="convert-settings-section viewer-section">
+                        <label>행간</label>
+                        <div className="viewer-slider-row">
+                            <input
+                                type="range"
+                                className="viewer-slider"
+                                min={1.2}
+                                max={3}
+                                step={0.1}
+                                value={viewer.lineHeight}
+                                onChange={(e) => viewer.onLineHeightChange(parseFloat(e.target.value))}
+                                aria-label="행간 배율"
+                            />
+                            <span className="viewer-slider-value">{viewer.lineHeight.toFixed(1)}</span>
+                        </div>
+                    </section>
+
+                    {/* 좌우 여백 — 슬라이더(0 = 여백 없음/본문 풀폭 ~ 40 = 넓은 여백/좁은 본문) */}
+                    <section className="convert-settings-section viewer-section">
+                        <label>좌우 여백</label>
+                        <div className="viewer-slider-row">
+                            <input
+                                type="range"
+                                className="viewer-slider"
+                                min={0}
+                                max={40}
+                                step={1}
+                                value={viewer.readingWidth}
+                                onChange={(e) => viewer.onReadingWidthChange(parseInt(e.target.value, 10))}
+                                aria-label="좌우 여백"
+                            />
+                            <span className="viewer-slider-value">{viewer.readingWidth}%</span>
+                        </div>
+                    </section>
+
+                    {/* 본문 폰트 — 라벨 없이 폰트 샘플로 구분 (명칭은 title 로 보강) */}
+                    <section className="convert-settings-section viewer-section">
+                        <label>본문 폰트</label>
+                        <div className="viewer-segmented">
+                            <button
+                                type="button"
+                                className={`viewer-seg viewer-font-sample${viewer.fontFamily === 'sans' ? ' active' : ''}`}
+                                style={{ fontFamily: 'var(--font-sans)' }}
+                                onClick={() => viewer.onFontFamilyChange('sans')}
+                                title="고딕"
+                            >
+                                가나다 Aa
+                            </button>
+                            <button
+                                type="button"
+                                className={`viewer-seg viewer-font-sample${viewer.fontFamily === 'serif' ? ' active' : ''}`}
+                                style={{ fontFamily: 'var(--font-serif)' }}
+                                onClick={() => viewer.onFontFamilyChange('serif')}
+                                title="명조"
+                            >
+                                가나다 Aa
+                            </button>
+                        </div>
+                    </section>
+
+                    {/* 배경색 — 인라인 스와치 (버튼/팝오버 없이 바로 선택) */}
+                    <section className="convert-settings-section viewer-section">
+                        <label>배경색</label>
+                        <BackgroundPicker value={viewer.bgColor} onChange={viewer.onBgColorChange} inline />
+                    </section>
+                </>
+            )}
+
             {activeTab === 'extra' && (
                 <>
-                    {/* === 나의 정보 (AI 컨텍스트) — 추가 설정 맨 위 === */}
+                    {/* === 나의 정보 (AI 컨텍스트) — 추가 기능 맨 위 === */}
                     <section className="convert-settings-section">
                         <label>
                             나의 정보 (옵션){' '}

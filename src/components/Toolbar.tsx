@@ -2,15 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import {
     Columns2, BookOpen,
     FilePlus, FolderOpen, Save, Download, FileDown,
-    CirclePlus, CircleMinus, BookMarked, Maximize, Clock, History,
+    BookMarked, Maximize, Clock, History,
     Search, ChevronRight, ChevronDown, Sparkles, Check, X,
     Settings,
-    FileCode, FileText, AlignVerticalSpaceAround,
+    FileCode, FileText,
     Network, Share2, ChartBarStacked, type LucideIcon,
 } from 'lucide-react';
 import * as gdriveService from '../services/gdriveService';
 import type { RecentFile } from '../hooks/useRecentFiles';
-import { BackgroundPicker } from './BackgroundPicker';
 
 export type ViewMode = 'split' | 'editor' | 'preview' | 'mindmap' | 'flowchart' | 'gantt';
 
@@ -107,7 +106,6 @@ export function EditableFileName({ fileName, isDirty, onRename }: { fileName: st
 
 interface ToolbarProps {
     viewMode: ViewMode;
-    fontSize: number;
     outlineVisible: boolean;
     showRecent: boolean;
     aiPanelVisible: boolean;
@@ -120,12 +118,6 @@ interface ToolbarProps {
     onSaveFileAs: () => void;
     onExportPdf: () => void;
     onShowTutorial: () => void;
-    onFontSizeChange: (delta: number) => void;
-    onFontSizeReset: () => void;
-    lineHeight: 'compact' | 'normal' | 'relaxed';
-    onCycleLineHeight: () => void;
-    bgColor: string;
-    onBgColorChange: (color: string) => void;
     onToggleOutline: () => void;
     onToggleReadingMode: () => void;
     onToggleRecentFiles: () => void;
@@ -140,7 +132,6 @@ interface ToolbarProps {
 
 export function Toolbar({
     viewMode,
-    fontSize,
     outlineVisible,
     onViewModeChange,
     onNewFile,
@@ -149,12 +140,6 @@ export function Toolbar({
     onSaveFileAs,
     onExportPdf,
     onShowTutorial,
-    onFontSizeChange,
-    onFontSizeReset,
-    lineHeight,
-    onCycleLineHeight,
-    bgColor,
-    onBgColorChange,
     onToggleOutline,
     onToggleReadingMode,
     onToggleRecentFiles,
@@ -382,7 +367,15 @@ export function Toolbar({
                 <div className="toolbar-divider" />
                 </>)}
 
-                {/* Open Recent — 드롭다운 메뉴(최근 파일 목록). Outline 왼쪽 */}
+                {/* 순서: Search → Outline → Open Recent → Settings */}
+                <button className="toolbar-btn" onClick={onToggleSearch} title="Search (⌘F)">
+                    <Search size={15} strokeWidth={1.5} />
+                </button>
+                <button className={`toolbar-btn${outlineVisible ? ' active' : ''}`} onClick={onToggleOutline} title="Outline">
+                    <BookMarked size={16} strokeWidth={1.5} />
+                </button>
+
+                {/* Open Recent — 드롭다운 메뉴(최근 파일 목록) */}
                 {showRecent && (
                     <div className="toolbar-dropdown" ref={recentMenuRef}>
                         <button
@@ -419,43 +412,13 @@ export function Toolbar({
                     </div>
                 )}
 
-                {/* Outline + Search */}
-                <button className={`toolbar-btn${outlineVisible ? ' active' : ''}`} onClick={onToggleOutline} title="Outline">
-                    <BookMarked size={16} strokeWidth={1.5} />
-                </button>
-                <button className="toolbar-btn" onClick={onToggleSearch} title="Search (⌘F)">
-                    <Search size={15} strokeWidth={1.5} />
+                {/* Settings — 설정 모달 열기 */}
+                <button className="toolbar-btn" onClick={onShowSettings} title="Settings">
+                    <Settings size={16} strokeWidth={1.5} />
                 </button>
 
-                <div className="toolbar-divider" />
-
-                {/* Font size controls (압축 그룹 — 간격 좁힘) */}
-                <div className="toolbar-fontsize-group">
-                    <button className="toolbar-btn" onClick={() => onFontSizeChange(-1)} title="Zoom Out (⌘-)" disabled={viewMode === 'editor'}>
-                        <CircleMinus size={15} strokeWidth={1.5} />
-                    </button>
-                    <button className="toolbar-btn toolbar-font-reset" onClick={onFontSizeReset} title="Reset (⌘0)" disabled={viewMode === 'editor'}>
-                        <span className="toolbar-font-size">{fontSize}</span>
-                    </button>
-                    <button className="toolbar-btn" onClick={() => onFontSizeChange(1)} title="Zoom In (⌘+)" disabled={viewMode === 'editor'}>
-                        <CirclePlus size={15} strokeWidth={1.5} />
-                    </button>
-                </div>
-
-                <div className="toolbar-divider" />
-
-                {/* 행간 토글 + 배경색 picker (Theme 토글은 배경색에 자동 동기화되므로 제거) */}
-                <button
-                    className="toolbar-btn toolbar-lineheight-btn"
-                    onClick={onCycleLineHeight}
-                    title={`행간 ${lineHeight === 'compact' ? '1.5 (좁게)' : lineHeight === 'normal' ? '1.8 (보통)' : '2.2 (넓게)'} — 클릭으로 변경`}
-                >
-                    <AlignVerticalSpaceAround size={15} strokeWidth={1.5} />
-                    <span className="toolbar-lineheight-value">
-                        {lineHeight === 'compact' ? '1.5' : lineHeight === 'normal' ? '1.8' : '2.2'}
-                    </span>
-                </button>
-                <BackgroundPicker value={bgColor} onChange={onBgColorChange} />
+                {/* 글자 크기·행간·배경색·본문 폰트·읽기 폭은 설정 → 뷰어 설정 탭으로 이동.
+                    (⌘+/−/0 단축키는 유지) */}
 
                 <div className="toolbar-divider" />
 

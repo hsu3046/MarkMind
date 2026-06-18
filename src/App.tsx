@@ -38,6 +38,9 @@ import { getCallbackPath } from './services/knowaiAuth';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
 import { Link, Unlink, BookOpen, X as IconX, Sparkles, Loader2 } from 'lucide-react';
 import type { DroppedFile } from './components/convert/types';
+// 본문 명조(뷰어 설정) — Noto Serif KR 한글 서브셋 번들(영문은 Georgia 폴백). ~2MB.
+import '@fontsource/noto-serif-kr/korean-400.css';
+import '@fontsource/noto-serif-kr/korean-700.css';
 import './App.css';
 import './components/convert/convert.css';
 import './components/sidebar/sidebar.css';
@@ -108,19 +111,14 @@ function App() {
     const saved = localStorage.getItem('md-editor-font-size');
     return saved ? parseInt(saved, 10) : FONT_SIZE_DEFAULT;
   });
-  // 행간 — compact (1.5) / normal (1.8) / relaxed (2.2) cycle, localStorage 보존
-  const [lineHeight, setLineHeight] = useState<'compact' | 'normal' | 'relaxed'>(() => {
-    const v = localStorage.getItem('markmind-line-height');
-    return v === 'compact' || v === 'relaxed' ? v : 'normal';
+  // 행간 배율 — 1.2~3.0, 기본 1.8. CSS var(--md-line-height) 로 본문 line-height 제어.
+  const [lineHeight, setLineHeight] = useState<number>(() => {
+    const v = parseFloat(localStorage.getItem('markmind-line-height') || '');
+    return v >= 1.2 && v <= 3 ? v : 1.8;
   });
   useEffect(() => {
-    localStorage.setItem('markmind-line-height', lineHeight);
+    localStorage.setItem('markmind-line-height', String(lineHeight));
   }, [lineHeight]);
-  const cycleLineHeight = () => {
-    setLineHeight((prev) =>
-      prev === 'compact' ? 'normal' : prev === 'normal' ? 'relaxed' : 'compact',
-    );
-  };
 
   // 배경색 — 빈 문자열 = 테마 기본, 그 외엔 사용자 지정 CSS color
   const [bgColor, setBgColor] = useState<string>(
@@ -130,6 +128,25 @@ function App() {
     if (bgColor) localStorage.setItem('markmind-bg-color', bgColor);
     else localStorage.removeItem('markmind-bg-color');
   }, [bgColor]);
+
+  // 본문 폰트 — 'sans'(고딕, Pretendard 기본) / 'serif'(명조). data-font-family 로 CSS 분기.
+  const [fontFamily, setFontFamily] = useState<'sans' | 'serif'>(
+    () => (localStorage.getItem('markmind-font-family') === 'serif' ? 'serif' : 'sans'),
+  );
+  useEffect(() => {
+    localStorage.setItem('markmind-font-family', fontFamily);
+  }, [fontFamily]);
+
+  // 좌우 여백(%) — 0(여백 없음=본문 풀폭) ~ 40. 본문 max-width = 100% − 2×여백%.
+  const [readingWidth, setReadingWidth] = useState<number>(() => {
+    const v = parseFloat(localStorage.getItem('markmind-side-margin') || '');
+    return v >= 0 && v <= 40 ? v : 12;
+  });
+  useEffect(() => {
+    localStorage.setItem('markmind-side-margin', String(readingWidth));
+  }, [readingWidth]);
+  // 좌우 여백 % → CSS var. 본체에서 max-width: calc(100% − 2×var) 로 본문 폭 결정.
+  const readingWidthCss = `${readingWidth}%`;
 
   // 배경색의 WCAG 상대 휘도 (0~1). 0.5 미만이면 dark 텍스트가 안 보임 → theme dark 로.
   const luminance = useMemo(() => {
@@ -1300,15 +1317,12 @@ function App() {
     return (
       <div
         className="app reading-mode"
-        data-line-height={lineHeight}
-        style={
-          bgColor
-            ? ({
-                '--user-bg': bgColor,
-                '--preview-bg': bgColor,
-              } as React.CSSProperties)
-            : undefined
-        }
+        data-font-family={fontFamily}
+        style={{
+          '--md-line-height': String(lineHeight),
+          '--md-side-margin': readingWidthCss,
+          ...(bgColor ? { '--user-bg': bgColor, '--preview-bg': bgColor } : {}),
+        } as React.CSSProperties}
         data-custom-bg={bgColor ? 'true' : undefined}
         onClick={() => setReadingMode(false)}
       >
@@ -1383,16 +1397,14 @@ function App() {
   return (
     <div
       className="app"
-      data-line-height={lineHeight}
-      style={
-        bgColor
-          ? ({
-              // content 영역만 적용 — UI chrome (popover/AIPanel/Toolbar) 영향 X
-              '--user-bg': bgColor,
-              '--preview-bg': bgColor,
-            } as React.CSSProperties)
-          : undefined
-      }
+      data-font-family={fontFamily}
+      style={{
+        // content 영역만 적용 — UI chrome (popover/AIPanel/Toolbar) 영향 X
+        '--md-line-height': String(lineHeight),
+        '--md-side-margin': readingWidthCss,
+        '--md-font-size': `${fontSize}px`,
+        ...(bgColor ? { '--user-bg': bgColor, '--preview-bg': bgColor } : {}),
+      } as React.CSSProperties}
       data-custom-bg={bgColor ? 'true' : undefined}
     >
       {dragActive && (
@@ -1422,7 +1434,6 @@ function App() {
       </div>
       <Toolbar
         viewMode={viewMode}
-        fontSize={fontSize}
         outlineVisible={outlineVisible}
         onViewModeChange={setViewMode}
         onNewFile={newFile}
@@ -1434,12 +1445,6 @@ function App() {
         onShowSettings={() => setSettingsVisible(true)}
         onOpenFromDrive={() => setDriveBrowserMode('open')}
         onSaveToDrive={() => setDriveBrowserMode('save')}
-        onFontSizeChange={handleFontSizeChange}
-        onFontSizeReset={resetFontSize}
-        lineHeight={lineHeight}
-        onCycleLineHeight={cycleLineHeight}
-        bgColor={bgColor}
-        onBgColorChange={setBgColor}
         onToggleOutline={() => setOutlineVisible((v) => !v)}
         onToggleReadingMode={toggleReadingMode}
         onToggleRecentFiles={() => setRecentPanelVisible((v) => !v)}
@@ -1679,7 +1684,23 @@ function App() {
       )}
 
       {/* 통합 Settings 모달 — STT/OCR/AI 에이전트 API 키 */}
-      <SettingsModal visible={settingsVisible} onClose={() => setSettingsVisible(false)} />
+      <SettingsModal
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
+        viewer={{
+          fontSize,
+          onFontSizeChange: handleFontSizeChange,
+          onFontSizeReset: resetFontSize,
+          lineHeight,
+          onLineHeightChange: setLineHeight,
+          bgColor,
+          onBgColorChange: setBgColor,
+          fontFamily,
+          onFontFamilyChange: setFontFamily,
+          readingWidth,
+          onReadingWidthChange: setReadingWidth,
+        }}
+      />
 
       {/* LAN 서버 모드(아이폰 등) — 공유 폴더 파일 브라우저 */}
       <LanFileBrowser

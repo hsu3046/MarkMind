@@ -21,6 +21,7 @@
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/language-data": "^6.5.2",
+    "@fontsource/noto-serif-kr": "^5.2.9",
     "@google/genai": "^1.44.0",
     "@sereneinserenade/tiptap-search-and-replace": "^0.1.1",
     "@tauri-apps/api": "^2",
