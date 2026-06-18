@@ -1,0 +1,57 @@
+/* 마인드맵 뷰 — 상단 툴바(모드 표시 + 마인드맵 정리 버튼) + 캔버스 (#60)
+   플로우차트 뷰(.flowchart-toolbar)와 동형 레이아웃·스타일. */
+.mindmap-view {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+}
+
+.mindmap-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-primary, #e5e5e5);
+}
+
+.mindmap-mode {
+    font-size: 12px;
+    color: var(--text-secondary, #888888);
+}
+
+.mindmap-count-warn {
+    color: #ef4444;
+}
+
+.mindmap-gen-btn {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: 1px solid var(--border-primary, #cccccc);
+    border-radius: 6px;
+    background: var(--bg-secondary, #f5f5f5);
+    color: var(--text-primary, #222222);
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.mindmap-gen-btn:hover:not(:disabled) {
+    background: var(--bg-hover, #ececec);
+}
+
+.mindmap-gen-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.mindmap-canvas-wrap {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+}

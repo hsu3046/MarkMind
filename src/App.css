@@ -375,8 +375,30 @@ body {
   background: var(--accent-subtle);
 }
 
+/* AI 에이전트 — 주요 액션 solid 버튼(#60) */
 .toolbar-text-btn.ai-agent {
-  color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+  padding: 0 14px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.toolbar-text-btn.ai-agent:hover {
+  color: #fff;
+  background: var(--accent-hover);
+}
+
+.toolbar-text-btn.ai-agent:active {
+  background: var(--accent-hover);
+  filter: brightness(0.94);
+}
+
+/* 패널 열림 상태 — 눌린 느낌 */
+.toolbar-text-btn.ai-agent.active {
+  color: #fff;
+  background: var(--accent-hover);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
 }
 
 .toolbar-divider {

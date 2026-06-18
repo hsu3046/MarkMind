@@ -36,10 +36,7 @@ import { useConverter } from './hooks/useConverter';
 import { isTauri } from './services/platform';
 import { getCallbackPath } from './services/knowaiAuth';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
-import { Link, Unlink, Mic, ScanText, BookOpen, X as IconX, Sparkles, Loader2 } from 'lucide-react';
-import { ConvertSidebar } from './components/sidebar/ConvertSidebar';
-import { AudioTab } from './components/convert/AudioTab';
-import { OcrTab } from './components/convert/OcrTab';
+import { Link, Unlink, BookOpen, X as IconX, Sparkles, Loader2 } from 'lucide-react';
 import type { DroppedFile } from './components/convert/types';
 import './App.css';
 import './components/convert/convert.css';
@@ -372,16 +369,9 @@ function App() {
     () => {},
   );
 
-  // Convert (음성/이미지) 사이드바 — AI Agent 와 mutex
-  // (회의록 작성은 AI Agent의 'meeting-notes' 모드로 병합됨)
+  // 음성/이미지 변환은 AI Agent 패널의 stt/ocr 모드로 병합됨(#60).
+  // converter 는 AudioTab/OcrTab(AIPanel 내부)에 전달.
   const converter = useConverter();
-  const [audioPanelVisible, setAudioPanelVisible] = useState(false);
-  const [ocrPanelVisible, setOcrPanelVisible] = useState(false);
-
-  const closeAllConvertPanels = useCallback(() => {
-    setAudioPanelVisible(false);
-    setOcrPanelVisible(false);
-  }, []);
 
   // 사이드 패널 열 때 reading mode 만 해제 — 현재 viewMode 는 그대로 유지
   // (이전엔 강제로 editor 모드로 전환했으나 사용자 의도와 어긋남)
@@ -392,43 +382,20 @@ function App() {
   const handleToggleAI = useCallback(() => {
     if (!ai.panelVisible) {
       exitReadingMode();
-      closeAllConvertPanels();
     }
     ai.togglePanel();
-  }, [ai, exitReadingMode, closeAllConvertPanels]);
+  }, [ai, exitReadingMode]);
 
-  const handleToggleAudio = useCallback(() => {
-    if (audioPanelVisible) {
-      setAudioPanelVisible(false);
-    } else {
-      if (ai.panelVisible) ai.togglePanel();
-      setOcrPanelVisible(false);
-      exitReadingMode();
-      setAudioPanelVisible(true);
-    }
-  }, [audioPanelVisible, ai, exitReadingMode]);
-
-  const handleToggleOcr = useCallback(() => {
-    if (ocrPanelVisible) {
-      setOcrPanelVisible(false);
-    } else {
-      if (ai.panelVisible) ai.togglePanel();
-      setAudioPanelVisible(false);
-      exitReadingMode();
-      setOcrPanelVisible(true);
-    }
-  }, [ocrPanelVisible, ai, exitReadingMode]);
-
-  // 사이드바로 drop된 파일을 자식 컴포넌트에 전달하기 위한 state
+  // AI 패널(stt/ocr 모드)로 drop된 파일을 자식 컴포넌트에 전달하기 위한 state
   const [audioDropped, setAudioDropped] = useState<DroppedFile | null>(null);
   const [ocrDropped, setOcrDropped] = useState<DroppedFile | null>(null);
   const [dragActive, setDragActive] = useState(false); // #14 파일 드롭 시각 피드백
 
-  // 최신 패널 state 를 ref 로 유지 — useEffect deps 최소화 (listener 등록/해제 빈도 ↓)
-  const panelStateRef = useRef({ audioPanelVisible: false, ocrPanelVisible: false });
+  // 최신 AI 패널 state 를 ref 로 유지 — 드롭 라우팅이 stt/ocr 모드를 참조 (listener 등록/해제 빈도 ↓)
+  const panelStateRef = useRef<{ aiVisible: boolean; aiMode: AIMode }>({ aiVisible: false, aiMode: 'grammar' });
   useEffect(() => {
-    panelStateRef.current = { audioPanelVisible, ocrPanelVisible };
-  }, [audioPanelVisible, ocrPanelVisible]);
+    panelStateRef.current = { aiVisible: ai.panelVisible, aiMode: ai.mode };
+  }, [ai.panelVisible, ai.mode]);
 
   // drop 시 이미지를 활성 에디터로 라우팅하기 위해 viewMode 를 ref 로(#56)
   const viewModeRef = useRef(viewMode);
@@ -500,14 +467,14 @@ function App() {
           const name = path.split(/[\\/]/).pop() ?? path;
           const audioExts = ['mp3','wav','m4a','qta','aac','ogg','flac','wma','amr','opus','mp4','mov','webm','m4v'];
           const ocrExts = ['png','jpg','jpeg','webp','heic','heif','gif','pdf'];
-          const { audioPanelVisible: audOn, ocrPanelVisible: ocrOn } = panelStateRef.current;
+          const { aiVisible, aiMode } = panelStateRef.current;
 
-          // 1) 활성 사이드바 우선 라우팅 (명시적 OCR/음성 패널은 그대로 유지)
-          if (audOn && audioExts.includes(ext)) {
+          // 1) AI 패널이 stt/ocr 모드로 열려있으면 우선 라우팅 (명시적 변환 의도 유지)
+          if (aiVisible && aiMode === 'stt' && audioExts.includes(ext)) {
             setAudioDropped({ path, name });
             return;
           }
-          if (ocrOn && ocrExts.includes(ext)) {
+          if (aiVisible && aiMode === 'ocr' && ocrExts.includes(ext)) {
             setOcrDropped({ path, name });
             return;
           }
@@ -720,6 +687,16 @@ function App() {
       await ai.runAI(runContent, runPrompt);
     }
   }, [ai, converter, fileName]);
+
+  // 마인드맵 정리(#60) — 마인드맵 뷰 상단 버튼에서 호출. structurize 로 현재 문서를
+  // 계층 아웃라인으로 재구성 → 응답 오면 위 effect 가 editor 로 전환해 InlineDiff 표시.
+  const handleStructurize = useCallback(() => {
+    if (!ai.apiKeySet) {
+      setSettingsVisible(true);
+      return;
+    }
+    ai.runAI(content, undefined, 'structurize');
+  }, [ai, content]);
 
   const handleSelectionChange = useCallback((text: string, coords: { top: number; left: number } | null) => {
     // FloatingAIBar(선택 시 AI 액션 팝업) 용 — selection 텍스트/좌표 추적.
@@ -1532,8 +1509,6 @@ function App() {
         onSaveFile={saveFile}
         onSaveFileAs={saveFileAs}
         onExportPdf={handleExportPdf}
-        onExportPptx={handleExportPptx}
-        aiLayoutAvailable={pptxAiProviders.claude || pptxAiProviders.gemini}
         onShowTutorial={() => setTutorialVisible(true)}
         onShowSettings={() => setSettingsVisible(true)}
         onOpenFromDrive={() => setDriveBrowserMode('open')}
@@ -1551,10 +1526,6 @@ function App() {
         onOpenRecent={handleOpenRecentByPath}
         onToggleSearch={toggleSearch}
         onToggleAI={handleToggleAI}
-        onToggleAudio={handleToggleAudio}
-        onToggleOcr={handleToggleOcr}
-        audioPanelVisible={audioPanelVisible}
-        ocrPanelVisible={ocrPanelVisible}
         showRecent={isTauri()}
         aiPanelVisible={ai.panelVisible}
         onRename={renameFile}
@@ -1635,6 +1606,8 @@ function App() {
                 fileName={fileName}
                 onOpenDocument={handleOpenLinkedDocument}
                 onJumpToSource={handleJumpToSource}
+                onStructurize={handleStructurize}
+                structurizing={ai.isLoading}
               />
             </div>
           ) : viewMode === 'graph' ? (
@@ -1783,35 +1756,15 @@ function App() {
           onNotesTemplateChange={ai.setNotesTemplate}
           onRun={handleAIRun}
           onShowSettings={() => setSettingsVisible(true)}
+          converter={converter}
+          audioDropped={audioDropped}
+          ocrDropped={ocrDropped}
+          onConsumeAudioDropped={() => setAudioDropped(null)}
+          onConsumeOcrDropped={() => setOcrDropped(null)}
+          onExportPptx={handleExportPptx}
+          pptxAvailable={pptxAiProviders.claude || pptxAiProviders.gemini}
+          pptxBusy={pptxBusy}
         />
-
-        <ConvertSidebar
-          visible={audioPanelVisible}
-          title="음성→텍스트 변환"
-          icon={<Mic size={14} />}
-          onClose={() => setAudioPanelVisible(false)}
-        >
-          <AudioTab
-            converter={converter}
-            onOpenResult={handleOpenInCurrentEditor}
-            droppedFile={audioDropped}
-            onConsumeDropped={() => setAudioDropped(null)}
-          />
-        </ConvertSidebar>
-
-        <ConvertSidebar
-          visible={ocrPanelVisible}
-          title="이미지→텍스트 변환"
-          icon={<ScanText size={14} />}
-          onClose={() => setOcrPanelVisible(false)}
-        >
-          <OcrTab
-            converter={converter}
-            onOpenResult={handleOpenInCurrentEditor}
-            droppedFile={ocrDropped}
-            onConsumeDropped={() => setOcrDropped(null)}
-          />
-        </ConvertSidebar>
 
       </div>
 
