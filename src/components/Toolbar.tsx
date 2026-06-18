@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import {
     Columns2, BookOpen,
     FilePlus, FolderOpen, Save, Download, FileDown,
-    CirclePlus, CircleMinus, BookMarked, Maximize, Clock,
-    Search, ChevronRight, Sparkles, Check, X,
+    CirclePlus, CircleMinus, BookMarked, Maximize, Clock, History,
+    Search, ChevronRight, ChevronDown, Sparkles, Check, X,
     Settings,
     FileCode, FileText, AlignVerticalSpaceAround,
     Network, Share2, ChartBarStacked, type LucideIcon,
@@ -23,6 +23,17 @@ const VIEW_MODES: { mode: ViewMode; label: string; shortcut: string; Icon: Lucid
     { mode: 'flowchart', label: 'Flowchart', shortcut: '⌘5', Icon: Network },
     { mode: 'gantt', label: 'Gantt', shortcut: '⌘6', Icon: ChartBarStacked },
 ];
+
+/** 최근 파일 날짜 표시 — 오늘이면 시각, 아니면 YYYY.MM.DD. */
+function formatRecentDate(ts: number): string {
+    const d = new Date(ts);
+    const now = new Date();
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+        return `오늘 ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+    }
+    return `${d.getFullYear()}.${p2(d.getMonth() + 1)}.${p2(d.getDate())}`;
+}
 
 export function EditableFileName({ fileName, isDirty, onRename }: { fileName: string; isDirty: boolean; onRename: (name: string) => void }) {
     const [editing, setEditing] = useState(false);
@@ -164,6 +175,10 @@ export function Toolbar({
     const menuRef = useRef<HTMLDivElement>(null);
     const [viewMenuOpen, setViewMenuOpen] = useState(false);
     const viewMenuRef = useRef<HTMLDivElement>(null);
+    const [recentMenuOpen, setRecentMenuOpen] = useState(false);
+    const recentMenuRef = useRef<HTMLDivElement>(null);
+    // 최근 파일별 마지막 편집(mtime) — 메뉴 열 때 fs.stat 으로 채움(실패 시 lastOpened 폴백).
+    const [recentDates, setRecentDates] = useState<Record<string, number>>({});
 
     // Drive 가용성 (OAuth credentials 빌드 주입 + 연결 상태)
     useEffect(() => {
@@ -205,6 +220,41 @@ export function Toolbar({
         return () => document.removeEventListener('mousedown', handler);
     }, [viewMenuOpen]);
 
+    // Close Recent menu on outside click
+    useEffect(() => {
+        if (!recentMenuOpen) return;
+        const handler = (e: MouseEvent) => {
+            if (recentMenuRef.current && !recentMenuRef.current.contains(e.target as Node)) {
+                setRecentMenuOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [recentMenuOpen]);
+
+    // 최근 파일 메뉴(File 서브메뉴 / History 드롭다운)가 열리면 각 파일 mtime 조회.
+    useEffect(() => {
+        if (!(fileMenuOpen || recentMenuOpen) || recentFiles.length === 0) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const { stat } = await import('@tauri-apps/plugin-fs');
+                const entries = await Promise.all(recentFiles.map(async (f) => {
+                    try {
+                        const info = await stat(f.path);
+                        return [f.path, info.mtime ? new Date(info.mtime).getTime() : f.lastOpened] as const;
+                    } catch {
+                        return [f.path, f.lastOpened] as const;
+                    }
+                }));
+                if (!cancelled) setRecentDates(Object.fromEntries(entries));
+            } catch {
+                /* plugin 미가용 — 표시 시 lastOpened 폴백 */
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [fileMenuOpen, recentMenuOpen, recentFiles]);
+
     const handleMenuItem = (action: () => void) => {
         action();
         setFileMenuOpen(false);
@@ -214,6 +264,10 @@ export function Toolbar({
         onViewModeChange(mode);
         setViewMenuOpen(false);
     };
+
+    // 현재 View — 가운데 인디케이터 트리거에 아이콘+이름 표시.
+    const currentView = VIEW_MODES.find((v) => v.mode === viewMode);
+    const CurrentViewIcon = currentView?.Icon;
 
     return (
         <div className="toolbar">
@@ -297,7 +351,7 @@ export function Toolbar({
                                                         title={f.path}
                                                     >
                                                         <span className="dropdown-submenu-name">{f.name}</span>
-                                                        <span className="dropdown-submenu-path">{f.path}</span>
+                                                        <span className="dropdown-submenu-path">{formatRecentDate(recentDates[f.path] ?? f.lastOpened)}</span>
                                                     </button>
                                                 ))}
                                                 {recentFiles.length > 5 && (
@@ -325,33 +379,45 @@ export function Toolbar({
                     )}
                 </div>
 
-                {/* View dropdown — 모든 뷰모드를 한 메뉴로 묶어 툴바 공간 확보 */}
-                <div className="toolbar-dropdown" ref={viewMenuRef}>
-                    <button
-                        className={`toolbar-text-btn${viewMenuOpen ? ' active' : ''}`}
-                        onClick={() => setViewMenuOpen((v) => !v)}
-                    >
-                        <span>View</span>
-                    </button>
-                    {viewMenuOpen && (
-                        <div className="toolbar-dropdown-menu">
-                            {VIEW_MODES.map(({ mode, label, shortcut, Icon }) => (
-                                <button
-                                    key={mode}
-                                    className={`dropdown-item${viewMode === mode ? ' active' : ''}`}
-                                    onClick={() => handleViewSelect(mode)}
-                                >
-                                    <Icon size={14} strokeWidth={1.5} />
-                                    <span>{label}</span>
-                                    <span className="dropdown-shortcut">{shortcut}</span>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
                 <div className="toolbar-divider" />
                 </>)}
+
+                {/* Open Recent — 드롭다운 메뉴(최근 파일 목록). Outline 왼쪽 */}
+                {showRecent && (
+                    <div className="toolbar-dropdown" ref={recentMenuRef}>
+                        <button
+                            className={`toolbar-btn${recentMenuOpen ? ' active' : ''}`}
+                            onClick={() => setRecentMenuOpen((v) => !v)}
+                            title="Open Recent"
+                        >
+                            <History size={16} strokeWidth={1.5} />
+                        </button>
+                        {recentMenuOpen && (
+                            <div className="toolbar-dropdown-menu toolbar-recent-menu">
+                                {recentFiles.length === 0 ? (
+                                    <div className="dropdown-submenu-empty">최근 파일 없음</div>
+                                ) : (
+                                    <>
+                                        {recentFiles.slice(0, 12).map((f) => (
+                                            <button
+                                                key={f.path}
+                                                className="dropdown-item dropdown-recent-item"
+                                                onClick={() => { setRecentMenuOpen(false); onOpenRecent(f.path); }}
+                                                title={f.path}
+                                            >
+                                                <Clock size={14} strokeWidth={1.5} />
+                                                <span className="dropdown-recent-text">
+                                                    <span className="dropdown-submenu-name">{f.name}</span>
+                                                    <span className="dropdown-submenu-path">{formatRecentDate(recentDates[f.path] ?? f.lastOpened)}</span>
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Outline + Search */}
                 <button className={`toolbar-btn${outlineVisible ? ' active' : ''}`} onClick={onToggleOutline} title="Outline">
@@ -397,6 +463,34 @@ export function Toolbar({
                 <button className="toolbar-btn" onClick={onToggleReadingMode} title="Full / Reading Mode">
                     <Maximize size={16} strokeWidth={1.5} />
                 </button>
+            </div>
+
+            {/* 가운데: 현재 View 인디케이터 — 아이콘+이름 표시, 클릭하면 드롭다운으로 전환 */}
+            <div className="toolbar-dropdown toolbar-view-indicator" ref={viewMenuRef}>
+                <button
+                    className={`toolbar-view-current${viewMenuOpen ? ' active' : ''}`}
+                    onClick={() => setViewMenuOpen((v) => !v)}
+                    title="현재 View — 클릭해 전환"
+                >
+                    {CurrentViewIcon && <CurrentViewIcon size={15} strokeWidth={1.6} />}
+                    <span>{currentView?.label ?? 'View'}</span>
+                    <ChevronDown size={13} strokeWidth={2} className="toolbar-view-caret" />
+                </button>
+                {viewMenuOpen && (
+                    <div className="toolbar-dropdown-menu toolbar-view-menu">
+                        {VIEW_MODES.map(({ mode, label, shortcut, Icon }) => (
+                            <button
+                                key={mode}
+                                className={`dropdown-item${viewMode === mode ? ' active' : ''}`}
+                                onClick={() => handleViewSelect(mode)}
+                            >
+                                <Icon size={14} strokeWidth={1.5} />
+                                <span>{label}</span>
+                                <span className="dropdown-shortcut">{shortcut}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {/* Right: AI 에이전트 단일 진입점(#60 — 음성/이미지 인식·슬라이드 모두 패널 모드로 흡수) */}

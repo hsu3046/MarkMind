@@ -456,6 +456,68 @@ body {
   animation: fadeIn 100ms ease-out;
 }
 
+/* 가운데 현재 View 인디케이터 (.toolbar 는 드래그 영역이라 no-drag 필수) */
+.toolbar-view-indicator {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.toolbar-view-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.toolbar-view-current:hover,
+.toolbar-view-current.active {
+  color: var(--text-primary);
+}
+
+.toolbar-view-caret {
+  opacity: 0.55;
+}
+
+/* 가운데 트리거 기준으로 드롭다운 중앙 정렬 (.toolbar-dropdown-menu 의 left:0 override) */
+.toolbar-view-menu {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* History(최근 파일) 드롭다운 — 폭 넓게, 항목은 [아이콘 | 이름+날짜] */
+.toolbar-recent-menu {
+  min-width: 340px;
+  max-width: 480px;
+}
+
+.dropdown-recent-item {
+  align-items: flex-start;
+}
+
+/* 시계 아이콘 크기 고정 (긴 파일명이 와도 안 찌그러지게) */
+.dropdown-recent-item > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.dropdown-recent-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+}
+
 .dropdown-item {
   display: flex;
   align-items: center;
@@ -548,10 +610,15 @@ body {
   font-size: 13px;
   color: var(--text-primary);
   font-weight: 500;
+  /* 긴 파일명은 한 줄로 말줄임(글자수 제한). 전체 이름은 hover title 로 확인. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 .dropdown-submenu-path {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;

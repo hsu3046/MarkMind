@@ -48,6 +48,17 @@ const VIEW_ITEMS: { mode: ViewMode; label: string; accelerator: string }[] = [
     { mode: 'gantt', label: 'Gantt', accelerator: 'CmdOrCtrl+6' },
 ];
 
+/** 최근 파일 날짜 — 오늘이면 시각, 아니면 YYYY.MM.DD (툴바와 동일 포맷). */
+function formatRecentDate(ts: number): string {
+    const d = new Date(ts);
+    const now = new Date();
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+        return `오늘 ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+    }
+    return `${d.getFullYear()}.${p2(d.getMonth() + 1)}.${p2(d.getDate())}`;
+}
+
 export function useNativeMenu(opts: UseNativeMenuOptions) {
     // Latest handlers/state — menu `action` closures read through this ref so the
     // menu never goes stale and doesn't need rebuilding when handlers change.
@@ -79,10 +90,20 @@ export function useNativeMenu(opts: UseNativeMenuOptions) {
             });
 
             // Open Recent submenu (data-driven → triggers rebuild on change).
+            // 각 항목에 편집 날짜(mtime, 실패 시 lastOpened) 를 텍스트로 병기.
             const recent = ref.current.recentFiles.slice(0, 10);
+            const { stat } = await import('@tauri-apps/plugin-fs');
             const recentItems = recent.length
-                ? await Promise.all(recent.map((f) =>
-                    MenuItem.new({ id: `recent:${f.path}`, text: f.name, action: () => h().onOpenRecent(f.path) })))
+                ? await Promise.all(recent.map(async (f) => {
+                    let ts = f.lastOpened;
+                    try {
+                        const info = await stat(f.path);
+                        if (info.mtime) ts = new Date(info.mtime).getTime();
+                    } catch { /* lastOpened 폴백 */ }
+                    // 네이티브 메뉴는 CSS 가 안 먹으므로 파일명 글자수를 직접 제한(말줄임).
+                    const name = f.name.length > 48 ? `${f.name.slice(0, 47)}…` : f.name;
+                    return MenuItem.new({ id: `recent:${f.path}`, text: `${name}    ${formatRecentDate(ts)}`, action: () => h().onOpenRecent(f.path) });
+                }))
                 : [await MenuItem.new({ id: 'recent-empty', text: '최근 파일 없음', enabled: false, action: () => {} })];
             const recentSubmenu = await Submenu.new({ text: 'Open Recent', items: recentItems });
 
