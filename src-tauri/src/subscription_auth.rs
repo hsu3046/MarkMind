@@ -111,13 +111,6 @@ fn write_claude_creds(creds: &ClaudeCreds) -> Result<(), String> {
     claude_entry()?.set_password(&json).map_err(|e| e.to_string())
 }
 
-/// Claude Code 로그인 존재 여부 (토큰 값은 노출하지 않음).
-pub fn claude_logged_in() -> bool {
-    read_claude_creds()
-        .map(|c| !c.claude_ai_oauth.access_token.is_empty())
-        .unwrap_or(false)
-}
-
 /// 유효한 Claude 구독 access token 반환. 만료 임박이면 refresh 후 keychain write-back.
 ///
 /// write-back 실패(권한 프롬프트 거부 등)는 치명적이지 않다 — 이번 호출용 토큰은 그대로 반환.

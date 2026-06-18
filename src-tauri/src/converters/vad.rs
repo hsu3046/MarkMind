@@ -407,7 +407,7 @@ pub async fn trim_silence(
     let list_path = work_dir.join("concat.txt");
     tokio::fs::write(&list_path, &list_script).await?;
 
-    let mut child = Command::new(ffmpeg_path()?)
+    let child = Command::new(ffmpeg_path()?)
         .args([
             "-y",
             "-f",

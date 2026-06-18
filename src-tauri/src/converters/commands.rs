@@ -7,15 +7,7 @@ use super::error::ConverterError;
 use super::notes_pipeline::{self, NotesJobOptions, NotesJobResult};
 use super::ocr_pipeline::{self, OcrJobOptions, OcrJobResult};
 use super::progress::ProgressEmitter;
-use serde::Serialize;
 use tauri::AppHandle;
-
-#[derive(Debug, Serialize)]
-pub struct JobError {
-    pub message: String,
-    #[serde(rename = "jobId")]
-    pub job_id: String,
-}
 
 /// Frontend 가 jobId 전달하면 그걸 사용 — listener 필터링으로 다른 윈도우의 동시
 /// 진행 event 와 분리. 없으면 자체 생성 (backward compat).
@@ -84,54 +76,103 @@ const SLIDES_MAX_TOKENS: u32 = 32000;
 
 const SLIDES_SYSTEM: &str = "You are a presentation designer. Convert the given Markdown document into a concise slide deck. Output STRICT minified JSON only (no prose, no code fences, no markdown) of the form: {\"slides\":[{\"title\":string,\"layout\":\"title\"|\"content\",\"bullets\":string[],\"notes\":string?}]}. Rules: the first slide is layout \"title\" (deck title + optional one-line subtitle as a single bullet); other slides are \"content\"; keep each bullet short (<= ~12 words); at most ~6 bullets per slide; split dense content across multiple slides to avoid overcrowding; omit the \"notes\" field unless it adds real speaker value (keeps output compact); preserve the document's language; do not invent facts.";
 
+//
+// 모든 AI 작업은 전역 회사(company)→인증(auth)→모델(model) 선택(aiModelConfig)을
+// 따른다 — 슬라이드 생성도 회의록 파이프라인과 동일하게 3사·구독/API 키를 지원한다.
 #[tauri::command]
 pub async fn generate_slides_llm(
     markdown: String,
-    provider: super::NotesProvider,
+    company: crate::subscription_auth::AICompany,
+    auth: crate::subscription_auth::ClaudeAuthMode,
+    model: Option<String>,
 ) -> Result<String, String> {
     use super::keychain::{get_key, Provider};
     use super::llm;
+    use crate::subscription_auth::{AICompany, ClaudeAuthMode};
 
     let prompt = format!(
         "Convert this Markdown document into slides as specified.\n\n<markdown>\n{}\n</markdown>",
         markdown
     );
 
-    let text = match provider {
-        super::NotesProvider::Claude => {
-            let key = get_key(Provider::Claude)
-                .map_err(err_to_string)?
-                .ok_or_else(|| "CLAUDE_API_KEY 가 없습니다. Settings 에서 등록하세요.".to_string())?;
-            // 큰 문서(20장+)의 슬라이드 JSON 이 잘리면 프론트 파싱 실패 → 폴백.
-            // 출력 토큰은 생성한 만큼만 과금되므로 상한은 넉넉히(미사용 시 비용 0).
-            let opts = llm::anthropic::ClaudeOptions {
-                max_output_tokens: Some(SLIDES_MAX_TOKENS),
-                system: Some(SLIDES_SYSTEM.to_string()),
-            };
-            llm::anthropic::generate_text(
-                llm::anthropic::ClaudeAuth::ApiKey(&key),
-                super::MODEL_NOTES_CLAUDE,
-                &prompt,
-                Some(opts),
-            )
-            .await
-            .map_err(err_to_string)?
-            .text
-        }
-        super::NotesProvider::Gemini => {
+    // 큰 덱(50장+)의 슬라이드 JSON 이 잘리면 프론트 파싱 실패 → 폴백.
+    // 출력 토큰은 생성한 만큼만 과금되므로 상한은 넉넉히(미사용 시 비용 0).
+    let text = match company {
+        AICompany::Gemini => {
+            // Gemini 는 구독 미지원 → 항상 API 키. system 파라미터가 없어 프롬프트 앞에 결합.
             let key = get_key(Provider::Gemini)
                 .map_err(err_to_string)?
-                .ok_or_else(|| "GEMINI_API_KEY 가 없습니다. Settings 에서 등록하세요.".to_string())?;
-            // Gemini 는 system 파라미터를 따로 안 받으므로 프롬프트 앞에 지시문 결합.
+                .ok_or_else(|| "Gemini API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
+            let model_id = model.as_deref().unwrap_or(super::MODEL_NOTES_GEMINI);
             let full = format!("{}\n\n{}", SLIDES_SYSTEM, prompt);
             let cfg = llm::gemini::GenerationConfig {
                 max_output_tokens: Some(SLIDES_MAX_TOKENS),
                 temperature: Some(0.3),
             };
-            llm::gemini::generate_text(&key, super::MODEL_NOTES_GEMINI, &full, Vec::new(), Some(cfg))
+            llm::gemini::generate_text(&key, model_id, &full, Vec::new(), Some(cfg))
                 .await
                 .map_err(err_to_string)?
                 .text
+        }
+        AICompany::Claude => {
+            let model_id = model
+                .clone()
+                .unwrap_or_else(|| super::MODEL_NOTES_CLAUDE.to_string());
+            let opts = llm::anthropic::ClaudeOptions {
+                max_output_tokens: Some(SLIDES_MAX_TOKENS),
+                system: Some(SLIDES_SYSTEM.to_string()),
+            };
+            let result = match auth {
+                ClaudeAuthMode::Subscription => {
+                    let token = crate::subscription_auth::claude_access_token().await?;
+                    llm::anthropic::generate_text(
+                        llm::anthropic::ClaudeAuth::Subscription(&token),
+                        &model_id,
+                        &prompt,
+                        Some(opts),
+                    )
+                    .await
+                }
+                ClaudeAuthMode::ApiKey => {
+                    let key = get_key(Provider::Claude)
+                        .map_err(err_to_string)?
+                        .ok_or_else(|| {
+                            "Claude API 키가 없습니다. Settings 에서 등록하거나 구독 로그인을 사용하세요."
+                                .to_string()
+                        })?;
+                    llm::anthropic::generate_text(
+                        llm::anthropic::ClaudeAuth::ApiKey(&key),
+                        &model_id,
+                        &prompt,
+                        Some(opts),
+                    )
+                    .await
+                }
+            };
+            result.map_err(err_to_string)?.text
+        }
+        AICompany::Openai => {
+            let model_id = model.clone().unwrap_or_else(|| super::MODEL_CODEX.to_string());
+            let result = match auth {
+                ClaudeAuthMode::Subscription => {
+                    let tokens = crate::subscription_auth::read_codex_tokens()?;
+                    llm::openai_codex::generate_text(
+                        &tokens.access_token,
+                        tokens.account_id.as_deref(),
+                        &model_id,
+                        Some(SLIDES_SYSTEM),
+                        &prompt,
+                    )
+                    .await
+                }
+                ClaudeAuthMode::ApiKey => {
+                    let key = get_key(Provider::Openai)
+                        .map_err(err_to_string)?
+                        .ok_or_else(|| "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
+                    llm::openai_api::generate_text(&key, &model_id, Some(SLIDES_SYSTEM), &prompt).await
+                }
+            };
+            result.map_err(err_to_string)?.text
         }
     };
 

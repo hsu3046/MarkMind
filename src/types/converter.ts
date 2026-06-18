@@ -5,7 +5,6 @@
 import type { AICompany, AIAuthMode } from '../services/aiModelConfig';
 
 export type DetailLevel = 'concise' | 'standard' | 'detailed' | 'verbatim';
-export type NotesProvider = 'claude' | 'gemini';
 export type TemplateSource = 'builtin' | 'user';
 
 export interface UsageInfo {

@@ -108,20 +108,6 @@ pub struct GenerateResult {
     pub usage: UsageInfo,
 }
 
-/// LLM provider — 회의록 생성용
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum NotesProvider {
-    Claude,
-    Gemini,
-}
-
-impl Default for NotesProvider {
-    fn default() -> Self {
-        NotesProvider::Claude
-    }
-}
-
 /// 회의록 상세도
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -145,16 +131,6 @@ impl std::fmt::Display for DetailLevel {
             DetailLevel::Standard => "standard",
             DetailLevel::Detailed => "detailed",
             DetailLevel::Verbatim => "verbatim",
-        };
-        write!(f, "{}", s)
-    }
-}
-
-impl std::fmt::Display for NotesProvider {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            NotesProvider::Claude => "claude",
-            NotesProvider::Gemini => "gemini",
         };
         write!(f, "{}", s)
     }

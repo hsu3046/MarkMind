@@ -9,15 +9,14 @@
 //! 1) .app 안 동봉 sidecar (current_exe 의 sibling, Tauri externalBin 으로 빌드)
 //! 2) 시스템 PATH (which / `/opt/homebrew/bin` / `/usr/local/bin`)
 //! 3) ffmpeg-sidecar 다운로드 cache (~/Library/Caches/ffmpeg-sidecar/)
-//! 4) ffmpeg-sidecar auto_download() 후 (3) 재시도
+//!
+//! 자동 다운로드(auto_download) 폴백은 제거됨 — 배포는 동봉 sidecar 를 우선하고,
+//! 없으면 위 3단계로만 해결한다(빌드 산출물 비결정성·런타임 지연 회피).
 
 use crate::converters::error::{ConverterError, ConverterResult};
 use chrono::DateTime;
 use std::path::{Path, PathBuf};
-use std::sync::Once;
 use tokio::process::Command;
-
-static INIT: Once = Once::new();
 
 /// 청크 크기 가드 — 초과 시 16kHz mono 32kbps mp3 로 다운인코딩.
 /// 임계 15MB → 대부분 청크가 Gemini inline base64 path 임계 (~20MB request body) 안에 들어가
@@ -31,23 +30,6 @@ pub struct AudioChunk {
     pub start_sec: f64,
     #[allow(dead_code)]
     pub index: usize,
-}
-
-/// ffmpeg-sidecar 자동 다운로드 (1회만). 동봉 binary 가 있으면 호출 안 함.
-pub fn ensure_ffmpeg_blocking() -> ConverterResult<()> {
-    let mut err: Option<String> = None;
-    INIT.call_once(|| {
-        if let Err(e) = ffmpeg_sidecar::download::auto_download() {
-            err = Some(e.to_string());
-        }
-    });
-    if let Some(msg) = err {
-        return Err(ConverterError::Ffmpeg(format!(
-            "ffmpeg 자동 다운로드 실패: {}",
-            msg
-        )));
-    }
-    Ok(())
 }
 
 /// current_exe 의 sibling 에 동봉된 sidecar binary 검색.

@@ -64,6 +64,7 @@ pub fn get_client_id() -> GDriveResult<Option<String>> {
     Ok(v.gdrive_client_id.filter(|s| !s.trim().is_empty()))
 }
 
+#[allow(dead_code)] // 대칭 CRUD 헬퍼 — 현재 reset_all() 통합 경로 사용, 개별 관리용 보존
 pub fn delete_client_credentials() -> GDriveResult<()> {
     crate::secrets::update(|v| {
         v.gdrive_client_id = None;
@@ -74,6 +75,7 @@ pub fn delete_client_credentials() -> GDriveResult<()> {
 
 // ─── refresh_token / user_email ───
 
+#[allow(dead_code)] // 대칭 CRUD 헬퍼 — 현재 save_oauth_result() 통합 경로 사용, 개별 관리용 보존
 pub fn save_refresh_token(token: &str) -> GDriveResult<()> {
     let val = token.to_string();
     crate::secrets::update(|v| v.gdrive_refresh_token = Some(val)).map_err(to_gderr)
@@ -84,10 +86,12 @@ pub fn get_refresh_token() -> GDriveResult<Option<String>> {
     Ok(v.gdrive_refresh_token.filter(|s| !s.trim().is_empty()))
 }
 
+#[allow(dead_code)] // 대칭 CRUD 헬퍼 — 현재 disconnect()/reset_all() 통합 경로 사용, 개별 관리용 보존
 pub fn delete_refresh_token() -> GDriveResult<()> {
     crate::secrets::update(|v| v.gdrive_refresh_token = None).map_err(to_gderr)
 }
 
+#[allow(dead_code)] // 대칭 CRUD 헬퍼 — 현재 save_oauth_result() 통합 경로 사용, 개별 관리용 보존
 pub fn save_user_email(email: &str) -> GDriveResult<()> {
     let val = email.to_string();
     crate::secrets::update(|v| v.gdrive_user_email = Some(val)).map_err(to_gderr)
@@ -109,6 +113,7 @@ pub fn get_user_email() -> GDriveResult<Option<String>> {
     Ok(v.gdrive_user_email.filter(|s| !s.trim().is_empty()))
 }
 
+#[allow(dead_code)] // 대칭 CRUD 헬퍼 — 현재 disconnect()/reset_all() 통합 경로 사용, 개별 관리용 보존
 pub fn delete_user_email() -> GDriveResult<()> {
     crate::secrets::update(|v| v.gdrive_user_email = None).map_err(to_gderr)
 }
