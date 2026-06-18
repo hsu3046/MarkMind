@@ -50,6 +50,8 @@ export function getPreviewDimensions(ratio: string, maxDim = 28): { w: number; h
 
 export interface GenerateImageOptions {
     provider: ImageProvider;
+    /** 호출에 쓸 모델 ID (예: gemini-3.1-flash-image / gpt-image-2). */
+    model: string;
     prompt: string;
     aspectRatio: string;
     quality: ImageQuality;
@@ -62,12 +64,13 @@ export interface GenerateImageOptions {
  * Tauri 가 인자명을 camelCase→snake_case 자동 매핑한다(aspectRatio → aspect_ratio 등).
  */
 export async function generateImage(opts: GenerateImageOptions): Promise<string[]> {
-    const { provider, prompt, aspectRatio, quality, referenceImages } = opts;
+    const { provider, model, prompt, aspectRatio, quality, referenceImages } = opts;
     if (!prompt.trim()) throw new Error('프롬프트를 입력해주세요.');
 
     const { invoke } = await import('@tauri-apps/api/core');
     const command = provider === 'gemini' ? 'generate_image_gemini' : 'generate_image_openai';
     return invoke<string[]>(command, {
+        model,
         prompt,
         aspectRatio,
         quality,

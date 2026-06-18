@@ -2,16 +2,18 @@
  * 이미지 생성 패널 — AIPanel 의 'image-gen' 모드 본문.
  *
  * 프롬프트(+참조 이미지)로 이미지를 생성 → 패널에 미리보기 → "문서에 삽입" 또는 "파일로 저장".
- * 공급사(Gemini/OpenAI)는 패널 안 토글로 선택하고, 키는 기존 Settings(Keychain)를 재사용한다.
- * 실제 API 호출은 Rust(reqwest) 경유(services/imageGen.ts). 상태는 이 컴포넌트 로컬(diff 흐름 아님).
+ * 공급사/모델은 Settings 의 "이미지 AI 모델" 전역 선택을 따른다(기본 AI 모델과 동일 방식 —
+ * 패널엔 별도 토글 없음). 키는 기존 Settings(Keychain)를 재사용. 실제 API 호출은 Rust 경유
+ * (services/imageGen.ts). 상태는 이 컴포넌트 로컬(diff 흐름 아님).
  *
  * 참조 이미지는 OS 드롭(App onDragDropEvent → refDropped prop)으로만 추가한다 —
  * dragDropEnabled=true 라 webview HTML5 onDrop 이 억제되기 때문(클릭 파일선택 없음).
  */
 
 import { useState, useEffect } from 'react';
-import { Loader2, AlertCircle, Sparkles, FileInput, Download, X, ImageIcon } from 'lucide-react';
+import { Loader2, AlertCircle, Sparkles, FileInput, Download, X, ImageIcon, Settings as SettingsIcon } from 'lucide-react';
 import { hasKey } from '../../services/secureStorage';
+import { getImageAIModelSelection, IMAGE_AI_CATALOG } from '../../services/aiModelConfig';
 import {
     generateImage,
     humanizeImageGenError,
@@ -19,7 +21,6 @@ import {
     ASPECT_RATIOS,
     IMAGE_QUALITIES,
     getPreviewDimensions,
-    type ImageProvider,
     type ImageQuality,
 } from '../../services/imageGen';
 import './ImageGenPanel.css';
@@ -34,11 +35,6 @@ interface ImageGenPanelProps {
 }
 
 const MAX_REFS = 4;
-
-const PROVIDERS: { id: ImageProvider; label: string }[] = [
-    { id: 'gemini', label: 'Gemini' },
-    { id: 'openai', label: 'ChatGPT' },
-];
 
 /** 확장자 → MIME(참조 이미지 readFile 용). */
 const EXT_MIME: Record<string, string> = {
@@ -67,9 +63,11 @@ export function ImageGenPanel({
     refDropped,
     onConsumeRefDropped,
 }: ImageGenPanelProps) {
-    const [provider, setProvider] = useState<ImageProvider>(() =>
-        hasKey('gemini') ? 'gemini' : hasKey('openai') ? 'openai' : 'gemini',
-    );
+    // 전역 이미지 모델 선택(Settings) — 매 렌더 읽어 설정 변경을 즉시 반영.
+    const imgModel = getImageAIModelSelection();
+    const provider = imgModel.company; // 'gemini' | 'openai'
+    const providerHasKey = hasKey(provider);
+
     const [prompt, setPrompt] = useState('');
     const [aspectRatio, setAspectRatio] = useState('1:1');
     const [quality, setQuality] = useState<ImageQuality>('standard');
@@ -78,8 +76,6 @@ export function ImageGenPanel({
     const [result, setResult] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
-
-    const providerHasKey = hasKey(provider);
 
     // 참조 이미지 드롭 소비: 경로 → readFile → dataUrl → 압축 → refs 추가.
     useEffect(() => {
@@ -124,6 +120,7 @@ export function ImageGenPanel({
         try {
             const urls = await generateImage({
                 provider,
+                model: imgModel.model,
                 prompt: prompt.trim(),
                 aspectRatio,
                 quality,
@@ -168,28 +165,20 @@ export function ImageGenPanel({
 
     return (
         <div className="imggen">
-            {/* 공급사 토글 */}
-            <div className="imggen-providers">
-                {PROVIDERS.map((p) => {
-                    const keyed = hasKey(p.id);
-                    return (
-                        <button
-                            key={p.id}
-                            className={`imggen-provider${provider === p.id ? ' active' : ''}${keyed ? '' : ' nokey'}`}
-                            onClick={() => setProvider(p.id)}
-                            title={keyed ? p.label : `${p.label} — API 키 필요`}
-                        >
-                            {p.label}
-                            {!keyed && <span className="imggen-provider-badge">키 필요</span>}
-                        </button>
-                    );
-                })}
+            {/* 현재 이미지 모델 — Settings "이미지 AI 모델"에서 변경 */}
+            <div className="imggen-model-info">
+                <span className="imggen-model-name">
+                    이미지 모델: <strong>{IMAGE_AI_CATALOG[provider].label}</strong>
+                </span>
+                <button className="imggen-model-change" onClick={onShowSettings} title="설정에서 변경">
+                    <SettingsIcon size={12} /> 변경
+                </button>
             </div>
 
             {!providerHasKey ? (
                 <div className="ai-no-key">
                     <AlertCircle size={20} />
-                    <p>{provider === 'gemini' ? 'Gemini' : 'OpenAI'} API 키를 설정해주세요</p>
+                    <p>{IMAGE_AI_CATALOG[provider].label} API 키를 설정해주세요</p>
                     <button className="ai-btn primary" onClick={onShowSettings}>
                         설정하기
                     </button>

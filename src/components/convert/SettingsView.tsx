@@ -19,6 +19,16 @@ import { confirmAction } from '../../services/dialogService';
 import { isTauri } from '../../services/platform';
 import { LanShareSection } from './LanShareSection';
 import { AIModelPicker } from './AIModelPicker';
+import {
+    AI_CATALOG,
+    getAIModelSelection,
+    setAIModelSelection,
+    AIModelSelection,
+    IMAGE_AI_CATALOG,
+    getImageAIModelSelection,
+    setImageAIModelSelection,
+    ImageAIModelSelection,
+} from '../../services/aiModelConfig';
 import { loadUserMemory, saveUserMemory, USER_MEMORY_MAX_CHARS } from '../../services/userMemory';
 import {
     ValidationResult,
@@ -138,6 +148,10 @@ export function SettingsView({ onDone }: SettingsViewProps) {
 
     // 구독 연동 — 로컬 Claude Code / Codex CLI 로그인 감지 현황
     const [subStatus, setSubStatus] = useState<SubscriptionStatus>({ claude: false, codex: false });
+
+    // 전역 모델 선택 — 기본 AI(텍스트) / 이미지 AI. 기본 설정 탭의 picker 와 연동.
+    const [aiSel, setAiSel] = useState<AIModelSelection>(getAIModelSelection());
+    const [imgSel, setImgSel] = useState<ImageAIModelSelection>(getImageAIModelSelection());
 
     // 설정 탭 (기본 / AI / 추가 기능). AI 가 가장 자주 쓰이므로 기본 진입 탭.
     const [activeTab, setActiveTab] = useState<SettingsTab>('ai');
@@ -702,10 +716,33 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                 </>
             )}
 
-            {/* === 기본 설정 — AI 모델 + 아이폰 연결 === */}
+            {/* === 기본 설정 — 기본/이미지 AI 모델 + 아이폰 연결 === */}
             {activeTab === 'basic' && (
                 <>
-                    <AIModelPicker />
+                    <AIModelPicker
+                        title="기본 AI 모델"
+                        catalog={AI_CATALOG}
+                        selection={aiSel}
+                        onChange={(s) => {
+                            setAiSel(s);
+                            setAIModelSelection(s);
+                        }}
+                        subscriptionAvailable={(c) =>
+                            c === 'claude' ? subStatus.claude : c === 'openai' ? subStatus.codex : false
+                        }
+                    />
+
+                    <hr className="settings-divider" />
+
+                    <AIModelPicker
+                        title="이미지 AI 모델"
+                        catalog={IMAGE_AI_CATALOG}
+                        selection={imgSel}
+                        onChange={(s) => {
+                            setImgSel(s);
+                            setImageAIModelSelection(s);
+                        }}
+                    />
 
                     <hr className="settings-divider" />
 

@@ -1,5 +1,7 @@
-//! 이미지 생성 — Gemini 3.1 Flash Image / OpenAI gpt-image-1.
+//! 이미지 생성 — Gemini(Nano Banana 계열) / OpenAI(gpt-image-2).
 //!
+//! 모델 ID 는 호출부(Settings 의 전역 이미지 모델 선택)에서 인자로 전달받는다 —
+//! Gemini 는 generateContent URL 에, OpenAI 는 요청 body 의 model 에 사용.
 //! lumina-studio `imageGen.ts` 의 handleGemini/handleOpenAI 를 Rust(reqwest)로 포팅.
 //! WKWebView 의 fetch CORS 제약을 피하려 네이티브 HTTP 로 호출(텍스트 LLM 과 동일 경로).
 //! 참조 이미지는 프론트에서 `data:image/...;base64,...` 문자열로 전달.
@@ -78,16 +80,17 @@ struct GeminiInlineData {
     data: String,
 }
 
-/// Gemini 이미지 생성. 참조 이미지는 `inlineData` 로 본문에 포함.
+/// Gemini 이미지 생성(model = generateContent 모델 ID). 참조 이미지는 `inlineData` 로 포함.
 pub async fn generate_gemini(
     api_key: &str,
+    model: &str,
     prompt: &str,
     aspect_ratio: &str,
     quality: &str,
     reference_images: &[String],
 ) -> Result<Vec<String>, String> {
     let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key={api_key}"
+        "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     );
 
     // parts: 참조 이미지(inlineData) 먼저, 그 다음 text.
@@ -199,9 +202,10 @@ struct OpenAiImageItem {
     url: Option<String>,
 }
 
-/// OpenAI 이미지 생성. 참조 有 → `/v1/images/edits`(multipart), 無 → `/v1/images/generations`(JSON).
+/// OpenAI 이미지 생성(model = gpt-image-2 등). 참조 有 → `/v1/images/edits`(multipart), 無 → `/v1/images/generations`(JSON).
 pub async fn generate_openai(
     api_key: &str,
+    model: &str,
     prompt: &str,
     aspect_ratio: &str,
     quality: &str,
@@ -229,7 +233,7 @@ pub async fn generate_openai(
             }
         }
         form = form
-            .text("model", "gpt-image-1")
+            .text("model", model.to_string())
             .text("prompt", prompt_with_refs(prompt, reference_images.len()))
             .text("n", "1")
             .text("size", size)
@@ -245,7 +249,7 @@ pub async fn generate_openai(
     } else {
         // 텍스트만 → /v1/images/generations (JSON)
         let body = serde_json::json!({
-            "model": "gpt-image-1",
+            "model": model,
             "prompt": prompt,
             "n": 1,
             "size": size,

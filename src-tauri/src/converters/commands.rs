@@ -274,6 +274,7 @@ pub async fn ai_generate_openai(
 // WKWebView 의 fetch CORS 제약을 피하려 네이티브 HTTP(reqwest) 경유한다.
 #[tauri::command]
 pub async fn generate_image_gemini(
+    model: String,
     prompt: String,
     aspect_ratio: String,
     quality: String,
@@ -284,11 +285,12 @@ pub async fn generate_image_gemini(
     let key = get_key(Provider::Gemini)
         .map_err(err_to_string)?
         .ok_or_else(|| "Gemini API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
-    image_gen::generate_gemini(&key, &prompt, &aspect_ratio, &quality, &reference_images).await
+    image_gen::generate_gemini(&key, &model, &prompt, &aspect_ratio, &quality, &reference_images).await
 }
 
 #[tauri::command]
 pub async fn generate_image_openai(
+    model: String,
     prompt: String,
     aspect_ratio: String,
     quality: String,
@@ -299,7 +301,7 @@ pub async fn generate_image_openai(
     let key = get_key(Provider::Openai)
         .map_err(err_to_string)?
         .ok_or_else(|| "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
-    image_gen::generate_openai(&key, &prompt, &aspect_ratio, &quality, &reference_images).await
+    image_gen::generate_openai(&key, &model, &prompt, &aspect_ratio, &quality, &reference_images).await
 }
 
 // ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────
