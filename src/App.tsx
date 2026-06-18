@@ -843,6 +843,7 @@ function App() {
     setSearchVisible(false);
     setSearchQuery('');
     setSearchReplace('');
+    setSearchShowReplace(false);
     setSearchMatchCount(0);
     setSearchCurrentIndex(-1);
     editorRef.current?.searchClear();
@@ -943,11 +944,44 @@ function App() {
     setSearchCurrentIndex(info.count > 0 ? info.index : -1);
   }, []);
 
+  // split 의 오른쪽 프리뷰(정적 react-markdown HTML)는 Tiptap 이 아니라 검색 명령이 안 닿는다.
+  // DOM 에 <mark> 를 꽂으면 react-markdown 재조정과 충돌하므로, DOM 무변경인 CSS Custom
+  // Highlight API 로 매치 range 만 등록한다(미지원 webview 면 graceful 패스).
+  const PREVIEW_HL = 'mm-preview-search';
+  const clearPreviewHighlight = useCallback(() => {
+    (CSS as unknown as { highlights?: Map<string, unknown> }).highlights?.delete(PREVIEW_HL);
+  }, []);
+  const highlightPreviewDom = useCallback((query: string) => {
+    const reg = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+    const HighlightCtor = (window as unknown as { Highlight?: new (...r: Range[]) => unknown }).Highlight;
+    if (!reg || !HighlightCtor) return; // 미지원 → 패스
+    const root = document.querySelector('.preview-wrapper .markdown-body');
+    if (!root || !query) { reg.delete(PREVIEW_HL); return; }
+    const ranges: Range[] = [];
+    const needle = query.toLowerCase();
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const hay = (node.textContent ?? '').toLowerCase();
+      let idx = hay.indexOf(needle);
+      while (idx !== -1) {
+        const r = document.createRange();
+        r.setStart(node, idx);
+        r.setEnd(node, idx + query.length);
+        ranges.push(r);
+        idx = hay.indexOf(needle, idx + needle.length);
+      }
+    }
+    if (ranges.length) reg.set(PREVIEW_HL, new HighlightCtor(...ranges));
+    else reg.delete(PREVIEW_HL);
+  }, []);
+
   const runSearch = useCallback((query: string, replace: string) => {
     if (viewMode === 'preview') {
       window.dispatchEvent(new CustomEvent('markmind:rich-search', { detail: { query } }));
     } else {
       applySearchInfo(editorRef.current?.searchSetQuery(query, replace));
+      // split 의 오른쪽(정적 프리뷰) 하이라이트는 아래 effect 가 CSS Highlight API 로 처리.
     }
   }, [viewMode, applySearchInfo]);
 
@@ -967,18 +1001,22 @@ function App() {
       applySearchInfo(all
         ? editorRef.current?.searchReplaceAll(searchReplace)
         : editorRef.current?.searchReplaceCurrent(searchReplace));
+      // split: 소스 변경 → content 갱신 → 아래 effect 가 프리뷰 하이라이트 재계산.
     }
   }, [viewMode, applySearchInfo, searchReplace]);
 
   const closeSearch = useCallback(() => {
-    if (viewMode === 'preview') window.dispatchEvent(new Event('markmind:rich-search-clear'));
-    else editorRef.current?.searchClear();
+    // 양 엔진 모두 해제(미마운트 쪽은 no-op) — split 의 오른쪽 하이라이트까지 확실히 정리.
+    editorRef.current?.searchClear();
+    window.dispatchEvent(new Event('markmind:rich-search-clear'));
+    clearPreviewHighlight();
     setSearchVisible(false);
     setSearchQuery('');
     setSearchReplace('');
+    setSearchShowReplace(false);
     setSearchMatchCount(0);
     setSearchCurrentIndex(-1);
-  }, [viewMode]);
+  }, [clearPreviewHighlight]);
 
   const toggleSearch = useCallback(() => {
     if (searchVisible) {
@@ -995,6 +1033,15 @@ function App() {
     runSearch(searchQuery, searchReplace);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, searchVisible, viewMode]);
+
+  // split 오른쪽(정적 프리뷰) 하이라이트 — 검색어/내용 변경·재렌더 후 CSS Highlight 재계산.
+  useEffect(() => {
+    if (viewMode === 'split' && searchVisible && searchQuery) {
+      const t = setTimeout(() => highlightPreviewDom(searchQuery), 40);
+      return () => clearTimeout(t);
+    }
+    clearPreviewHighlight();
+  }, [viewMode, searchVisible, searchQuery, content, highlightPreviewDom, clearPreviewHighlight]);
 
   // Rich Text search 결과 count + 현재 index 회신 listen
   useEffect(() => {
@@ -1110,12 +1157,12 @@ function App() {
             break;
           case '2':
             e.preventDefault();
-            setViewMode('split');
+            setViewMode('preview');
             setReadingMode(false);
             break;
           case '3':
             e.preventDefault();
-            setViewMode('preview');
+            setViewMode('split');
             setReadingMode(false);
             break;
           case '4':
@@ -1580,7 +1627,7 @@ function App() {
         <div className="tutorial-overlay" onClick={() => setTutorialVisible(false)}>
           <div className="tutorial-overlay-content" onClick={(e) => e.stopPropagation()}>
             <div className="tutorial-overlay-header">
-              <span className="tutorial-overlay-title"><BookOpen size={16} strokeWidth={1.5} /> Tutorial</span>
+              <span className="tutorial-overlay-title"><BookOpen size={16} strokeWidth={1.5} /><span>Tutorial</span></span>
               <button className="tutorial-overlay-close" onClick={() => setTutorialVisible(false)}><IconX size={16} /></button>
             </div>
             <div className="tutorial-overlay-body">

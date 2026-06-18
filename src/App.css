@@ -745,6 +745,12 @@ body {
   outline: 1.5px solid rgba(255, 140, 0, 0.9);
 }
 
+/* split 오른쪽 정적 프리뷰 검색 하이라이트 — CSS Custom Highlight API(DOM 무변경).
+   ::highlight() 는 색/배경/밑줄만 지원(border-radius·outline 불가). */
+::highlight(mm-preview-search) {
+  background-color: rgba(255, 200, 0, 0.45);
+}
+
 /* CodeMirror 검색 매치 — 통일 SearchBar 가 setSearchQuery 로 구동(네이티브 패널 없음) */
 .cm-searchMatch {
   background: rgba(255, 200, 0, 0.35);
@@ -2746,6 +2752,9 @@ code.hljs {
 }
 
 .tutorial-overlay-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-primary);

@@ -41,8 +41,8 @@ export interface UseNativeMenuOptions {
 /** View menu order = shortcut order (⌘1‥⌘6). */
 const VIEW_ITEMS: { mode: ViewMode; label: string; accelerator: string }[] = [
     { mode: 'editor', label: 'Markdown', accelerator: 'CmdOrCtrl+1' },
-    { mode: 'split', label: 'Split View', accelerator: 'CmdOrCtrl+2' },
-    { mode: 'preview', label: 'Rich Text', accelerator: 'CmdOrCtrl+3' },
+    { mode: 'preview', label: 'Rich Text', accelerator: 'CmdOrCtrl+2' },
+    { mode: 'split', label: 'Split View', accelerator: 'CmdOrCtrl+3' },
     { mode: 'mindmap', label: 'Mindmap', accelerator: 'CmdOrCtrl+4' },
     { mode: 'flowchart', label: 'Flowchart', accelerator: 'CmdOrCtrl+5' },
     { mode: 'gantt', label: 'Gantt', accelerator: 'CmdOrCtrl+6' },
@@ -98,8 +98,8 @@ export function useNativeMenu(opts: UseNativeMenuOptions) {
                     await sep(),
                     await MenuItem.new({ id: 'export', text: 'Export as PDF…', accelerator: 'CmdOrCtrl+P', action: () => h().onExportPdf() }),
                     await sep(),
-                    await MenuItem.new({ id: 'drive-open', text: 'Open from Drive…', action: () => h().onOpenFromDrive() }),
-                    await MenuItem.new({ id: 'drive-save', text: 'Save to Drive…', action: () => h().onSaveToDrive() }),
+                    await MenuItem.new({ id: 'drive-open', text: 'Open from Google Drive…', action: () => h().onOpenFromDrive() }),
+                    await MenuItem.new({ id: 'drive-save', text: 'Save to Google Drive…', action: () => h().onSaveToDrive() }),
                 ],
             });
 

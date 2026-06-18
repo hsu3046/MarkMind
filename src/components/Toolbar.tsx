@@ -17,8 +17,8 @@ export type ViewMode = 'split' | 'editor' | 'preview' | 'mindmap' | 'flowchart' 
 /** View 메뉴 항목 — 라벨/단축키/아이콘. 사용자가 보는 순서(편집→읽기→분할→…). */
 const VIEW_MODES: { mode: ViewMode; label: string; shortcut: string; Icon: LucideIcon }[] = [
     { mode: 'editor', label: 'Markdown', shortcut: '⌘1', Icon: FileCode },
-    { mode: 'preview', label: 'Rich Text', shortcut: '⌘3', Icon: FileText },
-    { mode: 'split', label: 'Split View', shortcut: '⌘2', Icon: Columns2 },
+    { mode: 'preview', label: 'Rich Text', shortcut: '⌘2', Icon: FileText },
+    { mode: 'split', label: 'Split View', shortcut: '⌘3', Icon: Columns2 },
     { mode: 'mindmap', label: 'Mindmap', shortcut: '⌘4', Icon: Share2 },
     { mode: 'flowchart', label: 'Flowchart', shortcut: '⌘5', Icon: Network },
     { mode: 'gantt', label: 'Gantt', shortcut: '⌘6', Icon: ChartBarStacked },
@@ -266,7 +266,7 @@ export function Toolbar({
                                         title={!driveConnected ? 'Settings 에서 Google Drive 연결 필요' : ''}
                                     >
                                         <img src="/googledrive.png" alt="" className="dropdown-icon-img" />
-                                        <span>Open from Drive…</span>
+                                        <span>Open from Google Drive…</span>
                                     </button>
                                     <button
                                         className="dropdown-item"
@@ -275,7 +275,7 @@ export function Toolbar({
                                         title={!driveConnected ? 'Settings 에서 Google Drive 연결 필요' : ''}
                                     >
                                         <img src="/googledrive.png" alt="" className="dropdown-icon-img" />
-                                        <span>Save to Drive…</span>
+                                        <span>Save to Google Drive…</span>
                                     </button>
                                 </>
                             )}
