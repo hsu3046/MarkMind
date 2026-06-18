@@ -75,15 +75,21 @@ export function ImageGenPanel({
     // 구독 연동(codex) 감지 — 로컬 토큰 확인이라 비동기(state). 텍스트 AI
     // (resolveUsableTextSelection)와 동일 규칙으로 가용성 판정.
     const [subCodex, setSubCodex] = useState(false);
+    const [subGrok, setSubGrok] = useState(false);
     useEffect(() => {
         detectSubscriptionLogins()
-            .then((s) => setSubCodex(s.codex))
+            .then((s) => {
+                setSubCodex(s.codex);
+                setSubGrok(s.grok);
+            })
             .catch(() => {});
     }, []);
 
-    // 가용성: 구독은 codex 로그인(OpenAI 전용), API 키는 hasKey.
+    // 가용성: 구독은 codex(OpenAI)·grok 로그인, API 키는 hasKey.
     const isUsable = (company: ImageAICompany, auth: AIAuthMode): boolean =>
-        auth === 'subscription' ? company === 'openai' && subCodex : hasKey(company);
+        auth === 'subscription'
+            ? (company === 'openai' && subCodex) || (company === 'grok' && subGrok)
+            : hasKey(company);
 
     // 전역 이미지 모델 선택(Settings) — 매 렌더 읽고, 가용한 공급사·방식으로 보정(callAI 와
     // 동일 resolveUsableSelection). 키·구독 둘 다 없으면 원본 유지 → providerUsable=false 안내.
@@ -214,7 +220,9 @@ export function ImageGenPanel({
                     <AlertCircle size={20} />
                     <p>
                         {isSubscription
-                            ? 'ChatGPT 구독 로그인을 연결해주세요 (터미널에서 codex 로그인)'
+                            ? provider === 'grok'
+                                ? 'Grok 구독 로그인을 연결해주세요 (터미널에서 grok login, 유료 SuperGrok 필요)'
+                                : 'ChatGPT 구독 로그인을 연결해주세요 (터미널에서 codex 로그인)'
                             : `${IMAGE_AI_CATALOG[provider].label} API 키를 설정해주세요`}
                     </p>
                     <button className="ai-btn primary" onClick={onShowSettings}>

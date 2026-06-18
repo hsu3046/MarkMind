@@ -16,23 +16,27 @@ export interface SubscriptionStatus {
     codex: boolean;
     /** Gemini(Antigravity CLI) — agy 설치 + Keychain 인증 감지 여부. */
     gemini: boolean;
+    /** Grok(xAI) — grok login(auth.json) 토큰 감지 여부. 실제 호출은 유료(SuperGrok) 필요. */
+    grok: boolean;
     /** Claude 플랜명 ("Max" 등). 토큰에서 추출, 없으면 null. */
     claudePlan?: string | null;
     /** ChatGPT 플랜명 ("Plus" 등). id_token 에서 추출, 없으면 null. */
     codexPlan?: string | null;
     /** Gemini 플랜명 ("Antigravity"). */
     geminiPlan?: string | null;
+    /** Grok 플랜명. auth.json 에 등급 정보 없어 보통 null. */
+    grokPlan?: string | null;
 }
 
 /** 로컬 CLI 로그인 감지. 비-Tauri / 실패 시 모두 false. */
 export async function detectSubscriptionLogins(): Promise<SubscriptionStatus> {
-    if (!isTauri()) return { claude: false, codex: false, gemini: false };
+    if (!isTauri()) return { claude: false, codex: false, gemini: false, grok: false };
     try {
         const { invoke } = await import('@tauri-apps/api/core');
         return await invoke<SubscriptionStatus>('detect_subscription_logins');
     } catch (err) {
         console.warn('[subscription] 로그인 감지 실패:', err);
-        return { claude: false, codex: false, gemini: false };
+        return { claude: false, codex: false, gemini: false, grok: false };
     }
 }
 

@@ -180,6 +180,7 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
         claude: false,
         codex: false,
         gemini: false,
+        grok: false,
     });
 
     // 전역 모델 선택 — 기본 AI(텍스트) / 이미지 AI. 기본 설정 탭의 picker 와 연동.
@@ -571,11 +572,18 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                         </p>
                     )}
 
-                    {/* Grok — 구독 연동 준비중. 고정 표시. */}
+                    {/* Grok (grok login OAuth) — 로그인 감지. 단 실제 호출은 유료 SuperGrok 필요. */}
                     <div className="sub-link-row">
                         <span className="sub-link-name">Grok 구독 연동</span>
-                        <span className="badge badge-muted">준비중</span>
+                        <span className={subStatus.grok ? 'badge badge-ok' : 'badge badge-warn'}>
+                            {subStatus.grok ? '연결됨' : '연결 안 됨'}
+                        </span>
                     </div>
+                    <p className="convert-key-note sub-link-hint">
+                        {subStatus.grok
+                            ? '로그인됨. 단 실제 호출은 유료 SuperGrok 구독이 필요합니다 (무료 플랜은 403).'
+                            : 'grok login 으로 로그인 + 유료 SuperGrok 구독이 필요합니다.'}
+                    </p>
                 </div>
 
                 <p className="convert-key-note">
@@ -881,7 +889,9 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                                   ? subStatus.codex
                                   : c === 'gemini'
                                     ? subStatus.gemini
-                                    : false
+                                    : c === 'grok'
+                                      ? subStatus.grok
+                                      : false
                         }
                     />
 
@@ -897,7 +907,9 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                         }}
                         apiKeyAvailable={(c) => stored[c as Provider]}
                         // 이미지 구독은 OpenAI(codex)만 — Gemini 는 구독 미지원이라 false.
-                        subscriptionAvailable={(c) => (c === 'openai' ? subStatus.codex : false)}
+                        subscriptionAvailable={(c) =>
+                            c === 'openai' ? subStatus.codex : c === 'grok' ? subStatus.grok : false
+                        }
                     />
 
                     <hr className="settings-divider" />

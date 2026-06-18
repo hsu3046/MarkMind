@@ -88,7 +88,14 @@ export async function generateImage(opts: GenerateImageOptions): Promise<string[
     }
     if (provider === 'grok') {
         // Grok Imagine — 비율·해상도(1k/2k)를 직접 지원. 품질·참조 이미지는 미지원이라 안 보낸다.
-        return invoke<string[]>('generate_image_grok', { model, prompt, aspectRatio, resolution });
+        // 구독(grok login OAuth)·API 키 둘 다 api.x.ai 동일 — Rust 가 grokAuth 로 토큰 분기.
+        return invoke<string[]>('generate_image_grok', {
+            model,
+            prompt,
+            aspectRatio,
+            resolution,
+            grokAuth: auth ?? 'api_key',
+        });
     }
     // OpenAI 구독(codex) — codex 는 size/quality 를 무시하므로(항상 1254x1254/low, 실측)
     // 비율은 프롬프트로 후처리하고 품질은 보내지 않는다. 1:1 은 기본 정사각이라 후처리 생략.

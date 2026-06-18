@@ -90,11 +90,13 @@ export const AI_CATALOG: Record<AICompany, AICompanyDef> = {
     },
     grok: {
         label: 'Grok',
-        // 구독(Grok Build CLI OAuth)은 tier-gating(Heavy 한정 가능)이라 추후 추가 — 현재 API 키만.
-        auths: ['api_key'],
+        // 구독(grok login OAuth 토큰)도 api.x.ai 동일 엔드포인트라 모델은 API 키와 같다.
+        // 단 구독은 유료(SuperGrok) 필요 — 무료/크레딧0 은 호출 시 403(spending-limit).
+        auths: ['api_key', 'subscription'],
         // 텍스트는 grok-4.3(플래그십·vision, OpenAI 호환). docs.x.ai 확인(2026-06).
         models: {
             api_key: [{ id: 'grok-4.3', label: 'Grok 4.3' }],
+            subscription: [{ id: 'grok-4.3', label: 'Grok 4.3' }],
         },
     },
 };
@@ -228,10 +230,14 @@ export const IMAGE_AI_CATALOG: Record<ImageAICompany, AICompanyDef> = {
     grok: {
         label: 'Grok',
         // grok-imagine-* (api.x.ai/v1/images/generations). 비율·해상도(1k/2k) 직접 지원.
-        // 구독 이미지는 추후(tier-gating) — 현재 API 키만. docs.x.ai 확인(2026-06).
-        auths: ['api_key'],
+        // 구독(grok login OAuth)도 동일 엔드포인트 — 유료(SuperGrok) 필요. docs.x.ai(2026-06).
+        auths: ['api_key', 'subscription'],
         models: {
             api_key: [
+                { id: 'grok-imagine-image-quality', label: 'Grok Imagine (고품질)' },
+                { id: 'grok-imagine-image', label: 'Grok Imagine (기본)' },
+            ],
+            subscription: [
                 { id: 'grok-imagine-image-quality', label: 'Grok Imagine (고품질)' },
                 { id: 'grok-imagine-image', label: 'Grok Imagine (기본)' },
             ],

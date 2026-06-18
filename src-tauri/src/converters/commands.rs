@@ -289,13 +289,22 @@ pub async fn ai_generate_grok(
     system: Option<String>,
     prompt: String,
     model: String,
+    grok_auth: String,
 ) -> Result<String, String> {
+    let key = grok_bearer(&grok_auth)?;
+    super::llm::grok::generate_text(&key, &model, system.as_deref(), &prompt).await
+}
+
+/// Grok 호출에 쓸 Bearer 토큰 — 구독(auth.json OAuth) 또는 API 키(Keychain).
+fn grok_bearer(grok_auth: &str) -> Result<String, String> {
     use super::keychain::{get_key, Provider};
-    use super::llm::grok;
-    let key = get_key(Provider::Grok)
-        .map_err(err_to_string)?
-        .ok_or_else(|| "Grok API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
-    grok::generate_text(&key, &model, system.as_deref(), &prompt).await
+    if grok_auth == "subscription" {
+        crate::subscription_auth::read_grok_token()
+    } else {
+        get_key(Provider::Grok)
+            .map_err(err_to_string)?
+            .ok_or_else(|| "Grok API 키가 없습니다. Settings 에서 등록하세요.".to_string())
+    }
 }
 
 // ─── 이미지 생성 (Gemini 3.1 Flash Image / OpenAI gpt-image-1) ──────────────
@@ -366,13 +375,10 @@ pub async fn generate_image_grok(
     prompt: String,
     aspect_ratio: String,
     resolution: String,
+    grok_auth: String,
 ) -> Result<Vec<String>, String> {
-    use super::keychain::{get_key, Provider};
-    use super::llm::grok;
-    let key = get_key(Provider::Grok)
-        .map_err(err_to_string)?
-        .ok_or_else(|| "Grok API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
-    grok::generate_image(&key, &model, &prompt, &aspect_ratio, &resolution).await
+    let key = grok_bearer(&grok_auth)?;
+    super::llm::grok::generate_image(&key, &model, &prompt, &aspect_ratio, &resolution).await
 }
 
 // ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────

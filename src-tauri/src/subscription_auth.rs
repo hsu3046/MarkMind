@@ -230,6 +230,61 @@ pub fn codex_logged_in() -> bool {
         .unwrap_or(false)
 }
 
+// ─── Grok (xAI) — Grok Build CLI auth.json 토큰 재사용 ────────────────────────
+//
+// `grok login`(OAuth) 후 `~/.grok/auth.json` 에 OIDC access token 저장. 같은 토큰을
+// Bearer 로 api.x.ai 에 쓰면 API 키 경로(grok.rs)와 동일하게 동작한다 — 단 **유료(SuperGrok)
+// 구독 필요**. 무료/크레딧0 계정은 api.x.ai 가 403(personal-team-blocked:spending-limit).
+
+fn grok_auth_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    Some(std::path::Path::new(&home).join(".grok").join("auth.json"))
+}
+
+/// `~/.grok/auth.json` 에서 access token(첫 scope 의 `key`)을 읽는다.
+/// 구조: `{ "<scope>": { "key": "<jwt>", "refresh_token": ..., "expires_at": ... } }`.
+/// (만료 refresh 미구현 — 만료 시 401 → `grok login` 재로그인 안내. Codex 와 동일.)
+pub fn read_grok_token() -> Result<String, String> {
+    let path = grok_auth_path().ok_or_else(|| "HOME 환경변수를 찾을 수 없습니다.".to_string())?;
+    let raw = std::fs::read_to_string(&path).map_err(|_| {
+        "Grok 로그인을 찾을 수 없습니다. 터미널에서 `grok login` 으로 로그인하세요.".to_string()
+    })?;
+    let v: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("auth.json 파싱 실패: {e}"))?;
+    let obj = v
+        .as_object()
+        .ok_or_else(|| "auth.json 형식이 올바르지 않습니다.".to_string())?;
+    let token = obj
+        .values()
+        .find_map(|scope| scope.get("key").and_then(|k| k.as_str()))
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "Grok access token 이 없습니다. `grok login` 재로그인이 필요합니다.".to_string())?;
+    Ok(token.to_string())
+}
+
+/// Grok 로그인 존재 여부 (`~/.grok/auth.json` 의 scope.key 유무).
+pub fn grok_logged_in() -> bool {
+    let Some(path) = grok_auth_path() else {
+        return false;
+    };
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()
+        .and_then(|v| {
+            v.as_object().map(|o| {
+                o.values().any(|s| {
+                    s.get("key")
+                        .and_then(|k| k.as_str())
+                        .map(|k| !k.is_empty())
+                        .unwrap_or(false)
+                })
+            })
+        })
+        .unwrap_or(false)
+}
+
 // ─── Tauri command ──────────────────────────────────────────────────────────
 
 /// 첫 글자만 대문자화 ("max" → "Max", "plus" → "Plus").
@@ -308,12 +363,17 @@ pub struct SubscriptionStatus {
     pub codex: bool,
     /// Gemini(Antigravity CLI) — agy 설치 + 인증(IDE Keychain 공유) 시 true.
     pub gemini: bool,
+    /// Grok(xAI) — `grok login`(auth.json) 토큰 존재 시 true. 단 실제 API 가용은
+    /// 유료(SuperGrok) 필요 — 무료/크레딧0 은 호출 시 403. 감지는 토큰 유무만.
+    pub grok: bool,
     /// Claude 플랜명 ("Max" 등). 미연결/미상이면 None.
     pub claude_plan: Option<String>,
     /// ChatGPT 플랜명 ("Plus" 등). 미연결/미상이면 None.
     pub codex_plan: Option<String>,
     /// Gemini 플랜명. agy 는 플랜 정보를 안 주므로 "Antigravity" 고정 또는 None.
     pub gemini_plan: Option<String>,
+    /// Grok 플랜명. auth.json 에 등급 정보 없어 None(로그인 표시만).
+    pub grok_plan: Option<String>,
 }
 
 #[tauri::command]
@@ -326,12 +386,15 @@ pub fn detect_subscription_logins() -> SubscriptionStatus {
     let claude_plan = claude_creds.as_ref().and_then(claude_plan_label);
     let codex = codex_logged_in();
     let gemini = gemini_agy_available();
+    let grok = grok_logged_in();
     SubscriptionStatus {
         claude,
         codex,
         gemini,
+        grok,
         claude_plan: if claude { claude_plan } else { None },
         codex_plan: if codex { codex_plan_label() } else { None },
         gemini_plan: if gemini { Some("Antigravity".to_string()) } else { None },
+        grok_plan: None,
     }
 }

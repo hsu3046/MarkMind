@@ -44,7 +44,9 @@ export async function isTextAIUsable(): Promise<boolean> {
               ? sub.codex
               : sel.company === 'gemini'
                 ? sub.gemini
-                : false;
+                : sel.company === 'grok'
+                  ? sub.grok
+                  : false;
     }
     return false;
 }
@@ -392,7 +394,9 @@ async function resolveUsableTextSelection(): Promise<AIModelSelection> {
                   ? sub.codex
                   : company === 'gemini'
                     ? sub.gemini
-                    : false
+                    : company === 'grok'
+                      ? sub.grok
+                      : false
             : hasKey(company),
     );
 }
@@ -461,12 +465,14 @@ export async function callAI(
             model: sel.model,
         });
     } else if (sel.company === 'grok') {
-        // Grok(xAI) — API 키 전용(구독은 추후 tier 검증 후). OpenAI 호환 chat completions, Rust 경유.
+        // Grok(xAI) — API 키 또는 구독(grok login OAuth 토큰). 둘 다 api.x.ai chat completions,
+        // Rust 가 grokAuth 로 토큰 소스 분기. 구독은 유료(SuperGrok) 필요. 스트리밍 미지원.
         const { invoke } = await import('@tauri-apps/api/core');
         modifiedText = await invoke<string>('ai_generate_grok', {
             system: systemPrompt,
             prompt: userContent,
             model: sel.model,
+            grokAuth: sel.auth,
         });
         if (onStream) onStream(modifiedText);
     } else {
