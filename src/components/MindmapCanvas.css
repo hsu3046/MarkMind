@@ -29,6 +29,12 @@
     padding: 10px 30px 10px 16px;
 }
 
+/* selected node — keyboard reorder target (↑↓/Tab) gets an accent ring */
+.mm-node.mm-selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent), var(--shadow-md);
+}
+
 /* left accent stripe — clean rectangle (::before, no border miter), level-shaded */
 .mm-node::before {
     content: '';
@@ -150,6 +156,25 @@
 .mm-toolbar button:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
+}
+
+/* disabled reorder buttons (e.g. first sibling can't move up) */
+.mm-toolbar button:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.mm-toolbar button:disabled:hover {
+    background: transparent;
+    color: var(--text-secondary);
+}
+
+/* thin divider between the reorder group and edit/add/delete */
+.mm-toolbar-sep {
+    width: 1px;
+    align-self: stretch;
+    margin: 2px 1px;
+    background: var(--border-primary);
 }
 
 /* jump-to-section — absolute top-right corner (equal top/right margin), shown on
