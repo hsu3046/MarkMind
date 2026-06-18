@@ -23,8 +23,9 @@ import {
     type Edge,
     type NodeProps,
 } from '@xyflow/react';
-import { Plus, Pencil, Trash2, SquareArrowOutUpRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, SquareArrowOutUpRight, ChevronUp, ChevronDown, IndentIncrease, IndentDecrease } from 'lucide-react';
 import type { MindmapNode } from '../types/mindmap';
+import type { ReorderOp } from '../lib/mindmapReorder';
 import { PALETTE } from '../lib/d3-layout';
 import '@xyflow/react/dist/style.css';
 import './MindmapCanvas.css';
@@ -42,6 +43,13 @@ export interface MindmapNodeData {
     mdLine?: number;
     // injected by MindmapView
     isEditing?: boolean;
+    isSelected?: boolean;
+    /** Reorder affordances — enabled per the markdown-bridge rules (see mindmapReorder). */
+    canUp?: boolean;
+    canDown?: boolean;
+    canIndent?: boolean;
+    canOutdent?: boolean;
+    onMove?: (op: ReorderOp) => void;
     onStartEdit?: () => void;
     onJumpToSource?: () => void;
     onUpdateLabel?: (value: string) => void;
@@ -103,7 +111,7 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
     }, [d]);
 
     return (
-        <div className={`mm-node${isRoot ? ' mm-root' : ''}`} style={{ borderColor: thinBorder, background, '--mm-stripe': stripe } as CSSProperties}>
+        <div className={`mm-node${isRoot ? ' mm-root' : ''}${d.isSelected ? ' mm-selected' : ''}`} style={{ borderColor: thinBorder, background, '--mm-stripe': stripe } as CSSProperties}>
             <Handle
                 id="left"
                 type={isRoot ? 'source' : d.side === 'left' ? 'source' : 'target'}
@@ -161,6 +169,23 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
             {/* hover toolbar */}
             {!d.isEditing && (
                 <div className="mm-toolbar nodrag" onClick={(e) => e.stopPropagation()}>
+                    {!isRoot && (
+                        <>
+                            <button title="위로 이동 (↑)" disabled={!d.canUp} onClick={(e) => { e.stopPropagation(); d.onMove?.('up'); }}>
+                                <ChevronUp size={12} />
+                            </button>
+                            <button title="아래로 이동 (↓)" disabled={!d.canDown} onClick={(e) => { e.stopPropagation(); d.onMove?.('down'); }}>
+                                <ChevronDown size={12} />
+                            </button>
+                            <button title="들여쓰기 (Tab)" disabled={!d.canIndent} onClick={(e) => { e.stopPropagation(); d.onMove?.('indent'); }}>
+                                <IndentIncrease size={12} />
+                            </button>
+                            <button title="내어쓰기 (⇧Tab)" disabled={!d.canOutdent} onClick={(e) => { e.stopPropagation(); d.onMove?.('outdent'); }}>
+                                <IndentDecrease size={12} />
+                            </button>
+                            <span className="mm-toolbar-sep" aria-hidden="true" />
+                        </>
+                    )}
                     <button title="이름 편집" onClick={(e) => { e.stopPropagation(); d.onStartEdit?.(); }}>
                         <Pencil size={12} />
                     </button>
@@ -186,9 +211,45 @@ interface MindmapCanvasProps {
     edges: Edge[];
     /** Re-fit the viewport when this key changes (e.g. document switch). */
     fitKey?: string;
+    /** Currently selected node id (for keyboard reorder + highlight). */
+    selectedId?: string | null;
+    /** True while a label is being edited — suppresses reorder keyboard. */
+    editing?: boolean;
+    onSelect?: (id: string | null) => void;
+    onReorder?: (id: string, op: ReorderOp) => void;
 }
 
-function MindmapCanvasInner({ nodes, edges, fitKey }: MindmapCanvasProps) {
+function MindmapCanvasInner({ nodes, edges, fitKey, selectedId, editing, onSelect, onReorder }: MindmapCanvasProps) {
+    // Refs so the once-bound document listener always sees fresh values.
+    const selRef = useRef(selectedId);
+    selRef.current = selectedId;
+    const editingRef = useRef(editing);
+    editingRef.current = editing;
+    const reorderRef = useRef(onReorder);
+    reorderRef.current = onReorder;
+
+    // Outliner keyboard: ↑/↓ reorder siblings, Tab/⇧Tab indent/outdent the
+    // selected node. Ignored while editing, when an input is focused, or with a
+    // modifier held (those belong to the app's global shortcuts).
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            const id = selRef.current;
+            if (!id || editingRef.current) return;
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+            const t = e.target as HTMLElement | null;
+            if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+            let op: ReorderOp | null = null;
+            if (e.key === 'ArrowUp') op = 'up';
+            else if (e.key === 'ArrowDown') op = 'down';
+            else if (e.key === 'Tab') op = e.shiftKey ? 'outdent' : 'indent';
+            if (!op) return;
+            e.preventDefault();
+            reorderRef.current?.(id, op);
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, []);
+
     return (
         <ReactFlow
             key={fitKey}
@@ -199,6 +260,8 @@ function MindmapCanvasInner({ nodes, edges, fitKey }: MindmapCanvasProps) {
             nodesDraggable={false}
             nodesConnectable={false}
             elementsSelectable
+            onNodeClick={(_, node) => onSelect?.(node.id)}
+            onPaneClick={() => onSelect?.(null)}
             fitView
             fitViewOptions={{ padding: 0.2, maxZoom: 1.2 }}
             minZoom={0.1}

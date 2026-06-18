@@ -15,6 +15,7 @@ import { Loader2, ListTree } from 'lucide-react';
 import { MindmapCanvas, type MindmapNodeData } from './MindmapCanvas';
 import { calculateD3Layout } from '../lib/d3-layout';
 import { documentToTree, treeToDocument } from '../lib/markdownTree';
+import { reorderNode, canReorder, type ReorderOp } from '../lib/mindmapReorder';
 import type { MindmapNode } from '../types/mindmap';
 import './MindmapView.css';
 
@@ -70,6 +71,7 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
     const [tree, setTree] = useState<MindmapNode>(initial.tree);
     const [frontmatter, setFrontmatter] = useState(initial.frontmatter);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
 
     // refs for stable handlers + self-echo suppression
     const treeRef = useRef(tree);
@@ -128,6 +130,16 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
         commitTree(clone);
     }, [commitTree]);
 
+    /** Outliner reorder (up/down/indent/outdent). Re-selects the moved node by
+     *  its new path-based id so highlight/keyboard stay on it after re-parse. */
+    const moveNode = useCallback((id: string, op: ReorderOp) => {
+        const res = reorderNode(treeRef.current, id, op);
+        if (!res) return;
+        setEditingId(null);
+        const newTree = commitTree(res.tree);
+        if (findNodeById(newTree, res.newId)) setSelectedId(res.newId);
+    }, [commitTree]);
+
     const layout = useMemo(() => calculateD3Layout(tree, NOOP), [tree]);
 
     const nodes: Node[] = useMemo(() =>
@@ -138,6 +150,12 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
                 data: {
                     ...base,
                     isEditing: n.id === editingId,
+                    isSelected: n.id === selectedId,
+                    canUp: canReorder(tree, n.id, 'up'),
+                    canDown: canReorder(tree, n.id, 'down'),
+                    canIndent: canReorder(tree, n.id, 'indent'),
+                    canOutdent: canReorder(tree, n.id, 'outdent'),
+                    onMove: (op: ReorderOp) => moveNode(n.id, op),
                     onStartEdit: () => setEditingId(n.id),
                     onUpdateLabel: (v: string) => updateLabel(n.id, v),
                     onCancelEdit: () => setEditingId(null),
@@ -149,7 +167,7 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
                 } satisfies MindmapNodeData,
             };
         }),
-        [layout, editingId, updateLabel, addChild, deleteNode, onJumpToSource],
+        [layout, tree, editingId, selectedId, updateLabel, addChild, deleteNode, moveNode, onJumpToSource],
     );
 
     return (
@@ -174,7 +192,15 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
                 </div>
             )}
             <div className="mindmap-canvas-wrap">
-                <MindmapCanvas nodes={nodes} edges={layout.edges} fitKey={stem} />
+                <MindmapCanvas
+                    nodes={nodes}
+                    edges={layout.edges}
+                    fitKey={stem}
+                    selectedId={selectedId}
+                    editing={editingId !== null}
+                    onSelect={setSelectedId}
+                    onReorder={moveNode}
+                />
             </div>
         </div>
     );
