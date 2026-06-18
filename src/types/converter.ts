@@ -2,6 +2,8 @@
  * doc-converter 통합 타입 정의 — Rust src-tauri/src/converters/ 와 일치.
  */
 
+import type { AICompany, AIAuthMode } from '../services/aiModelConfig';
+
 export type DetailLevel = 'concise' | 'standard' | 'detailed' | 'verbatim';
 export type NotesProvider = 'claude' | 'gemini';
 export type TemplateSource = 'builtin' | 'user';
@@ -83,9 +85,10 @@ export interface NotesJobOptions {
     template: string;
     source: string;
     detail?: DetailLevel;
-    provider?: NotesProvider;
-    /** Claude provider 사용 시 인증 소스 (기본 api_key). Gemini 에는 무관. */
-    claudeAuth?: ClaudeAuthMode;
+    /** 전역 AI 모델 설정 — 회사 / 인증 / 모델. */
+    company?: AICompany;
+    auth?: AIAuthMode;
+    model?: string;
     outputDir?: string;
 }
 

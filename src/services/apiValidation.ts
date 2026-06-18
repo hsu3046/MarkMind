@@ -96,6 +96,10 @@ export function validateGoogleCredsFormat(clientId: string, clientSecret: string
 // ─── 검증 상태 캐시 (localStorage) ──────────────────────────────────────────────
 
 export function setValidationStatus(key: ValidationKey, result: ValidationResult): void {
+    // 일시 실패(error: 네트워크/rate limit 등)는 "키가 틀린 것"이 아니라 "확인을 못 한 것".
+    // 이미 valid 인 키를 error 로 덮어쓰면 멀쩡한 키가 "확인 필요"로 뒤집힌다 → 보존.
+    // (invalid: 400/401/403 는 진짜 키 문제이므로 그대로 덮어쓴다.)
+    if (result === 'error' && getValidationStatus(key) === 'valid') return;
     localStorage.setItem(`${STORAGE_PREFIX}${key}`, result);
 }
 

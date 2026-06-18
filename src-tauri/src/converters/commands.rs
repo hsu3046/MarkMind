@@ -149,11 +149,13 @@ pub async fn ai_generate_claude(
     prompt: String,
     claude_auth: crate::subscription_auth::ClaudeAuthMode,
     max_tokens: Option<u32>,
+    model: Option<String>,
 ) -> Result<String, String> {
     use super::keychain::{get_key, Provider};
     use super::llm::anthropic::{self, ClaudeAuth, ClaudeOptions};
     use crate::subscription_auth::ClaudeAuthMode;
 
+    let model_id = model.as_deref().unwrap_or(super::MODEL_NOTES_CLAUDE);
     let opts = ClaudeOptions {
         max_output_tokens: Some(max_tokens.unwrap_or(16000)),
         system,
@@ -162,13 +164,8 @@ pub async fn ai_generate_claude(
     let result = match claude_auth {
         ClaudeAuthMode::Subscription => {
             let token = crate::subscription_auth::claude_access_token().await?;
-            anthropic::generate_text(
-                ClaudeAuth::Subscription(&token),
-                super::MODEL_NOTES_CLAUDE,
-                &prompt,
-                Some(opts),
-            )
-            .await
+            anthropic::generate_text(ClaudeAuth::Subscription(&token), model_id, &prompt, Some(opts))
+                .await
         }
         ClaudeAuthMode::ApiKey => {
             let key = get_key(Provider::Claude)
@@ -177,13 +174,7 @@ pub async fn ai_generate_claude(
                     "Claude API 키가 없습니다. Settings 에서 등록하거나 구독 로그인을 사용하세요."
                         .to_string()
                 })?;
-            anthropic::generate_text(
-                ClaudeAuth::ApiKey(&key),
-                super::MODEL_NOTES_CLAUDE,
-                &prompt,
-                Some(opts),
-            )
-            .await
+            anthropic::generate_text(ClaudeAuth::ApiKey(&key), model_id, &prompt, Some(opts)).await
         }
     };
     result.map(|r| r.text).map_err(err_to_string)
@@ -194,19 +185,44 @@ pub async fn ai_generate_claude(
 // 본인 Codex CLI 로그인 토큰을 재사용해 ChatGPT 구독으로 호출(비공개 Responses API).
 // 미검증 경로 — API 키 fallback 은 호출부(프론트)에서 모델 전환으로 처리한다.
 #[tauri::command]
-pub async fn ai_generate_codex(system: Option<String>, prompt: String) -> Result<String, String> {
+pub async fn ai_generate_codex(
+    system: Option<String>,
+    prompt: String,
+    model: Option<String>,
+) -> Result<String, String> {
     use super::llm::openai_codex;
     let tokens = crate::subscription_auth::read_codex_tokens()?;
+    let model_id = model.as_deref().unwrap_or(super::MODEL_CODEX);
     openai_codex::generate_text(
         &tokens.access_token,
         tokens.account_id.as_deref(),
-        super::MODEL_CODEX,
+        model_id,
         system.as_deref(),
         &prompt,
     )
     .await
     .map(|r| r.text)
     .map_err(err_to_string)
+}
+
+// ─── OpenAI API 키 텍스트 생성 (구독 codex 와 별개 경로) ─────────────────────
+//
+// 표준 chat completions(api.openai.com). React AI 모드가 OpenAI + API 키 선택 시 사용.
+#[tauri::command]
+pub async fn ai_generate_openai(
+    system: Option<String>,
+    prompt: String,
+    model: String,
+) -> Result<String, String> {
+    use super::keychain::{get_key, Provider};
+    use super::llm::openai_api;
+    let key = get_key(Provider::Openai)
+        .map_err(err_to_string)?
+        .ok_or_else(|| "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
+    openai_api::generate_text(&key, &model, system.as_deref(), &prompt)
+        .await
+        .map(|r| r.text)
+        .map_err(err_to_string)
 }
 
 // ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────

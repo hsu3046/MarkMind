@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom';
 import { AIMode, DiffChunk } from './types/ai';
 import { Editor, EditorHandle } from './components/Editor';
 import { McpProposalView } from './components/McpProposalView';
-import { generateDiff } from './services/aiService';
+import { generateDiff, isAuthError } from './services/aiService';
+import { getAIModelSelection } from './services/aiModelConfig';
+import { setValidationStatus } from './services/apiValidation';
 import { Preview, type PreviewHandle } from './components/Preview';
 import { MindmapView } from './components/MindmapView';
 import { VaultGraphView } from './components/VaultGraphView';
@@ -694,16 +696,22 @@ function App() {
       ai.setIsLoading(true);
       try {
         // 회의록 백엔드는 gemini/claude 만 지원 → 그 외(openai/pyannoteai)는 Claude 폴백
-        const provider = ai.selectedModel === 'gemini' ? 'gemini' : 'claude';
+        const sel = getAIModelSelection();
         const result = await converter.runNotes({
           transcript: runContent,
           template: ai.notesTemplate,
           source: fileName || 'document.md',
-          provider,
-          claudeAuth: provider === 'claude' ? ai.claudeAuthMode : undefined,
+          company: sel.company,
+          auth: sel.auth,
+          model: sel.model,
         });
         if (result) ai.setNotesResult(result);
       } catch (err) {
+        // 실제 사용 중 인증 실패면 설정 검증 상태 갱신(정상→확인 필요). API 키 인증일 때만.
+        const failSel = getAIModelSelection();
+        if (failSel.auth === 'api_key' && isAuthError(err)) {
+          setValidationStatus(failSel.company, 'invalid');
+        }
         ai.setError(err instanceof Error ? err.message : '회의록 생성 실패');
       } finally {
         ai.setIsLoading(false);
@@ -1766,10 +1774,6 @@ function App() {
           streamingText={ai.streamingText}
           apiKeySet={ai.apiKeySet}
           content={content}
-          selectedModel={ai.selectedModel}
-          onSelectedModelChange={ai.setSelectedModel}
-          claudeAuthMode={ai.claudeAuthMode}
-          onClaudeAuthChange={ai.setClaudeAuthMode}
           onModeChange={ai.setMode}
           onLanguageChange={ai.setLanguage}
           notesTemplate={ai.notesTemplate}

@@ -15,6 +15,7 @@
 //! - Claude: keychain 토큰 읽기 + 만료 시 refresh + 유효 access token 반환 (호출에 사용).
 //! - Codex: 로그인 여부 감지만 (실제 호출은 후속 Phase).
 
+use base64::Engine;
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -26,6 +27,16 @@ pub enum ClaudeAuthMode {
     #[default]
     ApiKey,
     Subscription,
+}
+
+/// AI 회사(company) — 전역 모델 설정. JS `aiModelConfig.AICompany` 와 값 일치.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum AICompany {
+    #[default]
+    Gemini,
+    Claude,
+    Openai,
 }
 
 // ─── Claude Code (Anthropic) ────────────────────────────────────────────────
@@ -50,6 +61,9 @@ struct ClaudeOauth {
     /// unix epoch milliseconds.
     #[serde(rename = "expiresAt", default, skip_serializing_if = "Option::is_none")]
     expires_at: Option<u64>,
+    /// 구독 종류 — "max" / "pro" 등 (플랜 표시용, write-back 보존).
+    #[serde(rename = "subscriptionType", default, skip_serializing_if = "Option::is_none")]
+    subscription_type: Option<String>,
     #[serde(flatten)]
     extra: serde_json::Map<String, serde_json::Value>,
 }
@@ -225,17 +239,77 @@ pub fn codex_logged_in() -> bool {
 
 // ─── Tauri command ──────────────────────────────────────────────────────────
 
-/// 구독 로그인 감지 결과 (UI 배지용 — 토큰 값은 절대 포함하지 않음).
+/// 첫 글자만 대문자화 ("max" → "Max", "plus" → "Plus").
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// Claude 플랜 라벨 — keychain 의 subscriptionType ("max" → "Max"). 없으면 None.
+fn claude_plan_label(creds: &ClaudeCreds) -> Option<String> {
+    creds
+        .claude_ai_oauth
+        .subscription_type
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(capitalize)
+}
+
+/// JWT(헤더.페이로드.서명) 의 payload(base64url) 를 JSON 으로 디코드.
+fn decode_jwt_payload(jwt: &str) -> Option<serde_json::Value> {
+    let payload = jwt.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// Codex 플랜 라벨 — id_token JWT 의 chatgpt_plan_type ("plus" → "Plus"). 없으면 None.
+fn codex_plan_label() -> Option<String> {
+    let path = codex_auth_path()?;
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let id_token = v.get("tokens")?.get("id_token")?.as_str()?;
+    let payload = decode_jwt_payload(id_token)?;
+    let plan = payload
+        .get("https://api.openai.com/auth")?
+        .get("chatgpt_plan_type")?
+        .as_str()?;
+    if plan.is_empty() {
+        None
+    } else {
+        Some(capitalize(plan))
+    }
+}
+
+/// 구독 로그인 감지 결과 (UI 배지용 — 토큰 값은 절대 포함하지 않음, 플랜명만).
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubscriptionStatus {
     pub claude: bool,
     pub codex: bool,
+    /// Claude 플랜명 ("Max" 등). 미연결/미상이면 None.
+    pub claude_plan: Option<String>,
+    /// ChatGPT 플랜명 ("Plus" 등). 미연결/미상이면 None.
+    pub codex_plan: Option<String>,
 }
 
 #[tauri::command]
 pub fn detect_subscription_logins() -> SubscriptionStatus {
+    let claude_creds = read_claude_creds();
+    let claude = claude_creds
+        .as_ref()
+        .map(|c| !c.claude_ai_oauth.access_token.is_empty())
+        .unwrap_or(false);
+    let claude_plan = claude_creds.as_ref().and_then(claude_plan_label);
+    let codex = codex_logged_in();
     SubscriptionStatus {
-        claude: claude_logged_in(),
-        codex: codex_logged_in(),
+        claude,
+        codex,
+        claude_plan: if claude { claude_plan } else { None },
+        codex_plan: if codex { codex_plan_label() } else { None },
     }
 }

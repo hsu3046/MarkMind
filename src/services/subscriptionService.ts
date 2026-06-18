@@ -14,6 +14,10 @@ export interface SubscriptionStatus {
     claude: boolean;
     /** Codex(~/.codex/auth.json) 로그인 감지 여부. */
     codex: boolean;
+    /** Claude 플랜명 ("Max" 등). 토큰에서 추출, 없으면 null. */
+    claudePlan?: string | null;
+    /** ChatGPT 플랜명 ("Plus" 등). id_token 에서 추출, 없으면 null. */
+    codexPlan?: string | null;
 }
 
 /** 로컬 CLI 로그인 감지. 비-Tauri / 실패 시 모두 false. */
