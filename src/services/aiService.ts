@@ -24,8 +24,23 @@ export async function removeApiKey(): Promise<void> {
     await removeKey('gemini');
 }
 
+/** 현재 선택된 기본 AI 회사의 키 보유 여부(동기). 구독 가용성은 isTextAIUsable 로 별도 확인. */
 export function hasApiKey(): boolean {
-    return hasKey('gemini');
+    return hasKey(getAIModelSelection().company);
+}
+
+/**
+ * 현재 기본 AI 선택이 실제 사용 가능한지 — API 키 OR 구독 연동(async). AIPanel keyGate 판정용.
+ * (예: 키 없이 Claude/ChatGPT 구독만 연동돼도 사용 가능 → keyGate 풀림.)
+ */
+export async function isTextAIUsable(): Promise<boolean> {
+    const sel = getAIModelSelection();
+    if (hasKey(sel.company)) return true;
+    if (AI_CATALOG[sel.company]?.auths.includes('subscription')) {
+        const sub = await detectSubscriptionLogins();
+        return sel.company === 'claude' ? sub.claude : sel.company === 'openai' ? sub.codex : false;
+    }
+    return false;
 }
 
 // ─── System Prompts ───────────────────────────────────────
