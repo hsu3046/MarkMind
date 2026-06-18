@@ -181,6 +181,34 @@ body {
   background: var(--bg-toolbar);
   cursor: default;
   user-select: none;
+  /* 파일명을 신호등 줄 중앙에 배치 (좌/우 빈 영역은 그대로 드래그 가능) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 타이틀바 파일명 슬롯 — 클릭=이름변경이 되도록 드래그 제외(no-drag).
+   내용 폭만 차지해 양옆 빈 공간은 창 드래그 영역으로 남는다. */
+.titlebar-filename {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  max-width: 72%;
+  /* 파일명 가변 폭 — 창(뷰포트) 폭에 비례(vw), min/max 로 클램프. 읽기·편집 공용. */
+  --titlebar-name-w: clamp(240px, 42vw, 760px);
+}
+
+/* 편집 입력: 폭을 가변값으로 채움 (base 의 max-width:300px 해제). */
+.titlebar-filename .toolbar-filename-input {
+  width: var(--titlebar-name-w);
+  max-width: none;
+}
+
+/* 읽기(편집 전) 표시: 동일 로직의 상한 — 짧은 이름은 내용 폭, 긴 이름은
+   창 폭에 비례해 늘어난 뒤 말줄임(...). */
+.titlebar-filename .toolbar-filename {
+  max-width: var(--titlebar-name-w);
 }
 
 /* ---------- Toolbar ---------- */
@@ -428,6 +456,68 @@ body {
   animation: fadeIn 100ms ease-out;
 }
 
+/* 가운데 현재 View 인디케이터 (.toolbar 는 드래그 영역이라 no-drag 필수) */
+.toolbar-view-indicator {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.toolbar-view-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.toolbar-view-current:hover,
+.toolbar-view-current.active {
+  color: var(--text-primary);
+}
+
+.toolbar-view-caret {
+  opacity: 0.55;
+}
+
+/* 가운데 트리거 기준으로 드롭다운 중앙 정렬 (.toolbar-dropdown-menu 의 left:0 override) */
+.toolbar-view-menu {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* History(최근 파일) 드롭다운 — 폭 넓게, 항목은 [아이콘 | 이름+날짜] */
+.toolbar-recent-menu {
+  min-width: 340px;
+  max-width: 480px;
+}
+
+.dropdown-recent-item {
+  align-items: flex-start;
+}
+
+/* 시계 아이콘 크기 고정 (긴 파일명이 와도 안 찌그러지게) */
+.dropdown-recent-item > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.dropdown-recent-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+}
+
 .dropdown-item {
   display: flex;
   align-items: center;
@@ -451,6 +541,12 @@ body {
 .dropdown-item:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 현재 선택된 뷰모드(View 메뉴) — accent 색으로 강조 */
+.dropdown-item.active {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .dropdown-icon-img {
@@ -514,10 +610,15 @@ body {
   font-size: 13px;
   color: var(--text-primary);
   font-weight: 500;
+  /* 긴 파일명은 한 줄로 말줄임(글자수 제한). 전체 이름은 hover title 로 확인. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 .dropdown-submenu-path {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
@@ -548,13 +649,44 @@ body {
 /* ---------- Search Bar ---------- */
 .search-bar {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   padding: 6px 16px;
   background: var(--bg-toolbar);
   border-bottom: 1px solid var(--border-primary);
   flex-shrink: 0;
   animation: fadeIn 150ms ease-out;
+}
+
+.search-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-replace-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.search-replace-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.search-replace-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .search-input {
@@ -675,7 +807,23 @@ body {
   background: rgba(255, 200, 0, 0.35);
   border-radius: 2px;
 }
-.search-result-current {
+.rich-search-highlight-current {
+  background: rgba(255, 140, 0, 0.7);
+  outline: 1.5px solid rgba(255, 140, 0, 0.9);
+}
+
+/* split 오른쪽 정적 프리뷰 검색 하이라이트 — CSS Custom Highlight API(DOM 무변경).
+   ::highlight() 는 색/배경/밑줄만 지원(border-radius·outline 불가). */
+::highlight(mm-preview-search) {
+  background-color: rgba(255, 200, 0, 0.45);
+}
+
+/* CodeMirror 검색 매치 — 통일 SearchBar 가 setSearchQuery 로 구동(네이티브 패널 없음) */
+.cm-searchMatch {
+  background: rgba(255, 200, 0, 0.35);
+  border-radius: 2px;
+}
+.cm-searchMatch-selected {
   background: rgba(255, 140, 0, 0.7);
   outline: 1.5px solid rgba(255, 140, 0, 0.9);
 }
@@ -1209,15 +1357,12 @@ body {
 
 /* 검색창 닫기 X 버튼 — 크고 명확하게 */
 .search-close-btn {
-  width: 32px;
-  height: 32px;
-  margin-left: 6px;
+  width: 24px;
+  height: 24px;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
   color: var(--text-secondary);
-  font-size: 16px;
-  font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -2674,6 +2819,9 @@ code.hljs {
 }
 
 .tutorial-overlay-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-primary);

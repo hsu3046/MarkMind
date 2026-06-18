@@ -9,8 +9,9 @@ import { setValidationStatus } from './services/apiValidation';
 import { Preview, type PreviewHandle } from './components/Preview';
 import { MindmapView } from './components/MindmapView';
 import { FlowchartView } from './components/FlowchartView';
+import { SearchBar } from './components/SearchBar';
 import { GanttView } from './components/GanttView';
-import { Toolbar, ViewMode } from './components/Toolbar';
+import { Toolbar, EditableFileName, ViewMode } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { OutlinePanel } from './components/OutlinePanel';
 import { RecentFilesPanel } from './components/RecentFilesPanel';
@@ -32,6 +33,7 @@ import { useAI } from './hooks/useAI';
 import { useAuth } from './hooks/useAuth';
 import { useConverter } from './hooks/useConverter';
 import { isTauri } from './services/platform';
+import { useNativeMenu } from './hooks/useNativeMenu';
 import { getCallbackPath } from './services/knowaiAuth';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
 import { Link, Unlink, BookOpen, X as IconX, Sparkles, Loader2 } from 'lucide-react';
@@ -162,10 +164,10 @@ function App() {
   const [recentPanelVisible, setRecentPanelVisible] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchReplace, setSearchReplace] = useState('');
+  const [searchShowReplace, setSearchShowReplace] = useState(false);
   const [searchMatchCount, setSearchMatchCount] = useState(0);
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
-  const searchMatchesRef = useRef<HTMLElement[]>([]);
-  const searchCurrentIndexRef = useRef(-1);
   const isDragging = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   // viewMode 전환 시 scroll 위치 보존 — Markdown(CodeMirror) ↔ Rich Text(.preview-wrapper) ↔ Split
@@ -837,11 +839,15 @@ function App() {
 
   // Re-attach scroll sync + close search on view mode change
   useEffect(() => {
-    // Close preview search bar
+    // 뷰 전환 시 검색 닫기 + 양 엔진 상태 해제
     setSearchVisible(false);
     setSearchQuery('');
-    // Close CodeMirror search panel
-    editorRef.current?.closeSearch();
+    setSearchReplace('');
+    setSearchShowReplace(false);
+    setSearchMatchCount(0);
+    setSearchCurrentIndex(-1);
+    editorRef.current?.searchClear();
+    window.dispatchEvent(new Event('markmind:rich-search-clear'));
 
     if (viewMode === 'split') {
       reattach();
@@ -929,165 +935,113 @@ function App() {
   }, []);
 
   // Search toggle
-  const toggleSearch = useCallback(() => {
-    // In editor or split mode, toggle CodeMirror's built-in search panel
-    if (viewMode !== 'preview') {
-      editorRef.current?.toggleSearch();
-      return;
-    }
-    // In preview mode, show the preview search bar
-    setSearchVisible((prev) => {
-      const next = !prev;
-      if (next) {
-        setTimeout(() => searchInputRef.current?.focus(), 100);
-      } else {
-        setSearchQuery('');
-        clearHighlights();
-        // Rich Text 검색 highlight 도 같이 clear
-        window.dispatchEvent(new Event('markmind:rich-search-clear'));
-      }
-      return next;
-    });
-  }, [viewMode]);
-
-  // Preview search: scroll a match element into view precisely
-  const scrollToMatch = useCallback((el: HTMLElement) => {
-    const wrapper = document.querySelector('.preview-wrapper') as HTMLElement | null;
-    if (!wrapper) return;
-    const wrapperRect = wrapper.getBoundingClientRect();
-    const elRect = el.getBoundingClientRect();
-    const relativeTop = elRect.top - wrapperRect.top + wrapper.scrollTop;
-    const targetScrollTop = relativeTop - wrapperRect.height / 2 + elRect.height / 2;
-    wrapper.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+  // ─── 통일 검색 (Markdown/CodeMirror + Rich Text/Tiptap 공용 SearchBar) ───
+  // 엔진 라우팅: 편집/split → editorRef 프로그램 검색(동기 {count,index}), 프리뷰 →
+  // Tiptap window 이벤트(카운트는 markmind:rich-search-count 로 비동기 회신).
+  const applySearchInfo = useCallback((info?: { count: number; index: number } | null) => {
+    if (!info) return;
+    setSearchMatchCount(info.count);
+    setSearchCurrentIndex(info.count > 0 ? info.index : -1);
   }, []);
 
-  // Navigate to a specific match index and update active highlight
-  const goToMatchIndex = useCallback((index: number, matches: HTMLElement[]) => {
-    if (matches.length === 0) return;
-    // Remove active from previous
-    const prevEl = matches[searchCurrentIndexRef.current];
-    if (prevEl) prevEl.classList.remove('search-highlight-active');
-    // Apply active to new
-    const nextEl = matches[index];
-    if (nextEl) {
-      nextEl.classList.add('search-highlight-active');
-      scrollToMatch(nextEl);
-    }
-    searchCurrentIndexRef.current = index;
-    setSearchCurrentIndex(index);
-  }, [scrollToMatch]);
-
-  // Navigate by delta (+1 forward, -1 backward), wrapping around
-  const navigateMatch = useCallback((delta: number) => {
-    // Rich Text 모드 — TipTap search ext 명령으로 위임
-    if (viewMode === 'preview') {
-      const ev = delta > 0 ? 'markmind:rich-search-next' : 'markmind:rich-search-prev';
-      window.dispatchEvent(new Event(ev));
-      // current index UI 도 갱신 — count 가 0보다 크면 modulo
-      setSearchCurrentIndex((cur) => {
-        const total = searchMatchCount;
-        if (total === 0) return -1;
-        return (cur + delta + total) % total;
-      });
-      return;
-    }
-    const matches = searchMatchesRef.current;
-    if (matches.length === 0) return;
-    const next = (searchCurrentIndexRef.current + delta + matches.length) % matches.length;
-    goToMatchIndex(next, matches);
-  }, [goToMatchIndex, viewMode, searchMatchCount]);
-
-  // Highlight all matches in the preview DOM
-  const highlightMatches = useCallback((query: string) => {
-    // Clear previous
-    const oldMarks = document.querySelectorAll('.search-highlight');
-    oldMarks.forEach((mark) => {
-      const parent = mark.parentNode;
-      if (parent) {
-        parent.replaceChild(document.createTextNode(mark.textContent || ''), mark);
-        parent.normalize();
-      }
-    });
-    searchMatchesRef.current = [];
-    searchCurrentIndexRef.current = -1;
-    setSearchMatchCount(0);
-    setSearchCurrentIndex(-1);
-
-    if (!query.trim()) return;
-
-    const previewEl = document.querySelector('.preview-wrapper .markdown-body');
-    if (!previewEl) return;
-
-    const walker = document.createTreeWalker(previewEl, NodeFilter.SHOW_TEXT);
-    const found: { node: Text; index: number }[] = [];
-    const lowerQuery = query.toLowerCase();
-
-    let node;
+  // split 의 오른쪽 프리뷰(정적 react-markdown HTML)는 Tiptap 이 아니라 검색 명령이 안 닿는다.
+  // DOM 에 <mark> 를 꽂으면 react-markdown 재조정과 충돌하므로, DOM 무변경인 CSS Custom
+  // Highlight API 로 매치 range 만 등록한다(미지원 webview 면 graceful 패스).
+  const PREVIEW_HL = 'mm-preview-search';
+  const clearPreviewHighlight = useCallback(() => {
+    (CSS as unknown as { highlights?: Map<string, unknown> }).highlights?.delete(PREVIEW_HL);
+  }, []);
+  const highlightPreviewDom = useCallback((query: string) => {
+    const reg = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+    const HighlightCtor = (window as unknown as { Highlight?: new (...r: Range[]) => unknown }).Highlight;
+    if (!reg || !HighlightCtor) return; // 미지원 → 패스
+    const root = document.querySelector('.preview-wrapper .markdown-body');
+    if (!root || !query) { reg.delete(PREVIEW_HL); return; }
+    const ranges: Range[] = [];
+    const needle = query.toLowerCase();
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node: Node | null;
     while ((node = walker.nextNode())) {
-      const text = (node as Text).textContent || '';
-      let idx = text.toLowerCase().indexOf(lowerQuery);
+      const hay = (node.textContent ?? '').toLowerCase();
+      let idx = hay.indexOf(needle);
       while (idx !== -1) {
-        found.push({ node: node as Text, index: idx });
-        idx = text.toLowerCase().indexOf(lowerQuery, idx + 1);
+        const r = document.createRange();
+        r.setStart(node, idx);
+        r.setEnd(node, idx + query.length);
+        ranges.push(r);
+        idx = hay.indexOf(needle, idx + needle.length);
       }
     }
-
-    // Build marks in reverse order to preserve text node indices
-    const marks: HTMLElement[] = [];
-    for (let i = found.length - 1; i >= 0; i--) {
-      const { node: textNode, index } = found[i];
-      try {
-        const range = document.createRange();
-        range.setStart(textNode, index);
-        range.setEnd(textNode, index + query.length);
-        const mark = document.createElement('mark');
-        mark.className = 'search-highlight';
-        range.surroundContents(mark);
-        marks.unshift(mark);
-      } catch {
-        // Skip if range operation fails (e.g., across element boundaries)
-      }
-    }
-
-    searchMatchesRef.current = marks;
-    setSearchMatchCount(marks.length);
-
-    if (marks.length > 0) {
-      goToMatchIndex(0, marks);
-    }
-  }, [goToMatchIndex]);
-
-  const clearHighlights = useCallback(() => {
-    const marks = document.querySelectorAll('.search-highlight');
-    marks.forEach((mark) => {
-      const parent = mark.parentNode;
-      if (parent) {
-        parent.replaceChild(document.createTextNode(mark.textContent || ''), mark);
-        parent.normalize();
-      }
-    });
-    searchMatchesRef.current = [];
-    searchCurrentIndexRef.current = -1;
-    setSearchMatchCount(0);
-    setSearchCurrentIndex(-1);
+    if (ranges.length) reg.set(PREVIEW_HL, new HighlightCtor(...ranges));
+    else reg.delete(PREVIEW_HL);
   }, []);
 
-  useEffect(() => {
+  const runSearch = useCallback((query: string, replace: string) => {
     if (viewMode === 'preview') {
-      // Rich Text 모드 — DOM surroundContents 대신 RichEditor 의 TipTap search 위임
-      // (TipTap ProseMirror tree 와 직접 DOM 조작이 충돌하면 editor 깨짐)
-      window.dispatchEvent(
-        new CustomEvent('markmind:rich-search', { detail: { query: searchQuery } }),
-      );
-      return;
-    }
-    if (searchQuery) {
-      const timer = setTimeout(() => highlightMatches(searchQuery), 200);
-      return () => clearTimeout(timer);
+      window.dispatchEvent(new CustomEvent('markmind:rich-search', { detail: { query } }));
     } else {
-      clearHighlights();
+      applySearchInfo(editorRef.current?.searchSetQuery(query, replace));
+      // split 의 오른쪽(정적 프리뷰) 하이라이트는 아래 effect 가 CSS Highlight API 로 처리.
     }
-  }, [searchQuery, content, highlightMatches, clearHighlights, viewMode]);
+  }, [viewMode, applySearchInfo]);
+
+  const navigateMatch = useCallback((delta: number) => {
+    if (viewMode === 'preview') {
+      window.dispatchEvent(new Event(delta > 0 ? 'markmind:rich-search-next' : 'markmind:rich-search-prev'));
+    } else {
+      applySearchInfo(delta > 0 ? editorRef.current?.searchNext() : editorRef.current?.searchPrev());
+    }
+  }, [viewMode, applySearchInfo]);
+
+  const replaceMatch = useCallback((all: boolean) => {
+    if (viewMode === 'preview') {
+      const ev = all ? 'markmind:rich-search-replace-all' : 'markmind:rich-search-replace';
+      window.dispatchEvent(new CustomEvent(ev, { detail: { replace: searchReplace } }));
+    } else {
+      applySearchInfo(all
+        ? editorRef.current?.searchReplaceAll(searchReplace)
+        : editorRef.current?.searchReplaceCurrent(searchReplace));
+      // split: 소스 변경 → content 갱신 → 아래 effect 가 프리뷰 하이라이트 재계산.
+    }
+  }, [viewMode, applySearchInfo, searchReplace]);
+
+  const closeSearch = useCallback(() => {
+    // 양 엔진 모두 해제(미마운트 쪽은 no-op) — split 의 오른쪽 하이라이트까지 확실히 정리.
+    editorRef.current?.searchClear();
+    window.dispatchEvent(new Event('markmind:rich-search-clear'));
+    clearPreviewHighlight();
+    setSearchVisible(false);
+    setSearchQuery('');
+    setSearchReplace('');
+    setSearchShowReplace(false);
+    setSearchMatchCount(0);
+    setSearchCurrentIndex(-1);
+  }, [clearPreviewHighlight]);
+
+  const toggleSearch = useCallback(() => {
+    if (searchVisible) {
+      closeSearch();
+    } else {
+      setSearchVisible(true);
+      setTimeout(() => searchInputRef.current?.focus(), 80);
+    }
+  }, [searchVisible, closeSearch]);
+
+  // 검색어 변경 → 활성 엔진에 적용(바가 열려있을 때만). replace 는 결과에 무관해 deps 제외.
+  useEffect(() => {
+    if (!searchVisible) return;
+    runSearch(searchQuery, searchReplace);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, searchVisible, viewMode]);
+
+  // split 오른쪽(정적 프리뷰) 하이라이트 — 검색어/내용 변경·재렌더 후 CSS Highlight 재계산.
+  useEffect(() => {
+    if (viewMode === 'split' && searchVisible && searchQuery) {
+      const t = setTimeout(() => highlightPreviewDom(searchQuery), 40);
+      return () => clearTimeout(t);
+    }
+    clearPreviewHighlight();
+  }, [viewMode, searchVisible, searchQuery, content, highlightPreviewDom, clearPreviewHighlight]);
 
   // Rich Text search 결과 count + 현재 index 회신 listen
   useEffect(() => {
@@ -1191,7 +1145,7 @@ function App() {
             newFile();
             break;
           case 'f':
-            if (viewMode === 'preview') {
+            if (viewMode === 'editor' || viewMode === 'split' || viewMode === 'preview') {
               e.preventDefault();
               toggleSearch();
             }
@@ -1203,12 +1157,12 @@ function App() {
             break;
           case '2':
             e.preventDefault();
-            setViewMode('split');
+            setViewMode('preview');
             setReadingMode(false);
             break;
           case '3':
             e.preventDefault();
-            setViewMode('preview');
+            setViewMode('split');
             setReadingMode(false);
             break;
           case '4':
@@ -1333,6 +1287,25 @@ function App() {
     );
   }
 
+  // 네이티브 macOS 메뉴바에 File/View 미러링(Tauri 한정) — 툴바 dropdown 은 숨김.
+  // (조기 return 보다 위에 둬 hooks 호출 순서 보장.)
+  useNativeMenu({
+    enabled: isTauri(),
+    viewMode,
+    recentFiles,
+    onNewFile: newFile,
+    onOpenFile: handleOpenFile,
+    onSaveFile: saveFile,
+    onSaveFileAs: saveFileAs,
+    onExportPdf: handleExportPdf,
+    onShowSettings: () => setSettingsVisible(true),
+    onShowTutorial: () => setTutorialVisible(true),
+    onOpenFromDrive: () => setDriveBrowserMode('open'),
+    onSaveToDrive: () => setDriveBrowserMode('save'),
+    onOpenRecent: handleOpenRecentByPath,
+    onViewModeChange: setViewMode,
+  });
+
   // Auth callback route — show only the callback handler
   if (isAuthCallback) {
     return (
@@ -1405,10 +1378,14 @@ function App() {
             }
           });
         }}
-      />
+      >
+        {/* 파일명을 타이틀바(신호등 줄) 중앙에 표시 — 클릭 시 이름변경.
+            no-drag + stopPropagation 으로 클릭은 편집, 빈 영역은 창 드래그. */}
+        <div className="titlebar-filename" onMouseDown={(e) => e.stopPropagation()}>
+          <EditableFileName fileName={fileName} isDirty={isDirty} onRename={renameFile} />
+        </div>
+      </div>
       <Toolbar
-        fileName={fileName}
-        isDirty={isDirty}
         viewMode={viewMode}
         fontSize={fontSize}
         outlineVisible={outlineVisible}
@@ -1437,56 +1414,27 @@ function App() {
         onToggleAI={handleToggleAI}
         showRecent={isTauri()}
         aiPanelVisible={ai.panelVisible}
-        onRename={renameFile}
+        nativeMenu={isTauri()}
       />
 
-      {/* Search bar */}
+      {/* 통일 검색+바꾸기 바 (Markdown/Rich Text 공용) */}
       {searchVisible && (
-        <div className="search-bar">
-          <input
-            ref={searchInputRef}
-            type="text"
-            className="search-input"
-            placeholder="Search in preview…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') { toggleSearch(); return; }
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                if (e.shiftKey) navigateMatch(-1);
-                else navigateMatch(1);
-              }
-            }}
-          />
-          {searchMatchCount > 0 ? (
-            <>
-              <span className="search-count">
-                {searchCurrentIndex + 1} / {searchMatchCount}
-              </span>
-              <button
-                className="search-nav-btn"
-                onClick={() => navigateMatch(-1)}
-                title="Previous match (Shift+Enter)"
-              >▲</button>
-              <button
-                className="search-nav-btn"
-                onClick={() => navigateMatch(1)}
-                title="Next match (Enter)"
-              >▼</button>
-            </>
-          ) : searchQuery ? (
-            <span className="search-count search-count-empty">No results</span>
-          ) : null}
-          <button
-            className="search-close-btn"
-            onClick={toggleSearch}
-            title="검색 닫기 (Esc)"
-            aria-label="검색 닫기"
-          >
-            <IconX size={20} strokeWidth={2} />
-          </button>
-        </div>
+        <SearchBar
+          query={searchQuery}
+          replaceValue={searchReplace}
+          count={searchMatchCount}
+          index={searchCurrentIndex}
+          showReplace={searchShowReplace}
+          onQueryChange={setSearchQuery}
+          onReplaceChange={setSearchReplace}
+          onNext={() => navigateMatch(1)}
+          onPrev={() => navigateMatch(-1)}
+          onReplaceOne={() => replaceMatch(false)}
+          onReplaceAll={() => replaceMatch(true)}
+          onToggleReplace={() => setSearchShowReplace((v) => !v)}
+          onClose={toggleSearch}
+          inputRef={searchInputRef}
+        />
       )}
 
       <div className="main-content" ref={containerRef}>
@@ -1679,7 +1627,7 @@ function App() {
         <div className="tutorial-overlay" onClick={() => setTutorialVisible(false)}>
           <div className="tutorial-overlay-content" onClick={(e) => e.stopPropagation()}>
             <div className="tutorial-overlay-header">
-              <span className="tutorial-overlay-title"><BookOpen size={16} strokeWidth={1.5} /> Tutorial</span>
+              <span className="tutorial-overlay-title"><BookOpen size={16} strokeWidth={1.5} /><span>Tutorial</span></span>
               <button className="tutorial-overlay-close" onClick={() => setTutorialVisible(false)}><IconX size={16} /></button>
             </div>
             <div className="tutorial-overlay-body">

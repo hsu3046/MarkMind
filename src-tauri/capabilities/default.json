@@ -9,6 +9,7 @@
   ],
   "permissions": [
     "core:default",
+    "core:menu:default",
     "core:event:default",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
@@ -41,6 +42,7 @@
     "fs:allow-write-text-file",
     "fs:allow-write-file",
     "fs:allow-exists",
+    "fs:allow-stat",
     "fs:allow-remove",
     "fs:allow-mkdir",
     "fs:allow-copy-file",
