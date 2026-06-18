@@ -171,6 +171,39 @@ fn codex_auth_path() -> Option<std::path::PathBuf> {
     Some(std::path::Path::new(&home).join(".codex").join("auth.json"))
 }
 
+/// Codex 호출에 필요한 토큰 (값은 메모리에서만).
+pub struct CodexTokens {
+    pub access_token: String,
+    pub account_id: Option<String>,
+}
+
+/// `~/.codex/auth.json` 에서 access_token + account_id 를 읽는다.
+/// (만료 refresh 는 미구현 — 만료 시 `codex` 재로그인 안내. 후속 Phase 에서 추가.)
+pub fn read_codex_tokens() -> Result<CodexTokens, String> {
+    let path = codex_auth_path().ok_or_else(|| "HOME 환경변수를 찾을 수 없습니다.".to_string())?;
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|_| "Codex 로그인을 찾을 수 없습니다. 터미널에서 `codex` 로 로그인하세요.".to_string())?;
+    let v: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("auth.json 파싱 실패: {e}"))?;
+    let tokens = v
+        .get("tokens")
+        .ok_or_else(|| "auth.json 에 tokens 가 없습니다.".to_string())?;
+    let access_token = tokens
+        .get("access_token")
+        .and_then(|a| a.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "access_token 이 없습니다. `codex` 재로그인이 필요합니다.".to_string())?
+        .to_string();
+    let account_id = tokens
+        .get("account_id")
+        .and_then(|a| a.as_str())
+        .map(String::from);
+    Ok(CodexTokens {
+        access_token,
+        account_id,
+    })
+}
+
 /// Codex 로그인 존재 여부 (`~/.codex/auth.json` 의 `tokens.access_token` 유무).
 pub fn codex_logged_in() -> bool {
     let Some(path) = codex_auth_path() else {

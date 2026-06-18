@@ -389,6 +389,13 @@ export async function callAI(
             });
             modifiedText = response.text || '';
         }
+    } else if (provider === 'openai') {
+        // ChatGPT(Codex 구독) — Rust 경유(비공개 Responses API). 스트리밍 미지원.
+        const { invoke } = await import('@tauri-apps/api/core');
+        modifiedText = await invoke<string>('ai_generate_codex', {
+            system: systemPrompt,
+            prompt: userContent,
+        });
     } else {
         // Claude (구독 OAuth or API 키) — Rust 경유(구독 토큰은 keychain/refresh 가 Rust 에만).
         // 스트리밍 미지원: 완료 후 한 번에 diff. onStream 은 호출하지 않는다.

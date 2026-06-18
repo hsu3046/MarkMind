@@ -69,7 +69,14 @@ export function useAI() {
             setResponse(result);
             return result;
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'AI 요청 중 오류가 발생했습니다.';
+            // Tauri invoke 실패는 string 으로 reject(Err(String)) — Error 가 아니라
+            // 그대로 두면 fallback 으로 뭉개진다. string 이면 그 원문(HTTP status 등)을 표면화.
+            const message =
+                err instanceof Error
+                    ? err.message
+                    : typeof err === 'string'
+                        ? err
+                        : 'AI 요청 중 오류가 발생했습니다.';
             setError(message);
             return null;
         } finally {

@@ -67,11 +67,13 @@ export function AIPanel({
 
     // 구독(Claude Code / Codex) 로그인 감지 — mount 1회.
     const [subClaude, setSubClaude] = useState(false);
+    const [subCodex, setSubCodex] = useState(false);
     useEffect(() => {
         let cancelled = false;
         detectSubscriptionLogins().then((s) => {
             if (cancelled) return;
             setSubClaude(s.claude);
+            setSubCodex(s.codex);
             // Claude API 키가 없고 구독만 있으면 인증 소스를 구독으로 자동 설정.
             if (s.claude && !hasKey('claude') && claudeAuthMode !== 'subscription') {
                 onClaudeAuthChange('subscription');
@@ -135,6 +137,7 @@ export function AIPanel({
                         selected={selectedModel}
                         onChange={onSelectedModelChange}
                         claudeSubscription={subClaude}
+                        codexSubscription={subCodex}
                     />
 
                     {selectedModel === 'claude' && (

@@ -319,6 +319,7 @@ pub fn run() {
             converters::commands::get_conversions_dir,
             converters::commands::generate_slides_llm,
             converters::commands::ai_generate_claude,
+            converters::commands::ai_generate_codex,
             converters::commands::extract_speakers,
             converters::commands::rename_speakers,
             converters::commands::merge_md_files,

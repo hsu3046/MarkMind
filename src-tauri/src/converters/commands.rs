@@ -189,6 +189,26 @@ pub async fn ai_generate_claude(
     result.map(|r| r.text).map_err(err_to_string)
 }
 
+// ─── 범용 ChatGPT(Codex 구독) 텍스트 생성 (React AI 모드) ────────────────────
+//
+// 본인 Codex CLI 로그인 토큰을 재사용해 ChatGPT 구독으로 호출(비공개 Responses API).
+// 미검증 경로 — API 키 fallback 은 호출부(프론트)에서 모델 전환으로 처리한다.
+#[tauri::command]
+pub async fn ai_generate_codex(system: Option<String>, prompt: String) -> Result<String, String> {
+    use super::llm::openai_codex;
+    let tokens = crate::subscription_auth::read_codex_tokens()?;
+    openai_codex::generate_text(
+        &tokens.access_token,
+        tokens.account_id.as_deref(),
+        super::MODEL_CODEX,
+        system.as_deref(),
+        &prompt,
+    )
+    .await
+    .map(|r| r.text)
+    .map_err(err_to_string)
+}
+
 // ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────
 
 #[cfg(test)]
