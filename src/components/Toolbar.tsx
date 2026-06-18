@@ -4,10 +4,9 @@ import {
     FilePlus, FolderOpen, Save, Download, FileDown,
     CirclePlus, CircleMinus, BookMarked, Maximize, Clock,
     Search, ChevronRight, Sparkles, Check, X,
-    Mic, ScanText, Settings,
+    Settings,
     FileCode, FileText, AlignVerticalSpaceAround,
     Network, Share2, VectorSquare, ChartBarStacked,
-    Presentation,
 } from 'lucide-react';
 import * as gdriveService from '../services/gdriveService';
 import type { RecentFile } from '../hooks/useRecentFiles';
@@ -99,8 +98,6 @@ interface ToolbarProps {
     onSaveFile: () => void;
     onSaveFileAs: () => void;
     onExportPdf: () => void;
-    onExportPptx: () => void;
-    aiLayoutAvailable: boolean;
     onShowTutorial: () => void;
     onFontSizeChange: (delta: number) => void;
     onFontSizeReset: () => void;
@@ -118,10 +115,6 @@ interface ToolbarProps {
     onSaveToDrive: () => void;
     onToggleSearch: () => void;
     onToggleAI: () => void;
-    onToggleAudio: () => void;
-    onToggleOcr: () => void;
-    audioPanelVisible: boolean;
-    ocrPanelVisible: boolean;
     onRename: (newName: string) => void;
 }
 
@@ -137,8 +130,6 @@ export function Toolbar({
     onSaveFile,
     onSaveFileAs,
     onExportPdf,
-    onExportPptx,
-    aiLayoutAvailable,
     onShowTutorial,
     onFontSizeChange,
     onFontSizeReset,
@@ -156,10 +147,6 @@ export function Toolbar({
     onSaveToDrive,
     onToggleSearch,
     onToggleAI,
-    onToggleAudio,
-    onToggleOcr,
-    audioPanelVisible,
-    ocrPanelVisible,
     onRename,
     showRecent,
     aiPanelVisible,
@@ -240,15 +227,6 @@ export function Toolbar({
                                 <FileDown size={14} strokeWidth={1.5} />
                                 <span>Export as PDF…</span>
                                 <span className="dropdown-shortcut">⌘P</span>
-                            </button>
-                            <button
-                                className="dropdown-item"
-                                onClick={() => handleMenuItem(onExportPptx)}
-                                disabled={!aiLayoutAvailable}
-                                title={!aiLayoutAvailable ? 'Settings 에서 Claude 또는 Gemini API 키 등록 필요' : ''}
-                            >
-                                <Presentation size={14} strokeWidth={1.5} />
-                                <span>Export as PPTX…</span>
                             </button>
                             {driveAvailable && (
                                 <>
@@ -427,16 +405,8 @@ export function Toolbar({
                 onRename={onRename}
             />
 
-            {/* Right: AI/Convert panels + Login */}
+            {/* Right: AI 에이전트 단일 진입점(#60 — 음성/이미지 인식·슬라이드 모두 패널 모드로 흡수) */}
             <div className="toolbar-group">
-                <button className={`toolbar-text-btn ai-agent${audioPanelVisible ? ' active' : ''}`} onClick={onToggleAudio} title="음성 → 텍스트 변환 (STT)">
-                    <Mic size={14} strokeWidth={1.5} />
-                    <span>음성 인식</span>
-                </button>
-                <button className={`toolbar-text-btn ai-agent${ocrPanelVisible ? ' active' : ''}`} onClick={onToggleOcr} title="이미지 → 텍스트 변환 (OCR)">
-                    <ScanText size={14} strokeWidth={1.5} />
-                    <span>이미지 인식</span>
-                </button>
                 <button className={`toolbar-text-btn ai-agent${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI 에이전트 (⌘⇧I)">
                     <Sparkles size={14} strokeWidth={1.5} />
                     <span>AI 에이전트</span>

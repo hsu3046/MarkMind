@@ -1,9 +1,19 @@
 /** AI 모드 선택
  *  - grammar/translate/improve/structurize: 현재 문서를 변형 → InlineDiff
- *  - structurize: 산문을 #/##/### + 불릿 계층 아웃라인으로 재구성(마인드맵용)
+ *  - structurize(라벨 "마인드맵 정리"): 산문을 #/##/### + 불릿 계층 아웃라인으로 재구성(마인드맵용)
  *  - meeting-notes: 현재 문서를 transcript 로 보고 회의록 .md 새 파일 생성 → ResultCard
+ *  - stt/ocr: 입력(음성/이미지)을 텍스트로 변환 — converter 가 자체 키로 처리(AI 에이전트 키 무관)
+ *  - pptx(라벨 "슬라이드 만들기"): 현재 문서를 AI 레이아웃으로 .pptx 내보내기
  */
-export type AIMode = 'grammar' | 'translate' | 'improve' | 'structurize' | 'meeting-notes';
+export type AIMode =
+    | 'grammar'
+    | 'translate'
+    | 'improve'
+    | 'structurize'
+    | 'meeting-notes'
+    | 'stt'
+    | 'ocr'
+    | 'pptx';
 
 /** 번역 대상 언어 */
 export type TranslateLanguage = 'ko' | 'en' | 'ja';

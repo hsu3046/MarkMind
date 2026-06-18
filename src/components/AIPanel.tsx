@@ -1,15 +1,25 @@
 /**
- * AI 에이전트 사이드 패널 — 4 모드 (문법 교정 / 번역 / 문서 개선 / 회의록 작성).
+ * AI 에이전트 사이드 패널 — 단일 진입점(#60).
+ * 8 모드: 음성 인식(stt) / 이미지 인식(ocr) / 회의록 작성 / 슬라이드 만들기(pptx) /
+ *         문서 개선 / 문법 교정 / 번역 / 마인드맵 정리(structurize).
+ *  - stt/ocr: 기존 AudioTab/OcrTab 을 그대로 mount(변환 로직 재사용). converter 자체 키 사용.
+ *  - pptx: 현재 문서를 AI 레이아웃으로 .pptx 내보내기(onExportPptx).
+ *  - 나머지: prompt → onRun → InlineDiff / ResultCard.
  * 모드별 옵션 UI 는 sub-component 로 분리 (ModeSelector, LlmSelector, NotesOptions, NotesResultCard).
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, ReactNode } from 'react';
 import { AIMode, TranslateLanguage } from '../types/ai';
-import { Sparkles, Send, Loader2, AlertCircle } from 'lucide-react';
+import { Sparkles, Send, Loader2, AlertCircle, Presentation } from 'lucide-react';
 import type { NotesJobResult, TemplateInfo } from '../types/converter';
+import type { useConverter } from '../hooks/useConverter';
+import type { DroppedFile } from './convert/types';
+import { initSecureStorage } from '../services/secureStorage';
 import { ModeSelector } from './ai/ModeSelector';
 import { NotesOptions } from './ai/NotesOptions';
 import { NotesResultCard } from './ai/NotesResultCard';
+import { AudioTab } from './convert/AudioTab';
+import { OcrTab } from './convert/OcrTab';
 import './AIPanel.css';
 
 interface AIPanelProps {
@@ -30,6 +40,35 @@ interface AIPanelProps {
     onNotesTemplateChange: (t: string) => void;
     onRun: (content: string, prompt?: string) => void;
     onShowSettings: () => void;
+    // ── 입력 변환(stt/ocr) ──
+    converter: ReturnType<typeof useConverter>;
+    audioDropped: DroppedFile | null;
+    ocrDropped: DroppedFile | null;
+    onConsumeAudioDropped: () => void;
+    onConsumeOcrDropped: () => void;
+    // ── 슬라이드 만들기(pptx) ──
+    onExportPptx: () => void;
+    pptxAvailable: boolean;
+    pptxBusy: string | null;
+}
+
+/** stt/ocr 모드 본문 — secureStorage 초기화 가드(기존 ConvertSidebar 패턴). */
+function ConvertModeBody({ visible, children }: { visible: boolean; children: ReactNode }) {
+    const [keysReady, setKeysReady] = useState(false);
+    useEffect(() => {
+        if (!visible) return;
+        let cancelled = false;
+        (async () => {
+            await initSecureStorage();
+            if (!cancelled) setKeysReady(true);
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [visible]);
+
+    if (!keysReady) return <div className="convert-sidebar-loading">로딩 중...</div>;
+    return <>{children}</>;
 }
 
 export function AIPanel({
@@ -50,6 +89,14 @@ export function AIPanel({
     onNotesTemplateChange,
     onRun,
     onShowSettings,
+    converter,
+    audioDropped,
+    ocrDropped,
+    onConsumeAudioDropped,
+    onConsumeOcrDropped,
+    onExportPptx,
+    pptxAvailable,
+    pptxBusy,
 }: AIPanelProps) {
     const [prompt, setPrompt] = useState('');
     const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -83,6 +130,11 @@ export function AIPanel({
         (mode === 'improve' && !prompt.trim()) ||
         (mode === 'meeting-notes' && content.trim().length < 100);
 
+    // stt/ocr/pptx 는 AI 에이전트 키(apiKeySet)와 무관 — 키 게이트를 적용하지 않는다.
+    const isConvertMode = mode === 'stt' || mode === 'ocr';
+    const isPptxMode = mode === 'pptx';
+    const keyGated = !isConvertMode && !isPptxMode && !apiKeySet;
+
     return (
         <div className="ai-panel">
             <div className="ai-panel-header">
@@ -91,7 +143,61 @@ export function AIPanel({
                 </span>
             </div>
 
-            {!apiKeySet ? (
+            <ModeSelector mode={mode} onChange={onModeChange} />
+
+            {mode === 'stt' && (
+                <ConvertModeBody visible={visible}>
+                    <AudioTab
+                        converter={converter}
+                        onOpenResult={openEditorWindow}
+                        droppedFile={audioDropped}
+                        onConsumeDropped={onConsumeAudioDropped}
+                    />
+                </ConvertModeBody>
+            )}
+
+            {mode === 'ocr' && (
+                <ConvertModeBody visible={visible}>
+                    <OcrTab
+                        converter={converter}
+                        onOpenResult={openEditorWindow}
+                        droppedFile={ocrDropped}
+                        onConsumeDropped={onConsumeOcrDropped}
+                    />
+                </ConvertModeBody>
+            )}
+
+            {isPptxMode && (
+                <div className="ai-pptx-mode">
+                    <p className="ai-pptx-desc">
+                        현재 문서를 AI 레이아웃으로 분석해 PowerPoint(.pptx) 슬라이드로 내보냅니다.
+                    </p>
+                    {!pptxAvailable ? (
+                        <div className="ai-no-key">
+                            <AlertCircle size={20} />
+                            <p>슬라이드 레이아웃에 Claude 또는 Gemini 키가 필요합니다</p>
+                            <button className="ai-btn primary" onClick={onShowSettings}>
+                                설정하기
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="ai-prompt-actions">
+                            <button
+                                className="ai-btn primary"
+                                onClick={onExportPptx}
+                                disabled={!!pptxBusy || content.trim().length === 0}
+                                title="슬라이드 만들기"
+                            >
+                                {pptxBusy ? <Loader2 size={14} className="spinning" /> : <Presentation size={14} />}
+                                {pptxBusy ? '생성 중...' : '슬라이드 만들기'}
+                            </button>
+                            {pptxBusy && <div className="ai-pptx-busy">{pptxBusy}</div>}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {keyGated && (
                 <div className="ai-no-key">
                     <AlertCircle size={20} />
                     <p>API 키를 설정해주세요</p>
@@ -99,10 +205,10 @@ export function AIPanel({
                         설정하기
                     </button>
                 </div>
-            ) : (
-                <>
-                    <ModeSelector mode={mode} onChange={onModeChange} />
+            )}
 
+            {!isConvertMode && !isPptxMode && !keyGated && (
+                <>
                     {mode === 'translate' && (
                         <div className="ai-language-select">
                             <span>번역 언어:</span>

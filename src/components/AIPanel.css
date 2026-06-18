@@ -65,6 +65,28 @@
     margin: 0;
 }
 
+/* ─── 슬라이드 만들기(pptx) 모드 ──────────────────── */
+
+.ai-pptx-mode {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 0;
+}
+
+.ai-pptx-desc {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.ai-pptx-busy {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    text-align: center;
+}
+
 /* ─── Mode Selection ─────────────────────────────── */
 
 .ai-modes {

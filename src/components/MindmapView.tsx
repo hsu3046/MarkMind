@@ -11,10 +11,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Node } from '@xyflow/react';
+import { Loader2, ListTree } from 'lucide-react';
 import { MindmapCanvas, type MindmapNodeData } from './MindmapCanvas';
 import { calculateD3Layout } from '../lib/d3-layout';
 import { documentToTree, treeToDocument } from '../lib/markdownTree';
 import type { MindmapNode } from '../types/mindmap';
+import './MindmapView.css';
+
+/** 정리하기엔 너무 짧은 문서 가드(플로우차트 뷰와 동일 정신). */
+const MIN_CHARS = 40;
 
 interface MindmapViewProps {
     content: string;
@@ -24,6 +29,10 @@ interface MindmapViewProps {
     onOpenDocument?: (target: string, isWiki: boolean) => void;
     /** Jump to this node's section (source line) in the editor. */
     onJumpToSource?: (line: number) => void;
+    /** 마인드맵 정리(structurize) — 현재 문서를 계층 아웃라인으로 재구성(#60). */
+    onStructurize?: () => void;
+    /** 정리 진행 중(AI 로딩). */
+    structurizing?: boolean;
 }
 
 const NOOP = () => {};
@@ -55,8 +64,9 @@ function findParentById(root: MindmapNode, id: string): { parent: MindmapNode | 
     return { parent: cur ?? null, index };
 }
 
-export function MindmapView({ content, onChange, fileName, onOpenDocument, onJumpToSource }: MindmapViewProps) {
+export function MindmapView({ content, onChange, fileName, onOpenDocument, onJumpToSource, onStructurize, structurizing }: MindmapViewProps) {
     const stem = useMemo(() => stemOf(fileName), [fileName]);
+    const charCount = content.trim().length;
 
     const initial = useMemo(() => documentToTree(content, stem), []); // mount only
     const [tree, setTree] = useState<MindmapNode>(initial.tree);
@@ -155,8 +165,29 @@ export function MindmapView({ content, onChange, fileName, onOpenDocument, onJum
     );
 
     return (
-        <div style={{ flex: 1, width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
-            <MindmapCanvas nodes={nodes} edges={layout.edges} fitKey={stem} />
+        <div className="mindmap-view">
+            {onStructurize && (
+                <div className="mindmap-toolbar">
+                    <span className="mindmap-mode">
+                        마인드맵{' · '}
+                        <span className={charCount < MIN_CHARS ? 'mindmap-count-warn' : undefined}>
+                            {charCount.toLocaleString()}자
+                        </span>
+                    </span>
+                    <button
+                        className="mindmap-gen-btn"
+                        onClick={onStructurize}
+                        disabled={structurizing || charCount < MIN_CHARS}
+                        title={charCount < MIN_CHARS ? '정리하기엔 내용이 너무 짧습니다' : '문서를 계층 구조로 정리합니다'}
+                    >
+                        {structurizing ? <Loader2 size={14} className="spinning" /> : <ListTree size={14} />}
+                        {structurizing ? '정리 중…' : '마인드맵 정리'}
+                    </button>
+                </div>
+            )}
+            <div className="mindmap-canvas-wrap">
+                <MindmapCanvas nodes={nodes} edges={layout.edges} fitKey={stem} />
+            </div>
         </div>
     );
 }
