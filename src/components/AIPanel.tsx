@@ -6,8 +6,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { AIMode, TranslateLanguage } from '../types/ai';
 import { Sparkles, Send, Loader2, AlertCircle } from 'lucide-react';
-import type { NotesJobResult, TemplateInfo } from '../types/converter';
-import type { Provider } from '../services/secureStorage';
+import type { ClaudeAuthMode, NotesJobResult, TemplateInfo } from '../types/converter';
+import { hasKey, type Provider } from '../services/secureStorage';
+import { detectSubscriptionLogins } from '../services/subscriptionService';
 import { ModeSelector } from './ai/ModeSelector';
 import { LlmSelector } from './ai/LlmSelector';
 import { NotesOptions } from './ai/NotesOptions';
@@ -25,6 +26,8 @@ interface AIPanelProps {
     content: string;
     selectedModel: Provider;
     onSelectedModelChange: (p: Provider) => void;
+    claudeAuthMode: ClaudeAuthMode;
+    onClaudeAuthChange: (m: ClaudeAuthMode) => void;
     notesTemplate: string;
     notesResult: NotesJobResult | null;
     loadTemplates: () => Promise<TemplateInfo[]>;
@@ -47,6 +50,8 @@ export function AIPanel({
     content,
     selectedModel,
     onSelectedModelChange,
+    claudeAuthMode,
+    onClaudeAuthChange,
     notesTemplate,
     notesResult,
     loadTemplates,
@@ -59,6 +64,25 @@ export function AIPanel({
 }: AIPanelProps) {
     const [prompt, setPrompt] = useState('');
     const promptRef = useRef<HTMLTextAreaElement>(null);
+
+    // 구독(Claude Code / Codex) 로그인 감지 — mount 1회.
+    const [subClaude, setSubClaude] = useState(false);
+    useEffect(() => {
+        let cancelled = false;
+        detectSubscriptionLogins().then((s) => {
+            if (cancelled) return;
+            setSubClaude(s.claude);
+            // Claude API 키가 없고 구독만 있으면 인증 소스를 구독으로 자동 설정.
+            if (s.claude && !hasKey('claude') && claudeAuthMode !== 'subscription') {
+                onClaudeAuthChange('subscription');
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+        // mount 1회만 — 콜백/상태 변화로 재실행하지 않음.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
         if (mode === 'improve' && promptRef.current) {
@@ -107,7 +131,28 @@ export function AIPanel({
                 </div>
             ) : (
                 <>
-                    <LlmSelector mode={mode} selected={selectedModel} onChange={onSelectedModelChange} />
+                    <LlmSelector
+                        selected={selectedModel}
+                        onChange={onSelectedModelChange}
+                        claudeSubscription={subClaude}
+                    />
+
+                    {selectedModel === 'claude' && (
+                        <div className="ai-llm-select" title="Claude 호출 인증 소스">
+                            <label>Claude 인증</label>
+                            <select
+                                value={claudeAuthMode}
+                                onChange={(e) => onClaudeAuthChange(e.target.value as ClaudeAuthMode)}
+                            >
+                                <option value="api_key" disabled={!hasKey('claude')}>
+                                    API 키{!hasKey('claude') ? ' (없음)' : ''}
+                                </option>
+                                <option value="subscription" disabled={!subClaude}>
+                                    구독 로그인{!subClaude ? ' (미감지)' : ''}
+                                </option>
+                            </select>
+                        </div>
+                    )}
 
                     <ModeSelector mode={mode} onChange={onModeChange} />
 

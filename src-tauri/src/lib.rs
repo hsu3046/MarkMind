@@ -12,6 +12,7 @@ mod mcp;
 mod print_pdf;
 mod secrets;
 mod share;
+mod subscription_auth;
 mod user_memory;
 mod vault;
 
@@ -306,6 +307,8 @@ pub fn run() {
             // 통합 vault batch (저장 다이얼로그 1회로 묶기)
             secrets::secrets_set_user_inputs,
             secrets::get_diar_python,
+            // 구독 OAuth (Claude Code / Codex CLI 토큰 재사용) — 로그인 감지
+            subscription_auth::detect_subscription_logins,
             // Templates
             converters::templates::list_meeting_templates,
             converters::templates::open_user_templates_folder,
@@ -315,6 +318,7 @@ pub fn run() {
             converters::commands::run_notes_job,
             converters::commands::get_conversions_dir,
             converters::commands::generate_slides_llm,
+            converters::commands::ai_generate_claude,
             converters::commands::extract_speakers,
             converters::commands::rename_speakers,
             converters::commands::merge_md_files,

@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react';
 import { Eye, EyeOff, Trash2, Cloud, CloudOff } from 'lucide-react';
 import { getKey, hasKey, Provider, removeKey, updateCacheAfterBatch } from '../../services/secureStorage';
+import { detectSubscriptionLogins, SubscriptionStatus } from '../../services/subscriptionService';
 import * as gdrive from '../../services/gdriveService';
 import * as secretsBatch from '../../services/secretsService';
 import { confirmAction } from '../../services/dialogService';
@@ -131,6 +132,9 @@ export function SettingsView({ onDone }: SettingsViewProps) {
     const [memoryOrig, setMemoryOrig] = useState('');
     const [memorySaving, setMemorySaving] = useState(false);
 
+    // 구독 연동 — 로컬 Claude Code / Codex CLI 로그인 감지 현황
+    const [subStatus, setSubStatus] = useState<SubscriptionStatus>({ claude: false, codex: false });
+
     useEffect(() => {
         setValues({
             gemini: getKey('gemini') || '',
@@ -163,6 +167,7 @@ export function SettingsView({ onDone }: SettingsViewProps) {
             const mem = await loadUserMemory();
             setUserMemory(mem);
             setMemoryOrig(mem);
+            setSubStatus(await detectSubscriptionLogins());
         })();
     }, []);
 
@@ -423,6 +428,28 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                     </section>
                 );
             })}
+
+            {/* === 구독 연동 (Claude / ChatGPT — 로컬 CLI 토큰 재사용) === */}
+            <section className="convert-settings-section">
+                <label>구독 연동 (Claude · ChatGPT)</label>
+                <p className="convert-key-note">
+                    <strong>Claude Code</strong>{' '}
+                    <span className={subStatus.claude ? 'badge badge-ok' : 'badge badge-warn'}>
+                        {subStatus.claude ? '로그인 감지됨' : '미감지'}
+                    </span>
+                    {'   ·   '}
+                    <strong>ChatGPT (Codex)</strong>{' '}
+                    <span className={subStatus.codex ? 'badge badge-ok' : 'badge badge-warn'}>
+                        {subStatus.codex ? '로그인 감지됨' : '미감지'}
+                    </span>
+                </p>
+                <p className="convert-key-note">
+                    터미널에서 <code>claude</code> 로 로그인하면 API 키 없이 본인 구독으로 회의록을 생성할 수
+                    있습니다 (회의록 탭에서 Claude 선택 → <strong>구독 로그인</strong>). ChatGPT(Codex) 호출
+                    연동은 다음 단계에서 추가됩니다. 본인 머신·본인 구독 전용이며, 비공식 경로라 작동이
+                    보장되지 않습니다.
+                </p>
+            </section>
 
             {/* === 내 정보 (AI 컨텍스트, #15) === */}
             <section className="convert-settings-section">

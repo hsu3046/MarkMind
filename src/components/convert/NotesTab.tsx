@@ -6,8 +6,13 @@
 
 import { useEffect, useState } from 'react';
 import { Upload, Play, RotateCcw } from 'lucide-react';
-import { DetailLevel, NotesJobResult, NotesProvider, TemplateInfo } from '../../types/converter';
+import { ClaudeAuthMode, DetailLevel, NotesJobResult, NotesProvider, TemplateInfo } from '../../types/converter';
 import { useConverter } from '../../hooks/useConverter';
+import {
+    detectSubscriptionLogins,
+    getClaudeAuthMode,
+    setClaudeAuthMode,
+} from '../../services/subscriptionService';
 import { ProgressPanel } from './ProgressPanel';
 import { ResultCard } from './ResultCard';
 import { pickTextFile } from './pickFile';
@@ -29,8 +34,31 @@ export function NotesTab({ converter, droppedFile, onConsumeDropped, onOpenResul
     const [template, setTemplate] = useState('general');
     const [detail, setDetail] = useState<DetailLevel>('standard');
     const [provider, setProvider] = useState<NotesProvider>('claude');
+    const [claudeAuth, setClaudeAuth] = useState<ClaudeAuthMode>(getClaudeAuthMode());
+    const [claudeLoggedIn, setClaudeLoggedIn] = useState(false);
     const [templates, setTemplates] = useState<TemplateInfo[]>([]);
     const [result, setResult] = useState<NotesJobResult | null>(null);
+
+    // 구독(Claude Code) 로그인 감지 — mount 1회.
+    useEffect(() => {
+        let cancelled = false;
+        detectSubscriptionLogins().then((s) => {
+            if (cancelled) return;
+            setClaudeLoggedIn(s.claude);
+            // 저장된 기본값이 구독인데 로그인이 사라졌으면 API 키로 안전 복귀.
+            if (!s.claude && getClaudeAuthMode() === 'subscription') {
+                setClaudeAuth('api_key');
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    const updateClaudeAuth = (mode: ClaudeAuthMode) => {
+        setClaudeAuth(mode);
+        setClaudeAuthMode(mode);
+    };
 
     useEffect(() => {
         let cancelled = false;
@@ -97,6 +125,7 @@ export function NotesTab({ converter, droppedFile, onConsumeDropped, onOpenResul
             source,
             detail,
             provider,
+            claudeAuth: provider === 'claude' ? claudeAuth : undefined,
         });
         if (r) setResult(r);
     };
@@ -178,6 +207,40 @@ export function NotesTab({ converter, droppedFile, onConsumeDropped, onOpenResul
                         </label>
                     </div>
                 </div>
+
+                {provider === 'claude' && (
+                    <div className="convert-option-field">
+                        <label>Claude 인증</label>
+                        <div className="convert-provider-row">
+                            <label
+                                className={`convert-provider${claudeAuth === 'api_key' ? ' active' : ''}`}
+                            >
+                                <input
+                                    type="radio"
+                                    checked={claudeAuth === 'api_key'}
+                                    onChange={() => updateClaudeAuth('api_key')}
+                                />
+                                API 키
+                            </label>
+                            <label
+                                className={`convert-provider${claudeAuth === 'subscription' ? ' active' : ''}${!claudeLoggedIn ? ' disabled' : ''}`}
+                            >
+                                <input
+                                    type="radio"
+                                    checked={claudeAuth === 'subscription'}
+                                    disabled={!claudeLoggedIn}
+                                    onChange={() => updateClaudeAuth('subscription')}
+                                />
+                                구독 로그인
+                            </label>
+                        </div>
+                        {!claudeLoggedIn && (
+                            <p className="convert-key-note">
+                                구독으로 쓰려면 터미널에서 <code>claude</code> 로그인이 필요합니다.
+                            </p>
+                        )}
+                    </div>
+                )}
             </div>
 
             <div className="convert-actions">

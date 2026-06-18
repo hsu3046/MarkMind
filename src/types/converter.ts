@@ -75,12 +75,17 @@ export interface OcrJobResult {
 
 // ─── Notes ───
 
+/** Claude 호출 인증 소스 — API 키(공식) 또는 구독 OAuth(로컬 Claude Code 토큰 재사용). */
+export type ClaudeAuthMode = 'api_key' | 'subscription';
+
 export interface NotesJobOptions {
     transcript: string;
     template: string;
     source: string;
     detail?: DetailLevel;
     provider?: NotesProvider;
+    /** Claude provider 사용 시 인증 소스 (기본 api_key). Gemini 에는 무관. */
+    claudeAuth?: ClaudeAuthMode;
     outputDir?: string;
 }
 

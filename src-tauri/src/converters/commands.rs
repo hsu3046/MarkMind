@@ -108,10 +108,15 @@ pub async fn generate_slides_llm(
                 max_output_tokens: Some(SLIDES_MAX_TOKENS),
                 system: Some(SLIDES_SYSTEM.to_string()),
             };
-            llm::anthropic::generate_text(&key, super::MODEL_NOTES_CLAUDE, &prompt, Some(opts))
-                .await
-                .map_err(err_to_string)?
-                .text
+            llm::anthropic::generate_text(
+                llm::anthropic::ClaudeAuth::ApiKey(&key),
+                super::MODEL_NOTES_CLAUDE,
+                &prompt,
+                Some(opts),
+            )
+            .await
+            .map_err(err_to_string)?
+            .text
         }
         super::NotesProvider::Gemini => {
             let key = get_key(Provider::Gemini)
@@ -131,6 +136,57 @@ pub async fn generate_slides_llm(
     };
 
     Ok(text)
+}
+
+// ─── 범용 Claude 텍스트 생성 (문법/번역/문서개선/구조화 — React AI 모드) ─────
+//
+// system + prompt 는 프론트(aiService)가 모드별로 구성해 전달하고, 백엔드는 인증
+// (구독 OAuth or API 키) + 호출만 담당한다. 구독 토큰은 Rust(keychain/refresh)에만
+// 있으므로 Claude 경로는 반드시 이 command 를 거친다. 반환은 변환된 텍스트(diff 는 프론트).
+#[tauri::command]
+pub async fn ai_generate_claude(
+    system: Option<String>,
+    prompt: String,
+    claude_auth: crate::subscription_auth::ClaudeAuthMode,
+    max_tokens: Option<u32>,
+) -> Result<String, String> {
+    use super::keychain::{get_key, Provider};
+    use super::llm::anthropic::{self, ClaudeAuth, ClaudeOptions};
+    use crate::subscription_auth::ClaudeAuthMode;
+
+    let opts = ClaudeOptions {
+        max_output_tokens: Some(max_tokens.unwrap_or(16000)),
+        system,
+    };
+
+    let result = match claude_auth {
+        ClaudeAuthMode::Subscription => {
+            let token = crate::subscription_auth::claude_access_token().await?;
+            anthropic::generate_text(
+                ClaudeAuth::Subscription(&token),
+                super::MODEL_NOTES_CLAUDE,
+                &prompt,
+                Some(opts),
+            )
+            .await
+        }
+        ClaudeAuthMode::ApiKey => {
+            let key = get_key(Provider::Claude)
+                .map_err(err_to_string)?
+                .ok_or_else(|| {
+                    "Claude API 키가 없습니다. Settings 에서 등록하거나 구독 로그인을 사용하세요."
+                        .to_string()
+                })?;
+            anthropic::generate_text(
+                ClaudeAuth::ApiKey(&key),
+                super::MODEL_NOTES_CLAUDE,
+                &prompt,
+                Some(opts),
+            )
+            .await
+        }
+    };
+    result.map(|r| r.text).map_err(err_to_string)
 }
 
 // ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────

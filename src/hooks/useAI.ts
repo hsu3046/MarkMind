@@ -1,8 +1,9 @@
 import { useState, useCallback, useMemo } from 'react';
 import { AIMode, AIResponse, TranslateLanguage } from '../types/ai';
 import { callAI, hasApiKey, getApiKey, setApiKey, removeApiKey, applyDiff } from '../services/aiService';
-import type { NotesJobResult } from '../types/converter';
+import type { ClaudeAuthMode, NotesJobResult } from '../types/converter';
 import type { Provider } from '../services/secureStorage';
+import { getClaudeAuthMode, setClaudeAuthMode as persistClaudeAuthMode } from '../services/subscriptionService';
 
 export function useAI() {
     const [mode, setMode] = useState<AIMode>('grammar');
@@ -15,6 +16,8 @@ export function useAI() {
     const [panelVisible, setPanelVisible] = useState(false);
     // 공통 LLM 모델 선택 — 회의록 모드에서 실제 사용. 그 외 모드는 항상 Gemini.
     const [selectedModel, setSelectedModel] = useState<Provider>('gemini');
+    // Claude 인증 소스 (API 키 / 구독 OAuth) — localStorage 동기화.
+    const [claudeAuthMode, setClaudeAuthModeState] = useState<ClaudeAuthMode>(getClaudeAuthMode());
     // 회의록 작성 (mode === 'meeting-notes') 전용 옵션/결과
     const [notesTemplate, setNotesTemplate] = useState<string>('general');
     const [notesResult, setNotesResult] = useState<NotesJobResult | null>(null);
@@ -61,6 +64,7 @@ export function useAI() {
                     improveQuality: activeMode === 'improve' ? 'quality' : undefined,
                 },
                 (text) => setStreamingText(text),
+                { provider: selectedModel, claudeAuth: claudeAuthMode },
             );
             setResponse(result);
             return result;
@@ -71,7 +75,7 @@ export function useAI() {
         } finally {
             setIsLoading(false);
         }
-    }, [mode, language]);
+    }, [mode, language, selectedModel, claudeAuthMode]);
 
     // Accept/Reject individual chunk
     const acceptChunk = useCallback((chunkId: number) => {
@@ -110,6 +114,11 @@ export function useAI() {
         setStreamingText('');
     }, []);
 
+    const setClaudeAuthMode = useCallback((m: ClaudeAuthMode) => {
+        setClaudeAuthModeState(m);
+        persistClaudeAuthMode(m);
+    }, []);
+
     // Build final text from accepted/rejected chunks
     const getFinalText = useCallback((): string | null => {
         if (!response) return null;
@@ -145,6 +154,7 @@ export function useAI() {
         allDecided,
         undecidedCount,
         selectedModel,
+        claudeAuthMode,
         notesTemplate,
         notesResult,
 
@@ -165,6 +175,7 @@ export function useAI() {
         setResponse,
         setError,
         setSelectedModel,
+        setClaudeAuthMode,
         setNotesTemplate,
         setNotesResult,
         setIsLoading,

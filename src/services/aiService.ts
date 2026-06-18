@@ -2,7 +2,8 @@ import { GoogleGenAI } from '@google/genai';
 import { AIRequest, AIResponse, DiffChunk, DiffSeg, getModelForMode, AI_MODELS } from '../types/ai';
 import type { FlowchartNode, FlowchartEdge } from '../types/flowchart';
 import { layoutFlowchart } from '../lib/dagre-layout';
-import { getKey, hasKey, setKey, removeKey } from './secureStorage';
+import { getKey, hasKey, setKey, removeKey, type Provider } from './secureStorage';
+import type { ClaudeAuthMode } from '../types/converter';
 import { getCachedUserMemory } from './userMemory';
 import FLOWCHART_SYSTEM_PROMPT from './flowchartPrompt.txt?raw';
 
@@ -338,19 +339,20 @@ export function applyDiff(chunks: DiffChunk[]): string {
 
 // ─── AI API Call ──────────────────────────────────────────
 
+export interface CallAIOptions {
+    /** 호출 모델 공급자. 기본 gemini. 'claude'(또는 그 외)는 Rust 경유 Claude 호출. */
+    provider?: Provider;
+    /** Claude 인증 소스 (구독 OAuth / API 키). provider==='claude' 일 때만 의미. */
+    claudeAuth?: ClaudeAuthMode;
+}
+
 export async function callAI(
     request: AIRequest,
     onStream?: (text: string) => void,
+    options?: CallAIOptions,
 ): Promise<AIResponse> {
-    const apiKey = getApiKey();
-    if (!apiKey) {
-        throw new Error('API 키가 설정되지 않았습니다. 설정에서 Gemini API 키를 입력해주세요.');
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
+    const provider = options?.provider ?? 'gemini';
     const hasPrompt = !!request.prompt?.trim();
-    const model = getModelForMode(request.mode, hasPrompt, request.improveQuality);
-
     const systemPrompt = getSystemPrompt(request);
 
     let userContent = request.content;
@@ -360,32 +362,43 @@ export async function callAI(
 
     let modifiedText = '';
 
-    if (onStream) {
-        // Streaming mode
-        const response = await ai.models.generateContentStream({
-            model,
-            contents: userContent,
-            config: {
-                systemInstruction: systemPrompt,
-            },
-        });
+    if (provider === 'gemini') {
+        const apiKey = getApiKey();
+        if (!apiKey) {
+            throw new Error('Gemini API 키가 설정되지 않았습니다. 설정에서 입력해주세요.');
+        }
+        const ai = new GoogleGenAI({ apiKey });
+        const model = getModelForMode(request.mode, hasPrompt, request.improveQuality);
 
-        for await (const chunk of response) {
-            const text = chunk.text || '';
-            modifiedText += text;
-            onStream(modifiedText);
+        if (onStream) {
+            const response = await ai.models.generateContentStream({
+                model,
+                contents: userContent,
+                config: { systemInstruction: systemPrompt },
+            });
+            for await (const chunk of response) {
+                const text = chunk.text || '';
+                modifiedText += text;
+                onStream(modifiedText);
+            }
+        } else {
+            const response = await ai.models.generateContent({
+                model,
+                contents: userContent,
+                config: { systemInstruction: systemPrompt },
+            });
+            modifiedText = response.text || '';
         }
     } else {
-        // Non-streaming mode
-        const response = await ai.models.generateContent({
-            model,
-            contents: userContent,
-            config: {
-                systemInstruction: systemPrompt,
-            },
+        // Claude (구독 OAuth or API 키) — Rust 경유(구독 토큰은 keychain/refresh 가 Rust 에만).
+        // 스트리밍 미지원: 완료 후 한 번에 diff. onStream 은 호출하지 않는다.
+        const { invoke } = await import('@tauri-apps/api/core');
+        modifiedText = await invoke<string>('ai_generate_claude', {
+            system: systemPrompt,
+            prompt: userContent,
+            claudeAuth: options?.claudeAuth ?? 'api_key',
+            maxTokens: 16000,
         });
-
-        modifiedText = response.text || '';
     }
 
     // Clean up: remove markdown code block wrappers if present

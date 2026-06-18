@@ -700,6 +700,7 @@ function App() {
           template: ai.notesTemplate,
           source: fileName || 'document.md',
           provider,
+          claudeAuth: provider === 'claude' ? ai.claudeAuthMode : undefined,
         });
         if (result) ai.setNotesResult(result);
       } catch (err) {
@@ -1767,6 +1768,8 @@ function App() {
           content={content}
           selectedModel={ai.selectedModel}
           onSelectedModelChange={ai.setSelectedModel}
+          claudeAuthMode={ai.claudeAuthMode}
+          onClaudeAuthChange={ai.setClaudeAuthMode}
           onModeChange={ai.setMode}
           onLanguageChange={ai.setLanguage}
           notesTemplate={ai.notesTemplate}

@@ -25,6 +25,9 @@ pub struct NotesJobOptions {
     pub detail: DetailLevel,
     #[serde(default)]
     pub provider: NotesProvider,
+    /// Claude provider 사용 시 인증 소스 (API 키 / 구독 OAuth). Gemini 에는 무관.
+    #[serde(rename = "claudeAuth", default)]
+    pub claude_auth: crate::subscription_auth::ClaudeAuthMode,
     #[serde(rename = "outputDir", skip_serializing_if = "Option::is_none")]
     pub output_dir: Option<String>,
 }
@@ -81,23 +84,49 @@ pub async fn run(
 
     let (model, generate_result) = match opts.provider {
         NotesProvider::Claude => {
-            let api_key = get_key(Provider::Claude)?
-                .ok_or(ConverterError::MissingApiKey("Claude"))?;
+            use crate::subscription_auth::ClaudeAuthMode;
+            let auth_label = match opts.claude_auth {
+                ClaudeAuthMode::Subscription => "구독 로그인",
+                ClaudeAuthMode::ApiKey => "API 키",
+            };
             emitter.emit(
                 "🧠 미팅 노트 생성 중...",
-                Some(format!("{} · max {} tok", MODEL_NOTES_CLAUDE, MAX_OUTPUT_TOKENS)),
+                Some(format!(
+                    "{} · {} · max {} tok",
+                    MODEL_NOTES_CLAUDE, auth_label, MAX_OUTPUT_TOKENS
+                )),
             );
             let start = std::time::Instant::now();
-            let result = anthropic::generate_text(
-                &api_key,
-                MODEL_NOTES_CLAUDE,
-                &prompt,
-                Some(anthropic::ClaudeOptions {
-                    max_output_tokens: Some(MAX_OUTPUT_TOKENS),
-                    system: None,
-                }),
-            )
-            .await?;
+            let claude_opts = anthropic::ClaudeOptions {
+                max_output_tokens: Some(MAX_OUTPUT_TOKENS),
+                system: None,
+            };
+            // 인증 소스 분기. 토큰/키는 호출 동안 살아있어야 하므로 각 분기에서 보관 후 빌려준다.
+            let result = match opts.claude_auth {
+                ClaudeAuthMode::Subscription => {
+                    let token = crate::subscription_auth::claude_access_token()
+                        .await
+                        .map_err(ConverterError::Claude)?;
+                    anthropic::generate_text(
+                        anthropic::ClaudeAuth::Subscription(&token),
+                        MODEL_NOTES_CLAUDE,
+                        &prompt,
+                        Some(claude_opts),
+                    )
+                    .await?
+                }
+                ClaudeAuthMode::ApiKey => {
+                    let api_key = get_key(Provider::Claude)?
+                        .ok_or(ConverterError::MissingApiKey("Claude"))?;
+                    anthropic::generate_text(
+                        anthropic::ClaudeAuth::ApiKey(&api_key),
+                        MODEL_NOTES_CLAUDE,
+                        &prompt,
+                        Some(claude_opts),
+                    )
+                    .await?
+                }
+            };
             emitter.emit(
                 format!("✅ 노트 생성 완료 ({:.1}초)", start.elapsed().as_secs_f64()),
                 Some(format!("{} 토큰 출력", format_num(result.usage.output_tokens as usize))),
