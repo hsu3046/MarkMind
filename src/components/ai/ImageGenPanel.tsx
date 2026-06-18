@@ -301,8 +301,8 @@ export function ImageGenPanel({
                         </div>
                     )}
 
-                    {/* 품질 (OpenAI 전용 — gpt-image-2 quality. Gemini 는 해당 파라미터 없음) */}
-                    {provider === 'openai' && (
+                    {/* 품질 — OpenAI API 키 전용. 구독(codex)은 quality 가 무시되어 숨김 */}
+                    {provider === 'openai' && !isSubscription && (
                         <div className="imggen-section">
                             <div className="imggen-label">품질</div>
                             <div className="imggen-qualities">

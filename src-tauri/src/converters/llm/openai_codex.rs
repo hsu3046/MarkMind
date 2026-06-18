@@ -172,32 +172,22 @@ fn extract_completed_text(v: &serde_json::Value) -> Option<String> {
 /// 이미지 생성은 느리므로(특히 high/대형) 넉넉히 5분.
 const IMAGE_TIMEOUT_SECS: u64 = 300;
 
-/// codex 구독으로 이미지 생성. size/quality 는 툴에 명시(None 이면 codex 기본값).
-/// 반환은 `data:image/png;base64,...` 1개. 추출 실패/비200 은 String 에러(프론트 humanize).
+/// codex 구독으로 이미지 생성. 반환은 `data:image/png;base64,...` 1개.
+/// codex backend 는 image_generation 툴의 size/quality 를 무시한다(항상 1254x1254/low,
+/// 실측 2026-06-19) → 보내지 않음. 비율은 호출부가 프롬프트로 후처리한다.
 pub async fn generate_image(
     access_token: &str,
     account_id: Option<&str>,
     model: &str,
     prompt: &str,
-    size: Option<&str>,
-    quality: Option<&str>,
 ) -> Result<Vec<String>, String> {
-    let mut tool = serde_json::Map::new();
-    tool.insert("type".into(), serde_json::json!("image_generation"));
-    if let Some(s) = size.filter(|s| !s.is_empty()) {
-        tool.insert("size".into(), serde_json::json!(s));
-    }
-    if let Some(q) = quality.filter(|q| !q.is_empty()) {
-        tool.insert("quality".into(), serde_json::json!(q));
-    }
-
     let body = serde_json::json!({
         "model": model,
         "instructions": "",
         "input": [{ "role": "user", "content": prompt }],
         "stream": true,
         "store": false,
-        "tools": [tool],
+        "tools": [{ "type": "image_generation" }],
     });
 
     let client = reqwest::Client::builder()

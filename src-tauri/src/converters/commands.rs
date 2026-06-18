@@ -308,49 +308,20 @@ pub async fn generate_image_openai(
 // ─── ChatGPT(Codex 구독) 이미지 생성 ────────────────────────────────────────
 //
 // 본인 Codex CLI 로그인 토큰으로 구독 이미지 생성(Responses API + image_generation 툴).
-// API 키 경로(generate_image_openai)와 달리 image_generation 툴은 size 가 정해진 3종
-// (1024² / 1024×1536 / 1536×1024)뿐이라 비율을 거기에 맞춰 매핑한다(resolution 은 미사용).
-// 참조 이미지는 codex 경로 미검증이라 1차 제외. 반환 형식은 API 키 경로와 동일(data URL).
+// codex backend 는 size/quality 를 무시(항상 1254x1254/low, 실측 2026-06-19)하므로 보내지
+// 않는다. 비율은 프론트가 프롬프트로 후처리("image ratio of 16:9"), 품질 UI 는 숨긴다.
+// 참조 이미지도 codex 경로 미지원. 반환 형식은 API 키 경로와 동일(data URL).
 #[tauri::command]
-pub async fn generate_image_codex(
-    model: String,
-    prompt: String,
-    aspect_ratio: String,
-    quality: String,
-) -> Result<Vec<String>, String> {
+pub async fn generate_image_codex(model: String, prompt: String) -> Result<Vec<String>, String> {
     use super::llm::openai_codex;
     let tokens = crate::subscription_auth::read_codex_tokens()?;
-    let size = codex_image_size(&aspect_ratio);
     openai_codex::generate_image(
         &tokens.access_token,
         tokens.account_id.as_deref(),
         &model,
         &prompt,
-        Some(size),
-        Some(&quality),
     )
     .await
-}
-
-/// 비율("16:9") → image_generation 툴 size(3종). 가로>세로=landscape, 세로>가로=portrait,
-/// 그 사이는 정사각. 형식 불일치 시 정사각 폴백.
-fn codex_image_size(aspect_ratio: &str) -> &'static str {
-    let dims: Vec<f64> = aspect_ratio
-        .split(':')
-        .filter_map(|x| x.trim().parse().ok())
-        .collect();
-    if dims.len() == 2 && dims[0] > 0.0 && dims[1] > 0.0 {
-        let ratio = dims[0] / dims[1]; // 가로/세로
-        if ratio > 1.1 {
-            "1536x1024" // 가로
-        } else if ratio < 0.9 {
-            "1024x1536" // 세로
-        } else {
-            "1024x1024" // 정사각 근처
-        }
-    } else {
-        "1024x1024"
-    }
 }
 
 // ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────
@@ -359,17 +330,6 @@ fn codex_image_size(aspect_ratio: &str) -> &'static str {
 mod tests {
     use super::*;
     use tempfile::TempDir;
-
-    /// 비율 → codex image_generation 툴 size(3종) 매핑.
-    #[test]
-    fn codex_image_size_maps_aspect() {
-        assert_eq!(codex_image_size("1:1"), "1024x1024");
-        assert_eq!(codex_image_size("16:9"), "1536x1024"); // 가로
-        assert_eq!(codex_image_size("9:16"), "1024x1536"); // 세로
-        assert_eq!(codex_image_size("4:3"), "1536x1024");
-        assert_eq!(codex_image_size("2:3"), "1024x1536");
-        assert_eq!(codex_image_size("garbage"), "1024x1024"); // 폴백
-    }
 
     /// Codex P2 follow-up: ensure `extract_speakers` returns labels from a
     /// clean (no-timestamp) transcript when it's part of an STT pair —

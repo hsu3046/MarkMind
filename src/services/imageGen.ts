@@ -86,14 +86,14 @@ export async function generateImage(opts: GenerateImageOptions): Promise<string[
     if (provider === 'gemini') {
         return invoke<string[]>('generate_image_gemini', { model, prompt, aspectRatio, resolution, referenceImages: refs });
     }
-    // OpenAI 구독(codex) — image_generation 툴(size 3종 + quality). resolution·참조 미사용.
+    // OpenAI 구독(codex) — codex 는 size/quality 를 무시하므로(항상 1254x1254/low, 실측)
+    // 비율은 프롬프트로 후처리하고 품질은 보내지 않는다. 1:1 은 기본 정사각이라 후처리 생략.
     if (auth === 'subscription') {
-        return invoke<string[]>('generate_image_codex', {
-            model,
-            prompt,
-            aspectRatio,
-            quality: quality ?? 'high',
-        });
+        const codexPrompt =
+            aspectRatio && aspectRatio !== '1:1'
+                ? `${prompt}\n\nimage ratio of ${aspectRatio}`
+                : prompt;
+        return invoke<string[]>('generate_image_codex', { model, prompt: codexPrompt });
     }
     // OpenAI API 키 — /v1/images (비율×해상도 size 환산 + quality + 참조).
     return invoke<string[]>('generate_image_openai', {
