@@ -123,6 +123,34 @@ export function normalizeSelection(sel: Partial<AIModelSelection> | null): AIMod
     return normalizeWithCatalog(AI_CATALOG, sel);
 }
 
+/**
+ * 저장된 선택을 "실제 사용 가능한" 회사·방식으로 보정. 가용성은 호출부가 `isUsable` 로 주입
+ * (API 키 보유 / 구독 연동 — Settings 는 stored·subStatus, callAI 는 hasKey·구독감지).
+ * - 현재 선택이 가용하면 **그대로(동일 참조)** 반환 → 호출부가 `===` 로 변경 여부 판단.
+ * - 비가용이면: 현재 회사가 가용하면 방식만 교정(구독만 있으면 subscription 으로),
+ *   아니면 첫 가용 회사로 전환(모델은 회사 유지 시 보존, 바뀌면 그 회사 첫 모델).
+ * - 가용한 회사가 하나도 없으면(키·구독 전무) 원본 그대로(키 등록 안내 상태).
+ * AIModelPicker(Settings UI)와 callAI(실제 호출)가 이 함수로 동일하게 보정한다.
+ */
+export function resolveUsableSelection<C extends string>(
+    catalog: Record<C, AICompanyDef>,
+    sel: { company: C; auth: AIAuthMode; model: string },
+    isUsable: (company: C, auth: AIAuthMode) => boolean,
+): { company: C; auth: AIAuthMode; model: string } {
+    const companyOk = (c: C): boolean => catalog[c].auths.some((a) => isUsable(c, a));
+    if (companyOk(sel.company) && isUsable(sel.company, sel.auth)) return sel;
+    const company = companyOk(sel.company)
+        ? sel.company
+        : (Object.keys(catalog) as C[]).find(companyOk);
+    if (!company) return sel;
+    const auth = catalog[company].auths.find((a) => isUsable(company, a)) ?? catalog[company].auths[0];
+    return normalizeWithCatalog(catalog, {
+        company,
+        auth,
+        model: company === sel.company ? sel.model : undefined,
+    });
+}
+
 export function getAIModelSelection(): AIModelSelection {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);

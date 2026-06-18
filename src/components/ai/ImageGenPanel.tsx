@@ -13,7 +13,7 @@
 import { useState, useEffect } from 'react';
 import { Loader2, AlertCircle, Sparkles, FileInput, Download, X, ImageIcon, Settings as SettingsIcon } from 'lucide-react';
 import { hasKey } from '../../services/secureStorage';
-import { getImageAIModelSelection, IMAGE_AI_CATALOG } from '../../services/aiModelConfig';
+import { getImageAIModelSelection, IMAGE_AI_CATALOG, resolveUsableSelection } from '../../services/aiModelConfig';
 import {
     generateImage,
     humanizeImageGenError,
@@ -63,8 +63,12 @@ export function ImageGenPanel({
     refDropped,
     onConsumeRefDropped,
 }: ImageGenPanelProps) {
-    // 전역 이미지 모델 선택(Settings) — 매 렌더 읽어 설정 변경을 즉시 반영.
-    const imgModel = getImageAIModelSelection();
+    // 전역 이미지 모델 선택(Settings) — 매 렌더 읽고, 가용한 공급사로 보정(callAI 와 동일
+    // resolveUsableSelection). 이미지는 구독 미지원이라 API 키(hasKey)만으로 가용성 판정.
+    // 한쪽 키만 있어도 자동 선택되고, 둘 다 없으면 원본 유지 → providerHasKey 가 false 로 안내.
+    const imgModel = resolveUsableSelection(IMAGE_AI_CATALOG, getImageAIModelSelection(), (c) =>
+        hasKey(c),
+    );
     const provider = imgModel.company; // 'gemini' | 'openai'
     const providerHasKey = hasKey(provider);
 

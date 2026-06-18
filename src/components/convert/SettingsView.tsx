@@ -83,7 +83,7 @@ const KEY_SPECS: KeySpec[] = [
 ];
 
 type SettingsTab = 'basic' | 'ai' | 'extra';
-/** AI 설정 탭에 노출할 API 키 (나머지 키는 추가 기능 탭). */
+/** AI 등록 탭에 노출할 API 키 (나머지 키는 추가 기능 탭). */
 const AI_PROVIDERS: Provider[] = ['gemini', 'claude', 'openai'];
 
 function maskClientId(id: string): string {
@@ -114,12 +114,13 @@ export function SettingsView({ onDone }: SettingsViewProps) {
         openai: false,
         pyannoteai: false,
     });
-    const [stored, setStored] = useState<Record<Provider, boolean>>({
-        gemini: false,
-        claude: false,
-        openai: false,
-        pyannoteai: false,
-    });
+    // lazy init — 첫 렌더부터 키 보유 반영(회사 버튼 disabled 깜빡임 방지). useEffect 가 재확인.
+    const [stored, setStored] = useState<Record<Provider, boolean>>(() => ({
+        gemini: hasKey('gemini'),
+        claude: hasKey('claude'),
+        openai: hasKey('openai'),
+        pyannoteai: hasKey('pyannoteai'),
+    }));
     const [validation, setValidation] = useState<Record<Provider | 'gdrive', ValidationResult | null>>({
         gemini: null,
         claude: null,
@@ -153,8 +154,8 @@ export function SettingsView({ onDone }: SettingsViewProps) {
     const [aiSel, setAiSel] = useState<AIModelSelection>(getAIModelSelection());
     const [imgSel, setImgSel] = useState<ImageAIModelSelection>(getImageAIModelSelection());
 
-    // 설정 탭 (기본 / AI / 추가 기능). AI 가 가장 자주 쓰이므로 기본 진입 탭.
-    const [activeTab, setActiveTab] = useState<SettingsTab>('ai');
+    // 설정 탭 (기본 / AI / 추가 기능). 기본 설정(모델·연결)이 첫 진입 탭.
+    const [activeTab, setActiveTab] = useState<SettingsTab>('basic');
 
     useEffect(() => {
         setValues({
@@ -449,7 +450,7 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                     className={`settings-tab${activeTab === 'ai' ? ' active' : ''}`}
                     onClick={() => setActiveTab('ai')}
                 >
-                    AI 설정
+                    AI 등록
                 </button>
                 <button
                     type="button"
@@ -720,13 +721,14 @@ export function SettingsView({ onDone }: SettingsViewProps) {
             {activeTab === 'basic' && (
                 <>
                     <AIModelPicker
-                        title="기본 AI 모델"
+                        title="기본 AI 선택"
                         catalog={AI_CATALOG}
                         selection={aiSel}
                         onChange={(s) => {
                             setAiSel(s);
                             setAIModelSelection(s);
                         }}
+                        apiKeyAvailable={(c) => stored[c as Provider]}
                         subscriptionAvailable={(c) =>
                             c === 'claude' ? subStatus.claude : c === 'openai' ? subStatus.codex : false
                         }
@@ -735,13 +737,14 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                     <hr className="settings-divider" />
 
                     <AIModelPicker
-                        title="이미지 AI 모델"
+                        title="이미지 AI 선택"
                         catalog={IMAGE_AI_CATALOG}
                         selection={imgSel}
                         onChange={(s) => {
                             setImgSel(s);
                             setImageAIModelSelection(s);
                         }}
+                        apiKeyAvailable={(c) => stored[c as Provider]}
                     />
 
                     <hr className="settings-divider" />
@@ -751,7 +754,7 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                     ) : (
                         <section className="convert-settings-section">
                             <p className="convert-key-note">
-                                아이폰 연결은 데스크탑 앱에서만 사용할 수 있습니다.
+                                iOS 디바이스 연결은 데스크탑 앱에서만 사용할 수 있습니다.
                             </p>
                         </section>
                     )}
