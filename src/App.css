@@ -1259,45 +1259,6 @@ body {
   flex-direction: column;
 }
 
-/* Mindmap drill-in breadcrumb (M2 — "마인드맵 속 마인드맵" navigation) */
-.mindmap-breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-  padding: 6px 12px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-primary);
-  font-size: var(--text-sm, 13px);
-  color: var(--text-secondary);
-  overflow: hidden;
-}
-
-.mindmap-breadcrumb .mm-back-btn {
-  flex-shrink: 0;
-  padding: 3px 10px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm, 4px);
-  cursor: pointer;
-  font-size: var(--text-sm, 13px);
-}
-
-.mindmap-breadcrumb .mm-back-btn:hover {
-  background: var(--bg-hover);
-}
-
-.mindmap-breadcrumb .mm-crumbs {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mindmap-breadcrumb .mm-crumbs strong {
-  color: var(--text-primary);
-}
-
 .pane-editor {
   border-right: 1px solid var(--border-primary);
 }

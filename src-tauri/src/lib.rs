@@ -14,7 +14,6 @@ mod secrets;
 mod share;
 mod subscription_auth;
 mod user_memory;
-mod vault;
 
 use std::sync::Arc;
 
@@ -340,9 +339,6 @@ pub fn run() {
             print_pdf::export_pdf,
             // PPTX export — 프론트 PptxGenJS ArrayBuffer → fs::write (이슈 #6)
             export_pptx::save_pptx,
-            // Vault (옵시디언형 문서 그래프 — 폴더 스캔 + create-on-click)
-            vault::scan_vault,
-            vault::create_file_at,
             // 사용자 메모리(#15) — AI system prompt 주입용 "내 정보"
             user_memory::read_user_memory,
             user_memory::write_user_memory,
