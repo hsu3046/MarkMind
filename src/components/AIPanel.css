@@ -8,7 +8,9 @@
     background: var(--bg-secondary);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    /* 모드 메뉴를 고정하지 않고 본문과 함께 스크롤 — 패널 전체가 스크롤 컨테이너.
+       (제목 헤더만 sticky 로 고정. 모드별 자체 스크롤 영역[diff 등]은 flex:1 로 내부 스크롤 유지) */
+    overflow-y: auto;
 }
 
 .ai-panel-header {
@@ -18,6 +20,11 @@
     padding: 10px 12px;
     gap: 8px;
     flex-shrink: 0;
+    /* 스크롤해도 제목은 상단 고정 */
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--bg-secondary);
 }
 
 .ai-panel-title {

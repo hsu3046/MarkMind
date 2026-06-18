@@ -179,9 +179,6 @@ export function AIPanel({
 
             {isPptxMode && (
                 <div className="ai-pptx-mode">
-                    <p className="ai-pptx-desc">
-                        현재 문서를 AI 레이아웃으로 분석해 PowerPoint(.pptx) 슬라이드로 내보냅니다.
-                    </p>
                     {!pptxAvailable ? (
                         <div className="ai-no-key">
                             <AlertCircle size={20} />
