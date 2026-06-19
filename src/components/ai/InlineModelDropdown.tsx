@@ -52,15 +52,29 @@ export function InlineModelDropdown<C extends string>({
     const [open, setOpen] = useState(false);
 
     // 가용한 (회사, 인증, 모델) 조합을 플랫 리스트로.
+    // 같은 회사 안에서 베이스 이름이 같은 모델(API판·구독판·변형)을 인접시킨다.
+    // 끝의 변형 접미사 "(High)"/"(Low)" 는 떼어 묶음 → "Gemini 3.5 Flash" · "(High)" ·
+    // "(Low)" 가 한 묶음. 베이스 첫 등장 순서·회사 경계는 유지(묶음 내 auths 순 = API 먼저).
     const items = useMemo<Item<C>[]>(() => {
+        const baseName = (s: string) => s.replace(/\s*\([^)]*\)\s*$/, '');
         const out: Item<C>[] = [];
         (Object.keys(catalog) as C[]).forEach((company) => {
             const def = catalog[company];
+            // 회사 내 가용 항목 수집(auths 순서 = api_key → subscription).
+            const companyItems: Item<C>[] = [];
             def.auths.forEach((auth) => {
                 if (!isUsable(company, auth)) return;
                 (def.models[auth] ?? []).forEach((m) => {
-                    out.push({ company, auth, model: m.id, text: m.label, sub: auth === 'subscription' });
+                    companyItems.push({ company, auth, model: m.id, text: m.label, sub: auth === 'subscription' });
                 });
+            });
+            // 베이스 이름 기준 그룹화 — 첫 등장 순서 유지, 같은 묶음끼리 인접.
+            const seen = new Set<string>();
+            companyItems.forEach((it) => {
+                const key = baseName(it.text);
+                if (seen.has(key)) return;
+                seen.add(key);
+                companyItems.forEach((other) => baseName(other.text) === key && out.push(other));
             });
         });
         return out;
