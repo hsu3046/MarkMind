@@ -429,6 +429,41 @@ function App() {
     viewModeRef.current = viewMode;
   }, [viewMode]);
 
+  // 화자 정리(rename_speakers) 후 리로드 판정에 최신 열린 파일 경로를 stale 없이 참조.
+  const filePathRef = useRef(filePath);
+  useEffect(() => {
+    filePathRef.current = filePath;
+  }, [filePath]);
+
+  // 다른 창(AI 패널)에서 화자 정리가 적용되면, 현재 열린 파일이 그 대상일 때 리로드한다.
+  // rename_speakers 는 디스크만 바꾸므로 이미 열린 창엔 'speaker-relabeled' 이벤트로 알린다.
+  // (openFromRecent 는 useCallback([]) 로 안정적이라 리스너는 mount 시 1회만 등록된다.)
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+    (async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      const fn = await listen<{ paths: string[] }>('speaker-relabeled', async (e) => {
+        const cur = filePathRef.current;
+        if (!cur || !(e.payload?.paths ?? []).includes(cur)) return;
+        try {
+          const { readTextFile } = await import('@tauri-apps/plugin-fs');
+          const text = await readTextFile(cur);
+          openFromRecent(cur, text, cur.split('/').pop() || 'Untitled.md');
+        } catch (err) {
+          console.error('[App] 화자 정리 후 리로드 실패:', err);
+        }
+      });
+      if (disposed) { fn(); return; }
+      unlisten = fn;
+    })();
+    return () => {
+      disposed = true;
+      if (unlisten) unlisten();
+    };
+  }, [openFromRecent]);
+
   // 드래그&드롭 핸들러에서 최신 handleOpenInCurrentEditor 를 stale 없이 호출(#14)
   const handleOpenInCurrentEditorRef = useRef<((path: string) => Promise<void>) | null>(null);
 

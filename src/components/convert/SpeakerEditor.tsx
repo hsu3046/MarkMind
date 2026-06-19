@@ -83,6 +83,9 @@ export function SpeakerEditor({ visible, onClose, paths, onApplied }: SpeakerEdi
         setError(null);
         try {
             await tauriInvoke<void>('rename_speakers', { paths, mappings });
+            // 이 파일을 이미 연 다른 창(에디터)에 리로드를 알린다 — rename_speakers 는 디스크만 변경.
+            const { emit } = await import('@tauri-apps/api/event');
+            await emit('speaker-relabeled', { paths });
             onApplied?.();
             onClose();
         } catch (err) {
