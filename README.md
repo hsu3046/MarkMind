@@ -41,14 +41,14 @@ MarkMindは、手書きのメモ、音声録音、スキャンされたPDFなど
 
 ### AI Agent (⌘I)
 
-One side panel with eight modes — speech recognition, image OCR, meeting notes, slides, image generation, plus three text-editing modes. The model used follows a global selection in Settings (company / auth / model).
+One side panel with eight modes — speech recognition, image OCR, meeting notes, slides, image generation, plus three text-editing modes. Switch the AI model **inline per mode** (a dropdown that shows only available key/subscription models, each with its company logo), or set the default in Settings (company / auth / model).
 
 - **Fixes grammar in-place** — Select text, pick "문법 교정," and see word-level highlights of every correction — accept or reject one by one.
 - **Translates seamlessly** — Korean ↔ English ↔ Japanese with paragraph-by-paragraph before/after diffs.
 - **Improves entire documents** — Free-form prompt with Gemini 3.1 Pro for deep rewrites.
 - **Generates meeting notes** — Full document as transcript → structured Markdown notes via Claude Sonnet 4.6 or Gemini 3.1 Pro. Built-in templates (general / detailed / team-sync) + user-defined templates.
 - **Generates slide decks** — Export the current document as a `.pptx` with an AI-planned layout (Claude or Gemini).
-- **Generates images** — Text-to-image (plus reference images) via Gemini (Nano Banana) or ChatGPT (GPT Image); insert into the document or save to file. Works with an API key **or a ChatGPT subscription**.
+- **Generates images** — Text-to-image (plus reference images) via Gemini (Nano Banana), ChatGPT (GPT Image 2), or Grok (Grok Imagine); insert into the document or save to file. Works with an API key **or a subscription**.
 - **Pops up an AI bar on selection** — Highlight any text in the editor and a floating action bar appears instantly.
 - **Streams AI responses live** — Watch the rewrite appear in real time, then review the smart diff.
 
@@ -79,10 +79,10 @@ One side panel with eight modes — speech recognition, image OCR, meeting notes
 
 ### Security & Settings
 
-- **Unified Settings modal** — One place for Gemini, Claude, OpenAI keys (File → Settings).
+- **Unified Settings modal** — One place for Gemini, Claude, OpenAI, and Grok (xAI) keys (File → Settings).
 - **macOS Keychain storage** — All API keys live in the OS Keychain (`space.knowai.markmind`), never in localStorage on the desktop app.
 - **Legacy migration** — First launch auto-migrates any old `localStorage` keys to Keychain.
-- **Subscription OAuth** — Reuse an existing Claude (Max/Pro) or ChatGPT (Plus) subscription by reading the local `claude` / `codex` CLI login — no API key needed for those. Used for both text and image generation.
+- **Subscription OAuth** — Reuse an existing AI subscription by reading the local CLI login — no API key needed: **Claude** (Max/Pro via `claude`), **ChatGPT** (Plus via `codex`, text + image), **Gemini** (via the `agy` Antigravity CLI), **Grok** (via `grok login`; note the general API needs a paid SuperGrok plan). Used for both text and image generation.
 
 ### Claude Integration (MCP) — new in 0.4.0
 
@@ -290,8 +290,9 @@ markmind/
 - [x] **Phase 7 (partial)**: Cloud sync — Google Drive (auto-upload + browse). Share links still planned.
 - [x] **Phase 8**: Claude integration — in-process MCP server (read + edit open documents, diff-gated proposals)
 - [x] **Phase 9**: Generation & visualization — slide (`.pptx`) export, AI image generation (Gemini / ChatGPT, API key or subscription), mindmap / flowchart / Gantt views
-- [x] **Phase 10**: Subscription OAuth — reuse Claude (Max) / ChatGPT (Plus) logins for text & image generation
-- [ ] **Next**: Google Docs export, share links, Grok integration
+- [x] **Phase 10**: Subscription OAuth — reuse Claude (Max) / ChatGPT (Plus) / Gemini (agy) / Grok logins for text & image generation
+- [x] **Phase 11**: Grok (xAI) integration — text (grok-4.3) + image (Grok Imagine), API key & subscription; inline per-mode model dropdown with company logos
+- [ ] **Next**: Google Docs export, share links
 
 See [docs/TODO.md](docs/TODO.md) for the detailed roadmap.
 
