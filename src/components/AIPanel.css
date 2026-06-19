@@ -244,6 +244,23 @@
     font-weight: 600;
 }
 
+/* 음성/이미지 인식(convert) 모드를 번역 등 일반 모드와 좌우 여백·버튼 너비로 통일.
+   convert.css(전역)는 다른 사용처를 위해 그대로 두고 AIPanel 안에서만 스코프 한정한다. */
+.ai-panel .convert-tab-content {
+    /* convert.css 의 max-width:640 + margin:0 auto 는 패널이 640 보다 넓으면 콘텐츠를
+       가운데로 몰아 좌우 여백을 키운다(일반 모드 요소는 .ai-panel 직속이라 패널 폭을 따름).
+       → 해제하고 패널 폭을 꽉 채운 뒤 좌우 8px 만 둔다(번역 등 일반 모드와 동일). */
+    max-width: none;
+    margin: 0;
+    width: 100%;
+    padding: 8px;
+}
+/* 변환 버튼: inline(짧음) → full-width(번역 '실행' 버튼처럼). 보조 버튼은 내용 너비 유지. */
+.ai-panel .convert-actions .convert-btn.primary {
+    flex: 1;
+    justify-content: center;
+}
+
 /* ─── Buttons ────────────────────────────────────── */
 
 .ai-btn {
