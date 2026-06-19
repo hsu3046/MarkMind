@@ -11,15 +11,17 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Loader2, AlertCircle, Sparkles, FileInput, Download, X, ImageIcon, Settings as SettingsIcon } from 'lucide-react';
+import { Loader2, AlertCircle, Sparkles, FileInput, Download, X, ImageIcon } from 'lucide-react';
 import { hasKey } from '../../services/secureStorage';
 import {
     getImageAIModelSelection,
+    setImageAIModelSelection,
     IMAGE_AI_CATALOG,
     resolveUsableSelection,
     type ImageAICompany,
     type AIAuthMode,
 } from '../../services/aiModelConfig';
+import { InlineModelDropdown } from './InlineModelDropdown';
 import { detectSubscriptionLogins } from '../../services/subscriptionService';
 import {
     generateImage,
@@ -76,6 +78,7 @@ export function ImageGenPanel({
     // (resolveUsableTextSelection)와 동일 규칙으로 가용성 판정.
     const [subCodex, setSubCodex] = useState(false);
     const [subGrok, setSubGrok] = useState(false);
+    const [, bumpSel] = useState(0); // 인라인 드롭다운 모델 변경 시 리렌더 트리거
     useEffect(() => {
         detectSubscriptionLogins()
             .then((s) => {
@@ -99,10 +102,6 @@ export function ImageGenPanel({
     // 참조 이미지: Gemini·OpenAI(API키)만 지원. 구독(codex)·Grok(imagine)은 미지원 → 숨김.
     const supportsReference = !isSubscription && provider !== 'grok';
     const providerUsable = isUsable(provider, imgModel.auth);
-    // 패널 상단엔 회사명이 아니라 선택된 모델명(예: Nano Banana 2 / GPT Image (구독))을 표시.
-    const imgModelLabel =
-        IMAGE_AI_CATALOG[provider].models[imgModel.auth]?.find((m) => m.id === imgModel.model)?.label ??
-        imgModel.model;
 
     const [prompt, setPrompt] = useState('');
     const [aspectRatio, setAspectRatio] = useState('1:1');
@@ -205,15 +204,17 @@ export function ImageGenPanel({
 
     return (
         <div className="imggen">
-            {/* 현재 이미지 모델 — Settings "이미지 AI 모델"에서 변경 */}
-            <div className="imggen-model-info">
-                <span className="imggen-model-name">
-                    이미지 모델: <strong>{imgModelLabel}</strong>
-                </span>
-                <button className="imggen-model-change" onClick={onShowSettings} title="설정에서 변경">
-                    <SettingsIcon size={12} /> 변경
-                </button>
-            </div>
+            {/* 현재 이미지 모델 — 인라인 드롭다운으로 즉시 전환(가용 모델만) */}
+            <InlineModelDropdown
+                label="이미지 모델"
+                catalog={IMAGE_AI_CATALOG}
+                selection={imgModel}
+                onChange={(s) => {
+                    setImageAIModelSelection(s);
+                    bumpSel((n) => n + 1);
+                }}
+                isUsable={isUsable}
+            />
 
             {!providerUsable ? (
                 <div className="ai-no-key">

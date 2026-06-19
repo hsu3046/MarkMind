@@ -9,6 +9,7 @@ import { useEffect } from 'react';
 import {
     AICompanyDef,
     AIAuthMode,
+    COMPANY_LOGO,
     normalizeWithCatalog,
     resolveUsableSelection,
 } from '../../services/aiModelConfig';
@@ -92,6 +93,7 @@ export function AIModelPicker<C extends string>({
                             title={companyTitle(key)}
                             onClick={() => apply({ company: key })}
                         >
+                            <img className="ai-seg-logo" src={COMPANY_LOGO[key]} alt="" />
                             {catalog[key].label}
                         </button>
                     ))}
@@ -122,17 +124,25 @@ export function AIModelPicker<C extends string>({
             {/* 모델 — 현재 회사가 비가용이면 선택 불가(disabled) */}
             <div className="ai-model-row">
                 <span className="ai-model-key">모델</span>
-                <select
-                    value={selection.model}
-                    disabled={!companyEnabled(selection.company)}
-                    onChange={(e) => apply({ model: e.target.value })}
-                >
-                    {models.map((m) => (
-                        <option key={m.id} value={m.id}>
-                            {m.label}
-                        </option>
-                    ))}
-                </select>
+                <div className="ai-model-select-wrap">
+                    <img
+                        className="ai-model-select-logo"
+                        src={COMPANY_LOGO[selection.company]}
+                        alt=""
+                    />
+                    <select
+                        className="ai-model-select-logoed"
+                        value={selection.model}
+                        disabled={!companyEnabled(selection.company)}
+                        onChange={(e) => apply({ model: e.target.value })}
+                    >
+                        {models.map((m) => (
+                            <option key={m.id} value={m.id}>
+                                {m.label}
+                            </option>
+                        ))}
+                    </select>
+                </div>
             </div>
 
             {/* 가용한 회사가 하나도 없으면(키·구독 전무) 안내 — 이미지 AI 가 키 없을 때 등 */}

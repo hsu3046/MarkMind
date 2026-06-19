@@ -22,6 +22,7 @@ import { AIModelPicker } from './AIModelPicker';
 import { BackgroundPicker } from '../BackgroundPicker';
 import {
     AI_CATALOG,
+    COMPANY_LOGO,
     getAIModelSelection,
     setAIModelSelection,
     AIModelSelection,
@@ -438,6 +439,9 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
         return (
             <section key={spec.provider} className="convert-settings-section">
                 <label>
+                    {COMPANY_LOGO[spec.provider] && (
+                        <img className="convert-key-logo" src={COMPANY_LOGO[spec.provider]} alt="" />
+                    )}
                     {spec.label} {badge && <span className={badge.cls}>{badge.text}</span>}
                 </label>
                 <div className="convert-key-row">
@@ -516,7 +520,10 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                 <div className="sub-link-list">
                     {/* Claude */}
                     <div className="sub-link-row">
-                        <span className="sub-link-name">Claude 구독 연동</span>
+                        <span className="sub-link-name">
+                            <img className="sub-link-logo" src={COMPANY_LOGO.claude} alt="" />
+                            Claude 구독 연동
+                        </span>
                         <span className={subStatus.claude ? 'badge badge-ok' : 'badge badge-warn'}>
                             {subStatus.claude
                                 ? `${subStatus.claudePlan ? subStatus.claudePlan + ' · ' : ''}연결됨`
@@ -535,7 +542,10 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
 
                     {/* ChatGPT (Codex) */}
                     <div className="sub-link-row">
-                        <span className="sub-link-name">ChatGPT 구독 연동</span>
+                        <span className="sub-link-name">
+                            <img className="sub-link-logo" src={COMPANY_LOGO.openai} alt="" />
+                            ChatGPT 구독 연동
+                        </span>
                         <span className={subStatus.codex ? 'badge badge-ok' : 'badge badge-warn'}>
                             {subStatus.codex
                                 ? `${subStatus.codexPlan ? subStatus.codexPlan + ' · ' : ''}연결됨`
@@ -554,7 +564,10 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
 
                     {/* Gemini (Antigravity CLI) */}
                     <div className="sub-link-row">
-                        <span className="sub-link-name">Gemini 구독 연동</span>
+                        <span className="sub-link-name">
+                            <img className="sub-link-logo" src={COMPANY_LOGO.gemini} alt="" />
+                            Gemini 구독 연동
+                        </span>
                         <span className={subStatus.gemini ? 'badge badge-ok' : 'badge badge-warn'}>
                             {subStatus.gemini
                                 ? `${subStatus.geminiPlan ? subStatus.geminiPlan + ' · ' : ''}연결됨`
@@ -574,16 +587,19 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
 
                     {/* Grok (grok login OAuth) — 로그인 감지. 단 실제 호출은 유료 SuperGrok 필요. */}
                     <div className="sub-link-row">
-                        <span className="sub-link-name">Grok 구독 연동</span>
+                        <span className="sub-link-name">
+                            <img className="sub-link-logo" src={COMPANY_LOGO.grok} alt="" />
+                            Grok 구독 연동
+                        </span>
                         <span className={subStatus.grok ? 'badge badge-ok' : 'badge badge-warn'}>
                             {subStatus.grok ? '연결됨' : '연결 안 됨'}
                         </span>
                     </div>
-                    <p className="convert-key-note sub-link-hint">
-                        {subStatus.grok
-                            ? '로그인됨. 단 실제 호출은 유료 SuperGrok 구독이 필요합니다 (무료 플랜은 403).'
-                            : 'grok login 으로 로그인 + 유료 SuperGrok 구독이 필요합니다.'}
-                    </p>
+                    {!subStatus.grok && (
+                        <p className="convert-key-note sub-link-hint">
+                            grok login 으로 로그인 + 유료 SuperGrok 구독이 필요합니다.
+                        </p>
+                    )}
                 </div>
 
                 <p className="convert-key-note">

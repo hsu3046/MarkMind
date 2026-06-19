@@ -11,6 +11,14 @@
 /** LLM 공급사. 새 회사 추가 시 여기 + AI_CATALOG 에만 손대면 된다. */
 export type AICompany = 'gemini' | 'claude' | 'openai' | 'grok';
 
+/** 회사 로고 경로(public/). UI 드롭다운·모델 피커 공통. */
+export const COMPANY_LOGO: Record<string, string> = {
+    gemini: '/gemini.png',
+    claude: '/claude.svg',
+    openai: '/chatgpt.svg',
+    grok: '/grok.svg',
+};
+
 /** 인증 방식 — API 키(공식) 또는 구독(로컬 CLI 토큰 재사용). */
 export type AIAuthMode = 'api_key' | 'subscription';
 
@@ -42,15 +50,16 @@ export const AI_CATALOG: Record<AICompany, AICompanyDef> = {
         auths: ['api_key', 'subscription'], // 구독 = Antigravity CLI(agy) headless 호출
         models: {
             api_key: [
-                { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (고급)' },
-                { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash (균형)' },
-                { id: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite (가성비)' },
+                { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro' },
+                { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+                { id: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite' },
             ],
             // 구독: agy 모델명(`agy models` 실측)을 그대로 --model 에 전달.
+            // Flash 는 High/Low 두 개라 라벨로 구분(나머지는 모델명만으로 구분됨).
             subscription: [
-                { id: 'Gemini 3.1 Pro (High)', label: 'Gemini 3.1 Pro (고급)' },
-                { id: 'Gemini 3.5 Flash (High)', label: 'Gemini 3.5 Flash (균형)' },
-                { id: 'Gemini 3.5 Flash (Low)', label: 'Gemini 3.5 Flash (가성비)' },
+                { id: 'Gemini 3.1 Pro (High)', label: 'Gemini 3.1 Pro' },
+                { id: 'Gemini 3.5 Flash (High)', label: 'Gemini 3.5 Flash (High)' },
+                { id: 'Gemini 3.5 Flash (Low)', label: 'Gemini 3.5 Flash (Low)' },
             ],
         },
     },
@@ -60,14 +69,14 @@ export const AI_CATALOG: Record<AICompany, AICompanyDef> = {
         // API·구독 모델 동일(Claude Code OAuth 로 opus/sonnet/haiku 모두 호출 가능).
         models: {
             api_key: [
-                { id: 'claude-opus-4-8', label: 'Opus 4.8 (고급)' },
-                { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6 (균형)' },
-                { id: 'claude-haiku-4-5', label: 'Haiku 4.5 (가성비)' },
+                { id: 'claude-opus-4-8', label: 'Opus 4.8' },
+                { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
+                { id: 'claude-haiku-4-5', label: 'Haiku 4.5' },
             ],
             subscription: [
-                { id: 'claude-opus-4-8', label: 'Opus 4.8 (고급)' },
-                { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6 (균형)' },
-                { id: 'claude-haiku-4-5', label: 'Haiku 4.5 (가성비)' },
+                { id: 'claude-opus-4-8', label: 'Opus 4.8' },
+                { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
+                { id: 'claude-haiku-4-5', label: 'Haiku 4.5' },
             ],
         },
     },
@@ -77,14 +86,14 @@ export const AI_CATALOG: Record<AICompany, AICompanyDef> = {
         // API 와 구독의 사용 가능 모델이 다름(구독은 ~/.codex/models_cache.json 실측).
         models: {
             api_key: [
-                { id: 'gpt-5.5', label: 'GPT-5.5 (고급)' },
-                { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini (균형)' },
-                { id: 'gpt-5.4-nano', label: 'GPT-5.4 Nano (가성비)' },
+                { id: 'gpt-5.5', label: 'GPT-5.5' },
+                { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+                { id: 'gpt-5.4-nano', label: 'GPT-5.4 Nano' },
             ],
             subscription: [
-                { id: 'gpt-5.5', label: 'GPT-5.5 (고급)' },
-                { id: 'gpt-5.4', label: 'GPT-5.4 (균형)' },
-                { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini (가성비)' },
+                { id: 'gpt-5.5', label: 'GPT-5.5' },
+                { id: 'gpt-5.4', label: 'GPT-5.4' },
+                { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
             ],
         },
     },
@@ -223,8 +232,8 @@ export const IMAGE_AI_CATALOG: Record<ImageAICompany, AICompanyDef> = {
             // alias(자동 최신 스냅샷) — 차후 모델 갱신 자동 추적. dated 스냅샷도 유효.
             api_key: [{ id: 'gpt-image-2', label: 'GPT Image 2' }],
             // 구독: mainline 모델 + image_generation 툴(별도 이미지 모델 아님). gpt-5.5 가 내부
-            // GPT Image 를 호출. 모델 선택지는 1개라 사실상 "ChatGPT 구독으로 생성"의 의미.
-            subscription: [{ id: 'gpt-5.5', label: 'GPT Image (구독)' }],
+            // GPT Image 2 를 호출 — label 은 API 키와 동일 모델명. "(구독)"은 드롭다운이 일괄 부여.
+            subscription: [{ id: 'gpt-5.5', label: 'GPT Image 2' }],
         },
     },
     grok: {
@@ -232,15 +241,10 @@ export const IMAGE_AI_CATALOG: Record<ImageAICompany, AICompanyDef> = {
         // grok-imagine-* (api.x.ai/v1/images/generations). 비율·해상도(1k/2k) 직접 지원.
         // 구독(grok login OAuth)도 동일 엔드포인트 — 유료(SuperGrok) 필요. docs.x.ai(2026-06).
         auths: ['api_key', 'subscription'],
+        // 일반(grok-imagine-image) 제외 — Quality 만 사용.
         models: {
-            api_key: [
-                { id: 'grok-imagine-image-quality', label: 'Grok Imagine (고품질)' },
-                { id: 'grok-imagine-image', label: 'Grok Imagine (기본)' },
-            ],
-            subscription: [
-                { id: 'grok-imagine-image-quality', label: 'Grok Imagine (고품질)' },
-                { id: 'grok-imagine-image', label: 'Grok Imagine (기본)' },
-            ],
+            api_key: [{ id: 'grok-imagine-image-quality', label: 'Grok Imagine Image Quality' }],
+            subscription: [{ id: 'grok-imagine-image-quality', label: 'Grok Imagine Image Quality' }],
         },
     },
 };

@@ -394,7 +394,9 @@ pub fn detect_subscription_logins() -> SubscriptionStatus {
         grok,
         claude_plan: if claude { claude_plan } else { None },
         codex_plan: if codex { codex_plan_label() } else { None },
-        gemini_plan: if gemini { Some("Antigravity".to_string()) } else { None },
+        // 표시 통일 — agy 가 실제 등급(AI Pro/Ultra)을 노출하지 않으므로, 방식명("Antigravity")
+        // 대신 "연결됨"만 표시(Grok 과 동일). 실등급 추출 경로 생기면 그때 채운다.
+        gemini_plan: None,
         grok_plan: None,
     }
 }
