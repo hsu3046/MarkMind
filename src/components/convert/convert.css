@@ -387,6 +387,9 @@
     font-size: 12px;
     margin-top: 2px;
     margin-left: 22px;
+    /* 긴 경로/파일명이 사이드바 폭을 넘겨 가로 스크롤이 생기지 않게 강제 줄바꿈. */
+    word-break: break-all;
+    overflow-wrap: anywhere;
 }
 /* step 자체에 progress bar (heartbeat row) — % 시각화 */
 .step-progress-bar {
