@@ -53,7 +53,7 @@ interface AIPanelProps {
     onShowSettings: () => void;
     // ── 입력 변환(stt/ocr) ──
     converter: ReturnType<typeof useConverter>;
-    audioDropped: DroppedFile | null;
+    audioDropped: DroppedFile[] | null;
     ocrDropped: DroppedFile | null;
     onConsumeAudioDropped: () => void;
     onConsumeOcrDropped: () => void;
@@ -205,7 +205,7 @@ export function AIPanel({
                     <AudioTab
                         converter={converter}
                         onOpenResult={openEditorWindow}
-                        droppedFile={audioDropped}
+                        droppedFiles={audioDropped}
                         onConsumeDropped={onConsumeAudioDropped}
                     />
                 </ConvertModeBody>

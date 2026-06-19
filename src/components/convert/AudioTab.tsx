@@ -16,7 +16,7 @@ import type { DroppedFile } from './types';
 
 interface AudioTabProps {
     converter: ReturnType<typeof useConverter>;
-    droppedFile?: DroppedFile | null;
+    droppedFiles?: DroppedFile[] | null;
     onConsumeDropped?: () => void;
     onOpenResult?: (path: string) => void;
 }
@@ -35,7 +35,7 @@ async function invokeRaw<T>(cmd: string, args: Record<string, unknown>): Promise
     return invoke<T>(cmd, args);
 }
 
-export function AudioTab({ converter, droppedFile, onConsumeDropped, onOpenResult }: AudioTabProps) {
+export function AudioTab({ converter, droppedFiles, onConsumeDropped, onOpenResult }: AudioTabProps) {
     // 파일명순 자동 정렬을 위한 sort 헬퍼
     const sortByName = (arr: PickedFile[]) =>
         [...arr].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
@@ -50,14 +50,16 @@ export function AudioTab({ converter, droppedFile, onConsumeDropped, onOpenResul
     const [batchError, setBatchError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!droppedFile) return;
-        // OS drag&drop — 기존 파일 목록에 append (사용자가 여러 번 끌어 추가 가능)
-        setFiles((prev) => sortByName([...prev, { path: droppedFile.path, name: droppedFile.name }]));
+        if (!droppedFiles || droppedFiles.length === 0) return;
+        // OS drag&drop — 기존 파일 목록에 append (한 번에 여러 파일, 또는 여러 번 끌어 추가 가능)
+        setFiles((prev) =>
+            sortByName([...prev, ...droppedFiles.map((d) => ({ path: d.path, name: d.name }))]),
+        );
         setResult(null);
         setBatchError(null);
         converter.resetJob();
         onConsumeDropped?.();
-    }, [droppedFile]);
+    }, [droppedFiles]);
 
     const handlePickSingle = async () => {
         const picked = await pickAudioFile();

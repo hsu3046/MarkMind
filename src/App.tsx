@@ -411,7 +411,8 @@ function App() {
   }, [ai]);
 
   // AI 패널(stt/ocr 모드)로 drop된 파일을 자식 컴포넌트에 전달하기 위한 state
-  const [audioDropped, setAudioDropped] = useState<DroppedFile | null>(null);
+  // 음성(stt)은 한 번에 여러 파일을 받을 수 있어 배열(여러 번 set 의 race 없이 한 번에 전달).
+  const [audioDropped, setAudioDropped] = useState<DroppedFile[] | null>(null);
   const [ocrDropped, setOcrDropped] = useState<DroppedFile | null>(null);
   // 이미지 생성 모드에서 OS 드롭으로 들어온 참조 이미지 경로(ImageGenPanel 이 소비).
   const [imageGenRefDropped, setImageGenRefDropped] = useState<string[] | null>(null);
@@ -454,6 +455,10 @@ function App() {
           const mdExts = ['md','markdown','mdx','txt'];
           // 첨부 대상 이미지 확장자 (pdf 제외 — pdf 는 OCR 패널 전용)
           const imageExts = ['png','jpg','jpeg','webp','heic','heif','gif'];
+          const audioExts = ['mp3','wav','m4a','qta','aac','ogg','flac','wma','amr','opus','mp4','mov','webm','m4v'];
+          const ocrExts = ['png','jpg','jpeg','webp','heic','heif','gif','pdf'];
+          const extOf = (fp: string) => fp.split('.').pop()?.toLowerCase() ?? '';
+          const nameOf = (fp: string) => fp.split(/[\\/]/).pop() ?? fp;
 
           // 드롭 좌표 → 마우스가 가리킨 문서 위치에 삽입(#56). macOS 의 Tauri drop position 은
           // 이미 logical(CSS) 좌표라 devicePixelRatio 로 나누면 안 된다(나누면 위쪽으로 쏠림).
@@ -474,24 +479,37 @@ function App() {
             }
           };
 
-          // AI '이미지 생성' 모드: 드롭한 이미지는 에디터가 아니라 패널의 '참조 이미지'로 보낸다.
-          // (dragDropEnabled=true 라 webview HTML5 onDrop 이 억제돼 OS 드롭을 패널로 위임 →
-          //  에디터 이중 삽입 방지. 이 모드에서 비이미지 드롭은 무시.)
-          {
-            const ps = panelStateRef.current;
-            if (ps.aiVisible && ps.aiMode === 'image-gen') {
-              const imgs = paths.filter(
-                (fp) => imageExts.includes(fp.split('.').pop()?.toLowerCase() ?? ''),
-              );
+          // ── 위치 우선 라우팅: 드롭 지점이 AI 패널 영역(.ai-panel) 위면 패널, 아니면 본문. ──
+          // 좌표(#56)로 elementFromPoint hit-test. macOS Tauri drop position 은 logical(CSS)
+          // 좌표라 그대로 사용(÷dpr 금지). 좌표가 없으면 패널 가시성으로 fallback.
+          // (dragDropEnabled=true 라 webview HTML5 onDrop 은 억제돼 OS 드롭만 들어온다.)
+          const ps = panelStateRef.current;
+          const overPanel =
+            cx != null && cy != null
+              ? !!document.elementFromPoint(cx, cy)?.closest('.ai-panel')
+              : ps.aiVisible;
+          if (ps.aiVisible && overPanel) {
+            // 패널 영역에 드롭 → 현재 모드가 파일을 받는다(못 받는 텍스트 모드면 무시 — 본문엔 안 넣음).
+            if (ps.aiMode === 'image-gen') {
+              // 이미지 생성: 드롭한 이미지를 패널의 '참조 이미지'로(비이미지 무시).
+              const imgs = paths.filter((fp) => imageExts.includes(extOf(fp)));
               if (imgs.length > 0) setImageGenRefDropped(imgs);
-              return;
+            } else if (ps.aiMode === 'stt') {
+              // 음성 인식: 드롭한 오디오 전부를 파일 리스트에 추가(여러 파일 순차 변환).
+              const audios = paths.filter((fp) => audioExts.includes(extOf(fp)));
+              if (audios.length > 0) setAudioDropped(audios.map((fp) => ({ path: fp, name: nameOf(fp) })));
+            } else if (ps.aiMode === 'ocr') {
+              // OCR: 드롭한 OCR 파일 첫 개를 패널로(OcrTab 은 단일 파일).
+              const ocrFp = paths.find((fp) => ocrExts.includes(extOf(fp)));
+              if (ocrFp) setOcrDropped({ path: ocrFp, name: nameOf(ocrFp) });
             }
+            return; // 패널 영역 드롭은 항상 패널에서 종결(본문으로 새지 않음).
           }
 
           // 여러 파일 동시 드롭: 마크다운은 새 창, 이미지는 전부 삽입(#56), 나머지 무시.
           if (paths.length > 1) {
             for (const fp of paths) {
-              const e = fp.split('.').pop()?.toLowerCase() ?? '';
+              const e = extOf(fp);
               if (mdExts.includes(e)) {
                 try { await invoke('open_new_window', { filePath: fp }); }
                 catch (err) { console.error('[App] 새 창 열기 실패:', err); }
@@ -503,30 +521,16 @@ function App() {
           }
 
           const path = paths[0];
-          const ext = path.split('.').pop()?.toLowerCase() ?? '';
-          const name = path.split(/[\\/]/).pop() ?? path;
-          const audioExts = ['mp3','wav','m4a','qta','aac','ogg','flac','wma','amr','opus','mp4','mov','webm','m4v'];
-          const ocrExts = ['png','jpg','jpeg','webp','heic','heif','gif','pdf'];
-          const { aiVisible, aiMode } = panelStateRef.current;
+          const ext = extOf(path);
 
-          // 1) AI 패널이 stt/ocr 모드로 열려있으면 우선 라우팅 (명시적 변환 의도 유지)
-          if (aiVisible && aiMode === 'stt' && audioExts.includes(ext)) {
-            setAudioDropped({ path, name });
-            return;
-          }
-          if (aiVisible && aiMode === 'ocr' && ocrExts.includes(ext)) {
-            setOcrDropped({ path, name });
-            return;
-          }
-
-          // 2) 사이드바 비활성 + 이미지 → 활성 에디터에 삽입(#56, 기존 자동 OCR 대체).
-          //    미저장 문서여도 OK — 저장 시 flush 가 assets/ 로 복사·치환.
+          // 이미지 → 활성 에디터에 삽입(#56, 기존 자동 OCR 대체).
+          //   미저장 문서여도 OK — 저장 시 flush 가 assets/ 로 복사·치환.
           if (imageExts.includes(ext)) {
             insertImageAbs(path);
             return;
           }
 
-          // 3) 마크다운/텍스트 → 현재 창에서 열기 (unsaved 시 확인). #14:
+          // 마크다운/텍스트 → 현재 창에서 열기 (unsaved 시 확인). #14:
           // 기존엔 무동작이었음(RunEvent::Opened 는 Finder 더블클릭용이라 드롭엔 안 불림).
           if (mdExts.includes(ext)) {
             await handleOpenInCurrentEditorRef.current?.(path);
@@ -1372,7 +1376,8 @@ function App() {
       } as React.CSSProperties}
       data-custom-bg={bgColor ? 'true' : undefined}
     >
-      {dragActive && (
+      {/* 음성/OCR/이미지 생성 패널은 OS 드롭을 직접 받으므로 그땐 오버레이를 숨긴다(패널로 위임). */}
+      {dragActive && !(ai.panelVisible && (ai.mode === 'stt' || ai.mode === 'ocr' || ai.mode === 'image-gen')) && (
         <div className="file-drop-overlay" aria-hidden>
           <div className="file-drop-overlay-inner">Drag &amp; Drop</div>
         </div>
