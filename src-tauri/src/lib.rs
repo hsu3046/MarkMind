@@ -216,6 +216,19 @@ async fn open_new_window(app: tauri::AppHandle, file_path: Option<String>) -> Re
         .map_err(|e| e.to_string())
 }
 
+/// 프론트(튜토리얼 등)에서 content 를 담은 새 창을 연다 — create_content_window 재사용.
+/// 파일을 거치지 않고 메모리로 직접 로드(temp 파일·읽기 권한 불필요). MCP 문서 창과 동일 경로.
+#[tauri::command]
+async fn open_content_window(
+    app: tauri::AppHandle,
+    content: String,
+    file_name: String,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || create_content_window(&app, content, file_name))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 // 이전엔 별도 Convert 윈도우 (open_convert_window) 가 있었으나,
 // 사이드바 통합 (음성 인식 / 이미지 인식 / AI 에이전트) 으로 제거됨.
 
@@ -290,6 +303,7 @@ pub fn run() {
             take_pending_file,
             take_pending_content,
             open_new_window,
+            open_content_window,
             mcp_sync_document,
             mcp_apply_edit_result,
             // LAN 파일 공유 서버 (아이폰 등 — Connect 시에만 0.0.0.0 bind)

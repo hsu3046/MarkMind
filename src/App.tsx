@@ -36,7 +36,7 @@ import { isTauri } from './services/platform';
 import { useNativeMenu } from './hooks/useNativeMenu';
 import { getCallbackPath } from './services/knowaiAuth';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
-import { Link, Unlink, BookOpen, X as IconX, Sparkles, Loader2 } from 'lucide-react';
+import { Link, Unlink, Sparkles, Loader2 } from 'lucide-react';
 import type { DroppedFile } from './components/convert/types';
 // 본문 명조(뷰어 설정) — Noto Serif KR 한글 서브셋 번들(영문은 Georgia 폴백). ~2MB.
 import '@fontsource/noto-serif-kr/korean-400.css';
@@ -171,7 +171,6 @@ function App() {
     setThemeTransient(luminance < 0.5 ? 'dark' : 'light');
   }, [luminance, setThemeTransient, resetThemeToOS]);
   const [outlineVisible, setOutlineVisible] = useState(false);
-  const [tutorialVisible, setTutorialVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   // macOS full screen 시 툴바 숨김 — Tauri 윈도우 fullscreen 상태 추적(진입/해제는 resize 동반)
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1171,7 +1170,6 @@ function App() {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (settingsVisible) { setSettingsVisible(false); return; }
-        if (tutorialVisible) { setTutorialVisible(false); return; }
         if (searchVisible) { toggleSearch(); return; }
         if (recentPanelVisible) { setRecentPanelVisible(false); return; }
       }
@@ -1253,7 +1251,7 @@ function App() {
   }, [
     saveFile, saveFileAs, handleOpenFile, newFile, toggleSearch,
     handleFontSizeChange, resetFontSize, recentPanelVisible,
-    searchVisible, viewMode, handleToggleAI, tutorialVisible, settingsVisible,
+    searchVisible, viewMode, handleToggleAI, settingsVisible,
   ]);
 
   // Split pane drag
@@ -1304,6 +1302,27 @@ function App() {
     }
   }, [fileName, isDirty]);
 
+  // 튜토리얼을 임시 .md 로 써서 새 창에서 일반 문서처럼 연다(모달 대신 — MarkMind 도그푸딩).
+  // 튜토리얼 창은 단일 인스턴스 — 이미 열려있으면 focus(매번 새 창 방지).
+  const tutorialLabelRef = useRef<string | null>(null);
+  const openTutorial = useCallback(async () => {
+    try {
+      const { getAllWebviewWindows } = await import('@tauri-apps/api/webviewWindow');
+      const { invoke } = await import('@tauri-apps/api/core');
+      // 이전에 연 튜토리얼 창이 아직 살아있으면 새로 만들지 않고 앞으로 가져온다.
+      if (tutorialLabelRef.current) {
+        const win = (await getAllWebviewWindows()).find((w) => w.label === tutorialLabelRef.current);
+        if (win) { await win.setFocus(); return; }
+      }
+      // content 를 메모리로 직접 넘겨 새 창에서 연다(temp 파일·읽기 권한 우회 — MCP 문서 창과 동일 경로).
+      tutorialLabelRef.current = await invoke<string>('open_content_window', {
+        content: TUTORIAL_CONTENT,
+        fileName: 'MarkMind 튜토리얼.md',
+      });
+    } catch (err) {
+      console.error('[App] 튜토리얼 열기 실패:', err);
+    }
+  }, []);
 
   // 네이티브 macOS 메뉴바에 File/View 미러링(Tauri 한정) — 툴바 dropdown 은 숨김.
   // (조기 return 보다 위에 둬 hooks 호출 순서 보장.)
@@ -1317,7 +1336,7 @@ function App() {
     onSaveFileAs: saveFileAs,
     onExportPdf: handleExportPdf,
     onShowSettings: () => setSettingsVisible(true),
-    onShowTutorial: () => setTutorialVisible(true),
+    onShowTutorial: openTutorial,
     onOpenFromDrive: () => setDriveBrowserMode('open'),
     onSaveToDrive: () => setDriveBrowserMode('save'),
     onOpenRecent: handleOpenRecentByPath,
@@ -1412,7 +1431,7 @@ function App() {
         onSaveFile={saveFile}
         onSaveFileAs={saveFileAs}
         onExportPdf={handleExportPdf}
-        onShowTutorial={() => setTutorialVisible(true)}
+        onShowTutorial={openTutorial}
         onShowSettings={() => setSettingsVisible(true)}
         onOpenFromDrive={() => setDriveBrowserMode('open')}
         onSaveToDrive={() => setDriveBrowserMode('save')}
@@ -1635,24 +1654,6 @@ function App() {
         onClear={clearRecentFiles}
         onClose={() => setRecentPanelVisible(false)}
       />
-
-      {/* Tutorial overlay */}
-      {tutorialVisible && (
-        <div className="tutorial-overlay" onClick={() => setTutorialVisible(false)}>
-          <div className="tutorial-overlay-content" onClick={(e) => e.stopPropagation()}>
-            <div className="tutorial-overlay-header">
-              <span className="tutorial-overlay-title"><BookOpen size={16} strokeWidth={1.5} /><span>Tutorial</span></span>
-              <button className="tutorial-overlay-close" onClick={() => setTutorialVisible(false)}><IconX size={16} /></button>
-            </div>
-            <div className="tutorial-overlay-body">
-              <Preview content={TUTORIAL_CONTENT} fontSize={fontSize} />
-            </div>
-          </div>
-          <div className="reading-mode-hint">
-            Press <kbd>Esc</kbd> or click outside to close
-          </div>
-        </div>
-      )}
 
       {/* 통합 Settings 모달 — STT/OCR/AI 에이전트 API 키 */}
       <SettingsModal

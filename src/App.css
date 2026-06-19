@@ -2758,109 +2758,6 @@ code.hljs {
   text-align: center;
 }
 
-/* ---------- 오버레이 Esc 힌트 (Tutorial 오버레이가 재사용) ---------- */
-.reading-mode-hint {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 8px 16px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  pointer-events: none;
-  opacity: 0.8;
-  animation: fadeIn var(--transition-normal) ease-out;
-}
-
-/* ---------- Tutorial Overlay ---------- */
-.tutorial-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 2000;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-  cursor: pointer;
-  animation: fadeIn var(--transition-normal) ease-out;
-}
-
-.tutorial-overlay-content {
-  width: 90%;
-  max-width: 720px;
-  max-height: 80vh;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  cursor: default;
-}
-
-.tutorial-overlay-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--border-primary);
-  flex-shrink: 0;
-}
-
-.tutorial-overlay-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.tutorial-overlay-close {
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 16px;
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all var(--transition-fast);
-}
-
-.tutorial-overlay-close:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.tutorial-overlay-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px 32px;
-}
-
-.tutorial-overlay-body .preview-wrapper {
-  max-width: 100%;
-}
-
-.reading-mode-hint kbd {
-  display: inline-block;
-  padding: 1px 5px;
-  background: var(--bg-hover);
-  border-radius: 3px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-}
-
 /* ---------- Recent Files Panel ---------- */
 .recent-panel-backdrop {
   position: fixed;
@@ -3231,7 +3128,7 @@ code.hljs {
   .statusbar, .outline-panel, .convert-sidebar, .ai-panel,
   .floating-ai-bar, .rich-toolbar,
   .split-handle, .split-handle-area, .sync-toggle,
-  .recent-panel, .recent-panel-backdrop, .tutorial-overlay,
+  .recent-panel, .recent-panel-backdrop,
   .settings-modal-backdrop, .settings-modal, .drive-browser-root,
   .speaker-editor-root, .link-modal-root, .bg-picker-root,
   .bg-picker-popover, .cm-panels, .empty-state {
