@@ -38,6 +38,9 @@ import { getCallbackPath } from './services/knowaiAuth';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
 import { Link, Unlink, BookOpen, X as IconX, Sparkles, Loader2 } from 'lucide-react';
 import type { DroppedFile } from './components/convert/types';
+// 본문 명조(뷰어 설정) — Noto Serif KR 한글 서브셋 번들(영문은 Georgia 폴백). ~2MB.
+import '@fontsource/noto-serif-kr/korean-400.css';
+import '@fontsource/noto-serif-kr/korean-700.css';
 import './App.css';
 import './components/convert/convert.css';
 import './components/sidebar/sidebar.css';
@@ -101,26 +104,20 @@ function App() {
   // Wire up the file-opened callback now that viewMode/setViewMode exist
   onFileOpenedRef.current = () => {
     setViewMode('preview');
-    setReadingMode(false);
   };
   const { syncEnabled, toggleSync, reattach } = useScrollSync(true);
   const [fontSize, setFontSize] = useState(() => {
     const saved = localStorage.getItem('md-editor-font-size');
     return saved ? parseInt(saved, 10) : FONT_SIZE_DEFAULT;
   });
-  // 행간 — compact (1.5) / normal (1.8) / relaxed (2.2) cycle, localStorage 보존
-  const [lineHeight, setLineHeight] = useState<'compact' | 'normal' | 'relaxed'>(() => {
-    const v = localStorage.getItem('markmind-line-height');
-    return v === 'compact' || v === 'relaxed' ? v : 'normal';
+  // 행간 배율 — 1.2~3.0, 기본 1.8. CSS var(--md-line-height) 로 본문 line-height 제어.
+  const [lineHeight, setLineHeight] = useState<number>(() => {
+    const v = parseFloat(localStorage.getItem('markmind-line-height') || '');
+    return v >= 1.2 && v <= 3 ? v : 1.8;
   });
   useEffect(() => {
-    localStorage.setItem('markmind-line-height', lineHeight);
+    localStorage.setItem('markmind-line-height', String(lineHeight));
   }, [lineHeight]);
-  const cycleLineHeight = () => {
-    setLineHeight((prev) =>
-      prev === 'compact' ? 'normal' : prev === 'normal' ? 'relaxed' : 'compact',
-    );
-  };
 
   // 배경색 — 빈 문자열 = 테마 기본, 그 외엔 사용자 지정 CSS color
   const [bgColor, setBgColor] = useState<string>(
@@ -130,6 +127,25 @@ function App() {
     if (bgColor) localStorage.setItem('markmind-bg-color', bgColor);
     else localStorage.removeItem('markmind-bg-color');
   }, [bgColor]);
+
+  // 본문 폰트 — 'sans'(고딕, Pretendard 기본) / 'serif'(명조). data-font-family 로 CSS 분기.
+  const [fontFamily, setFontFamily] = useState<'sans' | 'serif'>(
+    () => (localStorage.getItem('markmind-font-family') === 'serif' ? 'serif' : 'sans'),
+  );
+  useEffect(() => {
+    localStorage.setItem('markmind-font-family', fontFamily);
+  }, [fontFamily]);
+
+  // 좌우 여백(%) — 0(여백 없음=본문 풀폭) ~ 40. 본문 max-width = 100% − 2×여백%.
+  const [readingWidth, setReadingWidth] = useState<number>(() => {
+    const v = parseFloat(localStorage.getItem('markmind-side-margin') || '');
+    return v >= 0 && v <= 40 ? v : 12;
+  });
+  useEffect(() => {
+    localStorage.setItem('markmind-side-margin', String(readingWidth));
+  }, [readingWidth]);
+  // 좌우 여백 % → CSS var. 본체에서 max-width: calc(100% − 2×var) 로 본문 폭 결정.
+  const readingWidthCss = `${readingWidth}%`;
 
   // 배경색의 WCAG 상대 휘도 (0~1). 0.5 미만이면 dark 텍스트가 안 보임 → theme dark 로.
   const luminance = useMemo(() => {
@@ -155,9 +171,28 @@ function App() {
     setThemeTransient(luminance < 0.5 ? 'dark' : 'light');
   }, [luminance, setThemeTransient, resetThemeToOS]);
   const [outlineVisible, setOutlineVisible] = useState(false);
-  const [readingMode, setReadingMode] = useState(false);
   const [tutorialVisible, setTutorialVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  // macOS full screen 시 툴바 숨김 — Tauri 윈도우 fullscreen 상태 추적(진입/해제는 resize 동반)
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    (async () => {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const win = getCurrentWindow();
+      const sync = async () => setIsFullscreen(await win.isFullscreen());
+      await sync();
+      const un = await win.onResized(sync);
+      if (disposed) un();
+      else unlisten = un;
+    })();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
   const [driveBrowserMode, setDriveBrowserMode] = useState<'open' | 'save' | null>(null);
   // LAN 서버 모드(아이폰 브라우저 등)에서 공유 폴더 파일 목록 브라우저
   const [lanBrowserVisible, setLanBrowserVisible] = useState(false);
@@ -371,18 +406,9 @@ function App() {
   // converter 는 AudioTab/OcrTab(AIPanel 내부)에 전달.
   const converter = useConverter();
 
-  // 사이드 패널 열 때 reading mode 만 해제 — 현재 viewMode 는 그대로 유지
-  // (이전엔 강제로 editor 모드로 전환했으나 사용자 의도와 어긋남)
-  const exitReadingMode = useCallback(() => {
-    if (readingMode) setReadingMode(false);
-  }, [readingMode]);
-
   const handleToggleAI = useCallback(() => {
-    if (!ai.panelVisible) {
-      exitReadingMode();
-    }
     ai.togglePanel();
-  }, [ai, exitReadingMode]);
+  }, [ai]);
 
   // AI 패널(stt/ocr 모드)로 drop된 파일을 자식 컴포넌트에 전달하기 위한 state
   const [audioDropped, setAudioDropped] = useState<DroppedFile | null>(null);
@@ -572,7 +598,6 @@ function App() {
     } else {
       pendingScrollLineRef.current = line;
       setViewMode('split');
-      setReadingMode(false);
     }
   }, [viewMode]);
 
@@ -756,7 +781,6 @@ function App() {
     if (!ai.panelVisible) {
       if (viewMode !== 'editor') {
         setViewMode('editor');
-        setReadingMode(false);
       }
       ai.setPanelVisible(true);
     }
@@ -957,18 +981,6 @@ function App() {
     localStorage.setItem('md-editor-font-size', String(FONT_SIZE_DEFAULT));
   }, []);
 
-  // Reading mode
-  const toggleReadingMode = useCallback(() => {
-    setReadingMode((prev) => {
-      const next = !prev;
-      if (next) {
-        setViewMode('preview');
-        setOutlineVisible(false);
-      }
-      return next;
-    });
-  }, []);
-
   // Search toggle
   // ─── 통일 검색 (Markdown/CodeMirror + Rich Text/Tiptap 공용 SearchBar) ───
   // 엔진 라우팅: 편집/split → editorRef 프로그램 검색(동기 {count,index}), 프리뷰 →
@@ -1156,7 +1168,6 @@ function App() {
       if (e.key === 'Escape') {
         if (settingsVisible) { setSettingsVisible(false); return; }
         if (tutorialVisible) { setTutorialVisible(false); return; }
-        if (readingMode) { setReadingMode(false); return; }
         if (searchVisible) { toggleSearch(); return; }
         if (recentPanelVisible) { setRecentPanelVisible(false); return; }
       }
@@ -1188,32 +1199,26 @@ function App() {
           case '1':
             e.preventDefault();
             setViewMode('editor');
-            setReadingMode(false);
             break;
           case '2':
             e.preventDefault();
             setViewMode('preview');
-            setReadingMode(false);
             break;
           case '3':
             e.preventDefault();
             setViewMode('split');
-            setReadingMode(false);
             break;
           case '4':
             e.preventDefault();
             setViewMode('mindmap');
-            setReadingMode(false);
             break;
           case '5':
             e.preventDefault();
             setViewMode('flowchart');
-            setReadingMode(false);
             break;
           case '6':
             e.preventDefault();
             setViewMode('gantt');
-            setReadingMode(false);
             break;
           case '=':
           case '+':
@@ -1243,7 +1248,7 @@ function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [
     saveFile, saveFileAs, handleOpenFile, newFile, toggleSearch,
-    handleFontSizeChange, resetFontSize, readingMode, recentPanelVisible,
+    handleFontSizeChange, resetFontSize, recentPanelVisible,
     searchVisible, viewMode, handleToggleAI, tutorialVisible, settingsVisible,
   ]);
 
@@ -1295,32 +1300,6 @@ function App() {
     }
   }, [fileName, isDirty]);
 
-  // Reading mode
-  if (readingMode) {
-    return (
-      <div
-        className="app reading-mode"
-        data-line-height={lineHeight}
-        style={
-          bgColor
-            ? ({
-                '--user-bg': bgColor,
-                '--preview-bg': bgColor,
-              } as React.CSSProperties)
-            : undefined
-        }
-        data-custom-bg={bgColor ? 'true' : undefined}
-        onClick={() => setReadingMode(false)}
-      >
-        <div className="reading-mode-content" onClick={(e) => e.stopPropagation()}>
-          <Preview content={content} fontSize={fontSize + 2} filePath={filePath} />
-        </div>
-        <div className="reading-mode-hint">
-          Press <kbd>Esc</kbd> or click outside to exit
-        </div>
-      </div>
-    );
-  }
 
   // 네이티브 macOS 메뉴바에 File/View 미러링(Tauri 한정) — 툴바 dropdown 은 숨김.
   // (조기 return 보다 위에 둬 hooks 호출 순서 보장.)
@@ -1383,16 +1362,14 @@ function App() {
   return (
     <div
       className="app"
-      data-line-height={lineHeight}
-      style={
-        bgColor
-          ? ({
-              // content 영역만 적용 — UI chrome (popover/AIPanel/Toolbar) 영향 X
-              '--user-bg': bgColor,
-              '--preview-bg': bgColor,
-            } as React.CSSProperties)
-          : undefined
-      }
+      data-font-family={fontFamily}
+      style={{
+        // content 영역만 적용 — UI chrome (popover/AIPanel/Toolbar) 영향 X
+        '--md-line-height': String(lineHeight),
+        '--md-side-margin': readingWidthCss,
+        '--md-font-size': `${fontSize}px`,
+        ...(bgColor ? { '--user-bg': bgColor, '--preview-bg': bgColor } : {}),
+      } as React.CSSProperties}
       data-custom-bg={bgColor ? 'true' : undefined}
     >
       {dragActive && (
@@ -1420,9 +1397,9 @@ function App() {
           <EditableFileName fileName={fileName} isDirty={isDirty} onRename={renameFile} />
         </div>
       </div>
+      {!isFullscreen && (
       <Toolbar
         viewMode={viewMode}
-        fontSize={fontSize}
         outlineVisible={outlineVisible}
         onViewModeChange={setViewMode}
         onNewFile={newFile}
@@ -1434,14 +1411,7 @@ function App() {
         onShowSettings={() => setSettingsVisible(true)}
         onOpenFromDrive={() => setDriveBrowserMode('open')}
         onSaveToDrive={() => setDriveBrowserMode('save')}
-        onFontSizeChange={handleFontSizeChange}
-        onFontSizeReset={resetFontSize}
-        lineHeight={lineHeight}
-        onCycleLineHeight={cycleLineHeight}
-        bgColor={bgColor}
-        onBgColorChange={setBgColor}
         onToggleOutline={() => setOutlineVisible((v) => !v)}
-        onToggleReadingMode={toggleReadingMode}
         onToggleRecentFiles={() => setRecentPanelVisible((v) => !v)}
         recentFiles={recentFiles}
         onOpenRecent={handleOpenRecentByPath}
@@ -1451,6 +1421,7 @@ function App() {
         aiPanelVisible={ai.panelVisible}
         nativeMenu={isTauri()}
       />
+      )}
 
       {/* 통일 검색+바꾸기 바 (Markdown/Rich Text 공용) */}
       {searchVisible && (
@@ -1679,7 +1650,23 @@ function App() {
       )}
 
       {/* 통합 Settings 모달 — STT/OCR/AI 에이전트 API 키 */}
-      <SettingsModal visible={settingsVisible} onClose={() => setSettingsVisible(false)} />
+      <SettingsModal
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
+        viewer={{
+          fontSize,
+          onFontSizeChange: handleFontSizeChange,
+          onFontSizeReset: resetFontSize,
+          lineHeight,
+          onLineHeightChange: setLineHeight,
+          bgColor,
+          onBgColorChange: setBgColor,
+          fontFamily,
+          onFontFamilyChange: setFontFamily,
+          readingWidth,
+          onReadingWidthChange: setReadingWidth,
+        }}
+      />
 
       {/* LAN 서버 모드(아이폰 등) — 공유 폴더 파일 브라우저 */}
       <LanFileBrowser

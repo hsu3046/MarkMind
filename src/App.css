@@ -55,6 +55,9 @@
     'Noto Sans JP', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
     system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Menlo', monospace;
+  /* 본문 명조 — 번들된 Noto Serif KR 우선(한글), 영문/폴백은 시스템 명조·Georgia */
+  --font-serif: 'Noto Serif KR', 'AppleMyungjo', 'Nanum Myeongjo',
+    'Hiragino Mincho ProN', 'YuMincho', Georgia, serif;
 
   /* Font sizes */
   --text-xs: 11px;
@@ -1666,6 +1669,9 @@ body.is-resizing .split-pane {
 
 .editor-wrapper .cm-content {
   padding: 0 20px;
+  /* 뷰어 설정 글자크기·행간을 편집창(마크다운 소스)에도 적용 (App root 의 CSS var) */
+  font-size: var(--md-font-size, 14px);
+  line-height: var(--md-line-height, 1.8);
 }
 
 .editor-wrapper .cm-gutters {
@@ -1729,19 +1735,15 @@ body.is-resizing .split-pane {
 .preview-wrapper.preview-rich-mode {
   padding: 0;
 }
-.preview-wrapper.preview-rich-mode .markdown-frontmatter,
-.preview-wrapper.preview-rich-mode .tiptap-rich {
+.preview-wrapper.preview-rich-mode .markdown-frontmatter {
   margin-left: 40px;
   margin-right: 40px;
-}
-.preview-wrapper.preview-rich-mode .markdown-frontmatter {
   margin-top: 24px;
 }
 .preview-wrapper.preview-rich-mode .tiptap-rich {
   padding-bottom: 32px;
-  /* 편집 모드는 가용 폭 100% 활용 — read-only preview 의 720px 제한 override */
-  max-width: none;
-  width: auto;
+  /* 본문 폭·중앙정렬은 .markdown-body 본체 var(--md-side-margin) calc 로 제어
+     (이전엔 max-width:none 이 여백 설정을 막았음). */
 }
 
 /* 툴바+배너 sticky 래퍼 — Rich Text 모드에서 main Toolbar 바로 아래 0 고정.
@@ -2139,13 +2141,8 @@ body.is-resizing .split-pane {
   overflow-x: auto;
 }
 
-/* 행간 (App root 의 data-line-height attribute 로 cycle) */
-[data-line-height="compact"] .markdown-body,
-[data-line-height="compact"] .tiptap-rich { line-height: 1.5; }
-[data-line-height="normal"] .markdown-body,
-[data-line-height="normal"] .tiptap-rich { line-height: 1.8; }
-[data-line-height="relaxed"] .markdown-body,
-[data-line-height="relaxed"] .tiptap-rich { line-height: 2.2; }
+/* 행간 — .markdown-body 는 본체 셀렉터에서 var 적용. .tiptap-rich(Rich Text 편집)도 동일 var. */
+.tiptap-rich { line-height: var(--md-line-height, 1.8); }
 .tiptap-rich p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
@@ -2320,8 +2317,10 @@ body.is-resizing .split-pane {
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: var(--text-base);
-  line-height: 1.8;
-  max-width: 720px;
+  /* 행간·좌우 여백은 뷰어 설정 CSS var 로 제어 (App root 주입). 여백 %(편측) → 본문 폭. */
+  line-height: var(--md-line-height, 1.8);
+  max-width: calc(100% - 2 * var(--md-side-margin, 0%));
+  margin-inline: auto;
 }
 
 .markdown-body h1,
@@ -2759,32 +2758,7 @@ code.hljs {
   text-align: center;
 }
 
-/* ---------- Reading Mode ---------- */
-.reading-mode {
-  background: var(--bg-primary);
-  cursor: pointer;
-  position: relative;
-}
-
-.reading-mode-content {
-  flex: 1;
-  overflow-y: auto;
-  cursor: default;
-  display: flex;
-  justify-content: center;
-}
-
-.reading-mode-content .preview-wrapper {
-  /* 사용자 요청 — 전체 폭 100% 활용 (이전 800px 제한 해제) */
-  max-width: none;
-  width: 100%;
-  padding: 48px 60px;
-}
-/* reading mode 의 markdown-body 도 폭 제한 해제 */
-.reading-mode-content .preview-wrapper .markdown-body {
-  max-width: none;
-}
-
+/* ---------- 오버레이 Esc 힌트 (Tutorial 오버레이가 재사용) ---------- */
 .reading-mode-hint {
   position: fixed;
   bottom: 24px;
@@ -3592,4 +3566,164 @@ code.hljs {
 }
 .pptx-busy-card .spinning {
   color: #2f6fed;
+}
+
+/* ─── 뷰어 설정: 본문 폰트 / 읽기 폭 (Settings → 뷰어 설정 탭) ─── */
+
+/* 본문 폰트 — '명조' 선택 시 본문(미리보기/Rich Text)에 serif. '고딕'은 기본(--font-sans 상속).
+   코드 블록은 .markdown-body code/pre 의 var(--font-mono) 셀렉터가 더 구체적이라 영향 없음. */
+[data-font-family='serif'] .markdown-body,
+[data-font-family='serif'] .tiptap-rich {
+  font-family: var(--font-serif);
+}
+
+/* 좌우 여백 — .markdown-body 본체의 max-width: calc(100% − 2×var(--md-side-margin)) 로 제어
+   (App root 가 여백 % 주입, 뷰어 설정 슬라이더 0~40). */
+
+/* 뷰어 설정 탭 — 섹션 세로 스택, 왼쪽 정렬 */
+.viewer-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
+}
+.viewer-section > label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.viewer-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted, #999);
+}
+
+/* 글자 크기 — 원형 −/+ + reset 아이콘 */
+.viewer-fontsize {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.viewer-fontsize-value {
+  min-width: 28px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 600;
+}
+.viewer-step {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border, #d8d8d2);
+  border-radius: 50%; /* 정원 */
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.viewer-reset {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.viewer-reset:hover {
+  color: inherit;
+}
+.viewer-step:hover,
+.viewer-reset:hover {
+  background: var(--hover-bg, rgba(0, 0, 0, 0.05));
+}
+
+/* 행간 슬라이더 */
+.viewer-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 320px;
+}
+.viewer-slider {
+  flex: 1;
+  accent-color: #2f6fed;
+  cursor: pointer;
+}
+.viewer-slider-value {
+  min-width: 30px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* 세그먼트 토글 (본문 폭 / 본문 폰트) */
+.viewer-segmented {
+  display: flex;
+  gap: 6px;
+}
+.viewer-seg {
+  padding: 6px 16px;
+  border: 1px solid var(--border, #d8d8d2);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.viewer-seg:hover {
+  background: var(--hover-bg, rgba(0, 0, 0, 0.04));
+}
+.viewer-seg.active {
+  background: #2f6fed;
+  border-color: #2f6fed;
+  color: #fff;
+}
+.viewer-font-sample {
+  min-width: 110px;
+  font-size: 15px;
+}
+
+/* 배경색 인라인 스와치 (뷰어 설정 — 팝오버 없이 바로) */
+.bg-picker-inline .bg-picker-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* 기존 swatch 는 grid 셀용(width:100%) — inline 에선 고정 크기로 */
+.bg-picker-inline .bg-picker-swatch {
+  width: 32px;
+  height: 32px;
+  aspect-ratio: auto;
+}
+.bg-picker-custom-swatch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted, #888);
+  overflow: hidden;
+}
+.bg-picker-custom-swatch input[type='color'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  border: none;
+  cursor: pointer;
 }

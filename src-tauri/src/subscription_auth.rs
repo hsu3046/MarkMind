@@ -106,6 +106,25 @@ fn read_claude_creds() -> Option<ClaudeCreds> {
     serde_json::from_str::<ClaudeCreds>(&raw).ok()
 }
 
+/// Claude Code 로그인 "존재"만 확인 — `security find`(비밀번호 `-g` 없이)로 keychain 항목
+/// 메타만 조회하므로 **인증창이 뜨지 않는다**. 실제 토큰은 `claude_access_token()` 이 호출
+/// 시 1번 `get_password`(그때만 인증). 감지(detect)는 이 함수를 써서 앱 시작 인증창을 없앤다.
+/// (keyring crate 의 get_password 는 항상 ACL 인증을 요구해, 다른 앱 항목인 Claude Code
+///  토큰을 읽으면 새 빌드/인스톨마다 인증창이 떴다.)
+fn claude_logged_in() -> bool {
+    std::process::Command::new("security")
+        .args([
+            "find-generic-password",
+            "-s",
+            CLAUDE_KEYCHAIN_SERVICE,
+            "-a",
+            &current_user(),
+        ])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 fn write_claude_creds(creds: &ClaudeCreds) -> Result<(), String> {
     let json = serde_json::to_string(creds).map_err(|e| e.to_string())?;
     claude_entry()?.set_password(&json).map_err(|e| e.to_string())
@@ -230,6 +249,61 @@ pub fn codex_logged_in() -> bool {
         .unwrap_or(false)
 }
 
+// ─── Grok (xAI) — Grok Build CLI auth.json 토큰 재사용 ────────────────────────
+//
+// `grok login`(OAuth) 후 `~/.grok/auth.json` 에 OIDC access token 저장. 같은 토큰을
+// Bearer 로 api.x.ai 에 쓰면 API 키 경로(grok.rs)와 동일하게 동작한다 — 단 **유료(SuperGrok)
+// 구독 필요**. 무료/크레딧0 계정은 api.x.ai 가 403(personal-team-blocked:spending-limit).
+
+fn grok_auth_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    Some(std::path::Path::new(&home).join(".grok").join("auth.json"))
+}
+
+/// `~/.grok/auth.json` 에서 access token(첫 scope 의 `key`)을 읽는다.
+/// 구조: `{ "<scope>": { "key": "<jwt>", "refresh_token": ..., "expires_at": ... } }`.
+/// (만료 refresh 미구현 — 만료 시 401 → `grok login` 재로그인 안내. Codex 와 동일.)
+pub fn read_grok_token() -> Result<String, String> {
+    let path = grok_auth_path().ok_or_else(|| "HOME 환경변수를 찾을 수 없습니다.".to_string())?;
+    let raw = std::fs::read_to_string(&path).map_err(|_| {
+        "Grok 로그인을 찾을 수 없습니다. 터미널에서 `grok login` 으로 로그인하세요.".to_string()
+    })?;
+    let v: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("auth.json 파싱 실패: {e}"))?;
+    let obj = v
+        .as_object()
+        .ok_or_else(|| "auth.json 형식이 올바르지 않습니다.".to_string())?;
+    let token = obj
+        .values()
+        .find_map(|scope| scope.get("key").and_then(|k| k.as_str()))
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "Grok access token 이 없습니다. `grok login` 재로그인이 필요합니다.".to_string())?;
+    Ok(token.to_string())
+}
+
+/// Grok 로그인 존재 여부 (`~/.grok/auth.json` 의 scope.key 유무).
+pub fn grok_logged_in() -> bool {
+    let Some(path) = grok_auth_path() else {
+        return false;
+    };
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()
+        .and_then(|v| {
+            v.as_object().map(|o| {
+                o.values().any(|s| {
+                    s.get("key")
+                        .and_then(|k| k.as_str())
+                        .map(|k| !k.is_empty())
+                        .unwrap_or(false)
+                })
+            })
+        })
+        .unwrap_or(false)
+}
+
 // ─── Tauri command ──────────────────────────────────────────────────────────
 
 /// 첫 글자만 대문자화 ("max" → "Max", "plus" → "Plus").
@@ -239,16 +313,6 @@ fn capitalize(s: &str) -> String {
         Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
         None => String::new(),
     }
-}
-
-/// Claude 플랜 라벨 — keychain 의 subscriptionType ("max" → "Max"). 없으면 None.
-fn claude_plan_label(creds: &ClaudeCreds) -> Option<String> {
-    creds
-        .claude_ai_oauth
-        .subscription_type
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .map(capitalize)
 }
 
 /// JWT(헤더.페이로드.서명) 의 payload(base64url) 를 JSON 으로 디코드.
@@ -278,31 +342,70 @@ fn codex_plan_label() -> Option<String> {
     }
 }
 
+/// Gemini 구독 사용 가능 여부 — agy 바이너리 설치 + Antigravity 인증(Keychain) 추정.
+/// agy 는 Antigravity IDE 와 Keychain 을 공유하므로 "Antigravity Safe Storage" 존재로
+/// 인증을 추정한다(토큰 값은 안 읽고 존재 여부만). 실제 인증 확정은 호출 시 빈 응답으로 판별.
+fn gemini_agy_available() -> bool {
+    let installed = ["/opt/homebrew/bin/agy", "/usr/local/bin/agy"]
+        .iter()
+        .any(|p| std::path::Path::new(p).exists())
+        || std::process::Command::new("which")
+            .arg("agy")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+    if !installed {
+        return false;
+    }
+    std::process::Command::new("security")
+        .args(["find-generic-password", "-s", "Antigravity Safe Storage"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// 구독 로그인 감지 결과 (UI 배지용 — 토큰 값은 절대 포함하지 않음, 플랜명만).
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionStatus {
     pub claude: bool,
     pub codex: bool,
+    /// Gemini(Antigravity CLI) — agy 설치 + 인증(IDE Keychain 공유) 시 true.
+    pub gemini: bool,
+    /// Grok(xAI) — `grok login`(auth.json) 토큰 존재 시 true. 단 실제 API 가용은
+    /// 유료(SuperGrok) 필요 — 무료/크레딧0 은 호출 시 403. 감지는 토큰 유무만.
+    pub grok: bool,
     /// Claude 플랜명 ("Max" 등). 미연결/미상이면 None.
     pub claude_plan: Option<String>,
     /// ChatGPT 플랜명 ("Plus" 등). 미연결/미상이면 None.
     pub codex_plan: Option<String>,
+    /// Gemini 플랜명. agy 는 플랜 정보를 안 주므로 "Antigravity" 고정 또는 None.
+    pub gemini_plan: Option<String>,
+    /// Grok 플랜명. auth.json 에 등급 정보 없어 None(로그인 표시만).
+    pub grok_plan: Option<String>,
 }
 
 #[tauri::command]
 pub fn detect_subscription_logins() -> SubscriptionStatus {
-    let claude_creds = read_claude_creds();
-    let claude = claude_creds
-        .as_ref()
-        .map(|c| !c.claude_ai_oauth.access_token.is_empty())
-        .unwrap_or(false);
-    let claude_plan = claude_creds.as_ref().and_then(claude_plan_label);
+    // 감지 단계는 토큰을 읽지 않는다(앱 시작 keychain 인증창 회피). Claude 는 항목 "존재"만
+    // security 로 확인, Codex/Grok 은 파일, Gemini 는 agy 바이너리 + security(메타). 실제 토큰
+    // get_password 는 해당 구독으로 LLM 을 호출할 때 1번만 일어난다.
+    let claude = claude_logged_in();
     let codex = codex_logged_in();
+    let gemini = gemini_agy_available();
+    let grok = grok_logged_in();
     SubscriptionStatus {
         claude,
         codex,
-        claude_plan: if claude { claude_plan } else { None },
+        gemini,
+        grok,
+        // Claude 플랜(Max 등)도 토큰 안에 있어 감지 단계에선 읽지 않는다(인증창 회피) → None.
+        // Gemini/Grok 도 None(표시 통일). Codex 는 파일(id_token)이라 인증창 없이 plan 추출 가능.
+        claude_plan: None,
         codex_plan: if codex { codex_plan_label() } else { None },
+        // 표시 통일 — agy 가 실제 등급(AI Pro/Ultra)을 노출하지 않으므로, 방식명("Antigravity")
+        // 대신 "연결됨"만 표시(Grok 과 동일). 실등급 추출 경로 생기면 그때 채운다.
+        gemini_plan: None,
+        grok_plan: None,
     }
 }

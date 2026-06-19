@@ -25,6 +25,8 @@ pub struct Vault {
     #[serde(default)]
     pub openai: Option<String>,
     #[serde(default)]
+    pub grok: Option<String>,
+    #[serde(default)]
     pub pyannoteai: Option<String>,
     /// 로컬 화자분리용 Python 인터프리터 경로 (pyannote.audio 설치됨). 설정 시 로컬 우선.
     #[serde(default)]
@@ -98,6 +100,8 @@ pub struct SecretsUserInputs {
     #[serde(default)]
     pub openai: Option<String>,
     #[serde(default)]
+    pub grok: Option<String>,
+    #[serde(default)]
     pub pyannoteai: Option<String>,
     #[serde(default)]
     pub diar_python: Option<String>,
@@ -129,6 +133,7 @@ pub fn secrets_set_user_inputs(updates: SecretsUserInputs) -> Result<(), String>
         apply_field(&mut v.gemini, updates.gemini);
         apply_field(&mut v.claude, updates.claude);
         apply_field(&mut v.openai, updates.openai);
+        apply_field(&mut v.grok, updates.grok);
         apply_field(&mut v.pyannoteai, updates.pyannoteai);
         apply_field(&mut v.diar_python, updates.diar_python);
         apply_field(&mut v.gdrive_client_id, updates.gdrive_client_id);
@@ -226,6 +231,7 @@ mod tests {
             gemini: Some("g".into()),
             claude: None,
             openai: Some("o".into()),
+            grok: Some("x".into()),
             pyannoteai: Some("p".into()),
             diar_python: None,
             gdrive_client_id: Some("id.apps.googleusercontent.com".into()),

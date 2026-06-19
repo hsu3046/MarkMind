@@ -13,6 +13,7 @@ pub enum Provider {
     Gemini,
     Claude,
     Openai,
+    Grok,
     Pyannoteai,
 }
 
@@ -21,6 +22,7 @@ fn read_field(v: &crate::secrets::Vault, p: Provider) -> Option<String> {
         Provider::Gemini => v.gemini.clone(),
         Provider::Claude => v.claude.clone(),
         Provider::Openai => v.openai.clone(),
+        Provider::Grok => v.grok.clone(),
         Provider::Pyannoteai => v.pyannoteai.clone(),
     }
 }
@@ -36,6 +38,7 @@ fn write_field(v: &mut crate::secrets::Vault, p: Provider, val: Option<String>) 
         Provider::Gemini => v.gemini = val,
         Provider::Claude => v.claude = val,
         Provider::Openai => v.openai = val,
+        Provider::Grok => v.grok = val,
         Provider::Pyannoteai => v.pyannoteai = val,
     }
 }

@@ -1,17 +1,19 @@
 /**
- * 통합 Settings 모달 — STT/OCR/AI 에이전트의 API 키를 한 곳에서 관리.
+ * 통합 Settings 모달 — API 키 / AI 모델 / 뷰어 설정 / 추가 기능을 한 곳에서 관리.
  * SettingsView (convert/SettingsView.tsx) 재사용.
  */
 
-import { SettingsView } from './convert/SettingsView';
+import { SettingsView, type ViewerSettings } from './convert/SettingsView';
 import { X } from 'lucide-react';
 
 interface SettingsModalProps {
     visible: boolean;
     onClose: () => void;
+    /** 뷰어 설정(폰트크기/행간/배경/본문폰트/읽기폭) — App 상태를 뷰어 설정 탭으로 전달. */
+    viewer: ViewerSettings;
 }
 
-export function SettingsModal({ visible, onClose }: SettingsModalProps) {
+export function SettingsModal({ visible, onClose, viewer }: SettingsModalProps) {
     if (!visible) return null;
 
     return (
@@ -30,7 +32,7 @@ export function SettingsModal({ visible, onClose }: SettingsModalProps) {
                     </button>
                 </div>
                 <div className="settings-modal-body">
-                    <SettingsView onDone={onClose} />
+                    <SettingsView onDone={onClose} viewer={viewer} />
                 </div>
             </div>
         </>

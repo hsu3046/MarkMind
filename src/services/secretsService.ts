@@ -16,6 +16,7 @@ export interface SecretsUserInputs {
     gemini?: string;
     claude?: string;
     openai?: string;
+    grok?: string;
     pyannoteai?: string;
     /** 로컬 화자분리용 Python 경로 (pyannote.audio 설치). */
     diarPython?: string;
@@ -29,6 +30,7 @@ function buildPayload(updates: SecretsUserInputs): Record<string, string> {
     if (updates.gemini !== undefined) out.gemini = updates.gemini;
     if (updates.claude !== undefined) out.claude = updates.claude;
     if (updates.openai !== undefined) out.openai = updates.openai;
+    if (updates.grok !== undefined) out.grok = updates.grok;
     if (updates.pyannoteai !== undefined) out.pyannoteai = updates.pyannoteai;
     if (updates.diarPython !== undefined) out.diar_python = updates.diarPython;
     if (updates.gdriveClientId !== undefined) out.gdrive_client_id = updates.gdriveClientId;

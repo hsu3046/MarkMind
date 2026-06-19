@@ -14,7 +14,17 @@ import { Sparkles, Send, Loader2, AlertCircle, Presentation } from 'lucide-react
 import type { NotesJobResult, TemplateInfo } from '../types/converter';
 import type { useConverter } from '../hooks/useConverter';
 import type { DroppedFile } from './convert/types';
-import { initSecureStorage } from '../services/secureStorage';
+import { initSecureStorage, hasKey } from '../services/secureStorage';
+import {
+    AI_CATALOG,
+    getAIModelSelection,
+    setAIModelSelection,
+    resolveUsableSelection,
+    type AICompany,
+    type AIAuthMode,
+} from '../services/aiModelConfig';
+import { detectSubscriptionLogins } from '../services/subscriptionService';
+import { InlineModelDropdown } from './ai/InlineModelDropdown';
 import { ModeSelector } from './ai/ModeSelector';
 import { NotesOptions } from './ai/NotesOptions';
 import { NotesResultCard } from './ai/NotesResultCard';
@@ -109,6 +119,13 @@ export function AIPanel({
     const [prompt, setPrompt] = useState('');
     const promptRef = useRef<HTMLTextAreaElement>(null);
 
+    // 인라인 모델 드롭다운 — 텍스트 작업·슬라이드 공통(전역 텍스트 모델). 가용성=키 or 구독.
+    const [, bumpModel] = useState(0);
+    const [subStatus, setSubStatus] = useState({ claude: false, codex: false, gemini: false, grok: false });
+    useEffect(() => {
+        detectSubscriptionLogins().then(setSubStatus).catch(() => {});
+    }, []);
+
     useEffect(() => {
         if (mode === 'improve' && promptRef.current) {
             promptRef.current.focus();
@@ -144,6 +161,34 @@ export function AIPanel({
     const isPptxMode = mode === 'pptx';
     const isImageGenMode = mode === 'image-gen';
     const keyGated = !isConvertMode && !isPptxMode && !isImageGenMode && !apiKeySet;
+
+    // 인라인 모델 드롭다운 JSX — 텍스트 작업(improve/grammar/translate/structurize/meeting-notes)
+    // 과 슬라이드(pptx)가 같은 전역 텍스트 모델을 쓰므로 하나를 공유한다.
+    const textIsUsable = (company: AICompany, auth: AIAuthMode): boolean =>
+        auth === 'subscription'
+            ? company === 'claude'
+                ? subStatus.claude
+                : company === 'openai'
+                  ? subStatus.codex
+                  : company === 'gemini'
+                    ? subStatus.gemini
+                    : company === 'grok'
+                      ? subStatus.grok
+                      : false
+            : hasKey(company);
+    const textSel = resolveUsableSelection(AI_CATALOG, getAIModelSelection(), textIsUsable);
+    const textModelDropdown = (
+        <InlineModelDropdown
+            label="AI 모델"
+            catalog={AI_CATALOG}
+            selection={textSel}
+            onChange={(s) => {
+                setAIModelSelection(s);
+                bumpModel((n) => n + 1);
+            }}
+            isUsable={textIsUsable}
+        />
+    );
 
     return (
         <div className="ai-panel">
@@ -188,18 +233,21 @@ export function AIPanel({
                             </button>
                         </div>
                     ) : (
-                        <div className="ai-prompt-actions">
-                            <button
-                                className="ai-btn primary"
-                                onClick={onExportPptx}
-                                disabled={!!pptxBusy || content.trim().length === 0}
-                                title="슬라이드 만들기"
-                            >
-                                {pptxBusy ? <Loader2 size={14} className="spinning" /> : <Presentation size={14} />}
-                                {pptxBusy ? '생성 중...' : '슬라이드 만들기'}
-                            </button>
-                            {pptxBusy && <div className="ai-pptx-busy">{pptxBusy}</div>}
-                        </div>
+                        <>
+                            {textModelDropdown}
+                            <div className="ai-prompt-actions">
+                                <button
+                                    className="ai-btn primary"
+                                    onClick={onExportPptx}
+                                    disabled={!!pptxBusy || content.trim().length === 0}
+                                    title="슬라이드 만들기"
+                                >
+                                    {pptxBusy ? <Loader2 size={14} className="spinning" /> : <Presentation size={14} />}
+                                    {pptxBusy ? '생성 중...' : '슬라이드 만들기'}
+                                </button>
+                                {pptxBusy && <div className="ai-pptx-busy">{pptxBusy}</div>}
+                            </div>
+                        </>
                     )}
                 </div>
             )}
@@ -227,6 +275,7 @@ export function AIPanel({
 
             {!isConvertMode && !isPptxMode && !isImageGenMode && !keyGated && (
                 <>
+                    {textModelDropdown}
                     {mode === 'translate' && (
                         <div className="ai-language-select">
                             <span>번역 언어:</span>

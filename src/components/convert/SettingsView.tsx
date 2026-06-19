@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Eye, EyeOff, Trash2, Cloud, CloudOff } from 'lucide-react';
+import { Eye, EyeOff, Trash2, Cloud, CloudOff, Minus, Plus, RotateCcw } from 'lucide-react';
 import { getKey, hasKey, Provider, removeKey, updateCacheAfterBatch } from '../../services/secureStorage';
 import { detectSubscriptionLogins, SubscriptionStatus } from '../../services/subscriptionService';
 import * as gdrive from '../../services/gdriveService';
@@ -19,8 +19,10 @@ import { confirmAction } from '../../services/dialogService';
 import { isTauri } from '../../services/platform';
 import { LanShareSection } from './LanShareSection';
 import { AIModelPicker } from './AIModelPicker';
+import { BackgroundPicker } from '../BackgroundPicker';
 import {
     AI_CATALOG,
+    COMPANY_LOGO,
     getAIModelSelection,
     setAIModelSelection,
     AIModelSelection,
@@ -39,8 +41,24 @@ import {
     clearValidationStatus,
 } from '../../services/apiValidation';
 
+/** 뷰어 설정 — App 상태(폰트크기/행간/배경/본문폰트/읽기폭)를 뷰어 설정 탭이 제어. */
+export interface ViewerSettings {
+    fontSize: number;
+    onFontSizeChange: (delta: number) => void;
+    onFontSizeReset: () => void;
+    lineHeight: number;
+    onLineHeightChange: (v: number) => void;
+    bgColor: string;
+    onBgColorChange: (color: string) => void;
+    fontFamily: 'sans' | 'serif';
+    onFontFamilyChange: (v: 'sans' | 'serif') => void;
+    readingWidth: number;
+    onReadingWidthChange: (v: number) => void;
+}
+
 interface SettingsViewProps {
     onDone: () => void;
+    viewer: ViewerSettings;
 }
 
 interface KeySpec {
@@ -74,6 +92,13 @@ const KEY_SPECS: KeySpec[] = [
         issueLabel: 'platform.openai.com/api-keys',
     },
     {
+        provider: 'grok',
+        label: 'Grok (xAI) API 키',
+        placeholder: 'xai-...',
+        issueUrl: 'https://console.x.ai',
+        issueLabel: 'console.x.ai',
+    },
+    {
         provider: 'pyannoteai',
         label: 'pyannote.ai API 키',
         placeholder: 'sk_...',
@@ -82,9 +107,9 @@ const KEY_SPECS: KeySpec[] = [
     },
 ];
 
-type SettingsTab = 'basic' | 'ai' | 'extra';
+type SettingsTab = 'basic' | 'ai' | 'viewer' | 'extra';
 /** AI 등록 탭에 노출할 API 키 (나머지 키는 추가 기능 탭). */
-const AI_PROVIDERS: Provider[] = ['gemini', 'claude', 'openai'];
+const AI_PROVIDERS: Provider[] = ['gemini', 'claude', 'openai', 'grok'];
 
 function maskClientId(id: string): string {
     if (id.length <= 12) return id;
@@ -101,17 +126,19 @@ function statusBadge(stored: boolean, result: ValidationResult | null): StatusBa
     return { text: '확인 필요', cls: 'badge badge-warn' };
 }
 
-export function SettingsView({ onDone }: SettingsViewProps) {
+export function SettingsView({ onDone, viewer }: SettingsViewProps) {
     const [values, setValues] = useState<Record<Provider, string>>({
         gemini: '',
         claude: '',
         openai: '',
+        grok: '',
         pyannoteai: '',
     });
     const [show, setShow] = useState<Record<Provider, boolean>>({
         gemini: false,
         claude: false,
         openai: false,
+        grok: false,
         pyannoteai: false,
     });
     // lazy init — 첫 렌더부터 키 보유 반영(회사 버튼 disabled 깜빡임 방지). useEffect 가 재확인.
@@ -119,12 +146,14 @@ export function SettingsView({ onDone }: SettingsViewProps) {
         gemini: hasKey('gemini'),
         claude: hasKey('claude'),
         openai: hasKey('openai'),
+        grok: hasKey('grok'),
         pyannoteai: hasKey('pyannoteai'),
     }));
     const [validation, setValidation] = useState<Record<Provider | 'gdrive', ValidationResult | null>>({
         gemini: null,
         claude: null,
         openai: null,
+        grok: null,
         pyannoteai: null,
         gdrive: null,
     });
@@ -147,8 +176,13 @@ export function SettingsView({ onDone }: SettingsViewProps) {
     const [userMemory, setUserMemory] = useState('');
     const [memoryOrig, setMemoryOrig] = useState('');
 
-    // 구독 연동 — 로컬 Claude Code / Codex CLI 로그인 감지 현황
-    const [subStatus, setSubStatus] = useState<SubscriptionStatus>({ claude: false, codex: false });
+    // 구독 연동 — 로컬 Claude Code / Codex / Antigravity(agy) CLI 로그인 감지 현황
+    const [subStatus, setSubStatus] = useState<SubscriptionStatus>({
+        claude: false,
+        codex: false,
+        gemini: false,
+        grok: false,
+    });
 
     // 전역 모델 선택 — 기본 AI(텍스트) / 이미지 AI. 기본 설정 탭의 picker 와 연동.
     const [aiSel, setAiSel] = useState<AIModelSelection>(getAIModelSelection());
@@ -162,18 +196,21 @@ export function SettingsView({ onDone }: SettingsViewProps) {
             gemini: getKey('gemini') || '',
             claude: getKey('claude') || '',
             openai: getKey('openai') || '',
+            grok: getKey('grok') || '',
             pyannoteai: getKey('pyannoteai') || '',
         });
         setStored({
             gemini: hasKey('gemini'),
             claude: hasKey('claude'),
             openai: hasKey('openai'),
+            grok: hasKey('grok'),
             pyannoteai: hasKey('pyannoteai'),
         });
         setValidation({
             gemini: getValidationStatus('gemini'),
             claude: getValidationStatus('claude'),
             openai: getValidationStatus('openai'),
+            grok: getValidationStatus('grok'),
             pyannoteai: getValidationStatus('pyannoteai'),
             gdrive: getValidationStatus('gdrive'),
         });
@@ -308,6 +345,7 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                 if (changedKeys.includes('gemini')) payload.gemini = values.gemini.trim();
                 if (changedKeys.includes('claude')) payload.claude = values.claude.trim();
                 if (changedKeys.includes('openai')) payload.openai = values.openai.trim();
+                if (changedKeys.includes('grok')) payload.grok = values.grok.trim();
                 if (changedKeys.includes('pyannoteai')) payload.pyannoteai = values.pyannoteai.trim();
                 if (diarChanged) payload.diarPython = diarPython.trim();
                 if (driveBoth) {
@@ -401,6 +439,9 @@ export function SettingsView({ onDone }: SettingsViewProps) {
         return (
             <section key={spec.provider} className="convert-settings-section">
                 <label>
+                    {COMPANY_LOGO[spec.provider] && (
+                        <img className="convert-key-logo" src={COMPANY_LOGO[spec.provider]} alt="" />
+                    )}
                     {spec.label} {badge && <span className={badge.cls}>{badge.text}</span>}
                 </label>
                 <div className="convert-key-row">
@@ -454,10 +495,17 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                 </button>
                 <button
                     type="button"
+                    className={`settings-tab${activeTab === 'viewer' ? ' active' : ''}`}
+                    onClick={() => setActiveTab('viewer')}
+                >
+                    뷰어 설정
+                </button>
+                <button
+                    type="button"
                     className={`settings-tab${activeTab === 'extra' ? ' active' : ''}`}
                     onClick={() => setActiveTab('extra')}
                 >
-                    추가 설정
+                    추가 기능
                 </button>
             </div>
 
@@ -472,7 +520,10 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                 <div className="sub-link-list">
                     {/* Claude */}
                     <div className="sub-link-row">
-                        <span className="sub-link-name">Claude 구독 연동</span>
+                        <span className="sub-link-name">
+                            <img className="sub-link-logo" src={COMPANY_LOGO.claude} alt="" />
+                            Claude 구독 연동
+                        </span>
                         <span className={subStatus.claude ? 'badge badge-ok' : 'badge badge-warn'}>
                             {subStatus.claude
                                 ? `${subStatus.claudePlan ? subStatus.claudePlan + ' · ' : ''}연결됨`
@@ -491,7 +542,10 @@ export function SettingsView({ onDone }: SettingsViewProps) {
 
                     {/* ChatGPT (Codex) */}
                     <div className="sub-link-row">
-                        <span className="sub-link-name">ChatGPT 구독 연동</span>
+                        <span className="sub-link-name">
+                            <img className="sub-link-logo" src={COMPANY_LOGO.openai} alt="" />
+                            ChatGPT 구독 연동
+                        </span>
                         <span className={subStatus.codex ? 'badge badge-ok' : 'badge badge-warn'}>
                             {subStatus.codex
                                 ? `${subStatus.codexPlan ? subStatus.codexPlan + ' · ' : ''}연결됨`
@@ -508,17 +562,44 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                         </p>
                     )}
 
-                    {/* Grok — 구독 연동 준비중. 고정 표시. */}
+                    {/* Gemini (Antigravity CLI) */}
                     <div className="sub-link-row">
-                        <span className="sub-link-name">Grok 구독 연동</span>
-                        <span className="badge badge-muted">준비중</span>
+                        <span className="sub-link-name">
+                            <img className="sub-link-logo" src={COMPANY_LOGO.gemini} alt="" />
+                            Gemini 구독 연동
+                        </span>
+                        <span className={subStatus.gemini ? 'badge badge-ok' : 'badge badge-warn'}>
+                            {subStatus.gemini
+                                ? `${subStatus.geminiPlan ? subStatus.geminiPlan + ' · ' : ''}연결됨`
+                                : '연결 안 됨'}
+                        </span>
                     </div>
+                    {!subStatus.gemini && (
+                        <p className="convert-key-note sub-link-hint">
+                            연결하려면 <code>brew install --cask antigravity-cli</code> 설치 후 터미널에서{' '}
+                            <code>agy</code> 로 로그인하세요 (
+                            <a href="https://antigravity.google" target="_blank" rel="noopener noreferrer">
+                                Antigravity 안내
+                            </a>
+                            ).
+                        </p>
+                    )}
 
-                    {/* Gemini — 구독 연동 미지원(제공사 차단). 고정 표시. */}
+                    {/* Grok (grok login OAuth) — 로그인 감지. 단 실제 호출은 유료 SuperGrok 필요. */}
                     <div className="sub-link-row">
-                        <span className="sub-link-name">Gemini 구독 연동</span>
-                        <span className="badge badge-muted">지원 안함</span>
+                        <span className="sub-link-name">
+                            <img className="sub-link-logo" src={COMPANY_LOGO.grok} alt="" />
+                            Grok 구독 연동
+                        </span>
+                        <span className={subStatus.grok ? 'badge badge-ok' : 'badge badge-warn'}>
+                            {subStatus.grok ? '연결됨' : '연결 안 됨'}
+                        </span>
                     </div>
+                    {!subStatus.grok && (
+                        <p className="convert-key-note sub-link-hint">
+                            grok login 으로 로그인 + 유료 SuperGrok 구독이 필요합니다.
+                        </p>
+                    )}
                 </div>
 
                 <p className="convert-key-note">
@@ -529,9 +610,97 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                 </>
             )}
 
+            {activeTab === 'viewer' && (
+                <>
+                    {/* 글자 크기 — 원형 −/+ + reset 아이콘. ⌘+/−/0 단축키도 동일 동작 */}
+                    <section className="convert-settings-section viewer-section">
+                        <label>글자 크기</label>
+                        <div className="viewer-fontsize">
+                            <button type="button" className="viewer-step" onClick={() => viewer.onFontSizeChange(-1)} title="작게" aria-label="작게">
+                                <Minus size={15} strokeWidth={2} />
+                            </button>
+                            <span className="viewer-fontsize-value">{viewer.fontSize}</span>
+                            <button type="button" className="viewer-step" onClick={() => viewer.onFontSizeChange(1)} title="크게" aria-label="크게">
+                                <Plus size={15} strokeWidth={2} />
+                            </button>
+                            <button type="button" className="viewer-reset" onClick={viewer.onFontSizeReset} title="기본값(14)으로" aria-label="기본값으로">
+                                <RotateCcw size={14} strokeWidth={1.75} />
+                            </button>
+                        </div>
+                    </section>
+
+                    {/* 행간 — 슬라이더 + 배율(1.2~3.0) */}
+                    <section className="convert-settings-section viewer-section">
+                        <label>행간</label>
+                        <div className="viewer-slider-row">
+                            <input
+                                type="range"
+                                className="viewer-slider"
+                                min={1.2}
+                                max={3}
+                                step={0.1}
+                                value={viewer.lineHeight}
+                                onChange={(e) => viewer.onLineHeightChange(parseFloat(e.target.value))}
+                                aria-label="행간 배율"
+                            />
+                            <span className="viewer-slider-value">{viewer.lineHeight.toFixed(1)}</span>
+                        </div>
+                    </section>
+
+                    {/* 좌우 여백 — 슬라이더(0 = 여백 없음/본문 풀폭 ~ 40 = 넓은 여백/좁은 본문) */}
+                    <section className="convert-settings-section viewer-section">
+                        <label>좌우 여백</label>
+                        <div className="viewer-slider-row">
+                            <input
+                                type="range"
+                                className="viewer-slider"
+                                min={0}
+                                max={40}
+                                step={1}
+                                value={viewer.readingWidth}
+                                onChange={(e) => viewer.onReadingWidthChange(parseInt(e.target.value, 10))}
+                                aria-label="좌우 여백"
+                            />
+                            <span className="viewer-slider-value">{viewer.readingWidth}%</span>
+                        </div>
+                    </section>
+
+                    {/* 본문 폰트 — 라벨 없이 폰트 샘플로 구분 (명칭은 title 로 보강) */}
+                    <section className="convert-settings-section viewer-section">
+                        <label>본문 폰트</label>
+                        <div className="viewer-segmented">
+                            <button
+                                type="button"
+                                className={`viewer-seg viewer-font-sample${viewer.fontFamily === 'sans' ? ' active' : ''}`}
+                                style={{ fontFamily: 'var(--font-sans)' }}
+                                onClick={() => viewer.onFontFamilyChange('sans')}
+                                title="고딕"
+                            >
+                                가나다 Aa
+                            </button>
+                            <button
+                                type="button"
+                                className={`viewer-seg viewer-font-sample${viewer.fontFamily === 'serif' ? ' active' : ''}`}
+                                style={{ fontFamily: 'var(--font-serif)' }}
+                                onClick={() => viewer.onFontFamilyChange('serif')}
+                                title="명조"
+                            >
+                                가나다 Aa
+                            </button>
+                        </div>
+                    </section>
+
+                    {/* 배경색 — 인라인 스와치 (버튼/팝오버 없이 바로 선택) */}
+                    <section className="convert-settings-section viewer-section">
+                        <label>배경색</label>
+                        <BackgroundPicker value={viewer.bgColor} onChange={viewer.onBgColorChange} inline />
+                    </section>
+                </>
+            )}
+
             {activeTab === 'extra' && (
                 <>
-                    {/* === 나의 정보 (AI 컨텍스트) — 추가 설정 맨 위 === */}
+                    {/* === 나의 정보 (AI 컨텍스트) — 추가 기능 맨 위 === */}
                     <section className="convert-settings-section">
                         <label>
                             나의 정보 (옵션){' '}
@@ -730,7 +899,15 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                         }}
                         apiKeyAvailable={(c) => stored[c as Provider]}
                         subscriptionAvailable={(c) =>
-                            c === 'claude' ? subStatus.claude : c === 'openai' ? subStatus.codex : false
+                            c === 'claude'
+                                ? subStatus.claude
+                                : c === 'openai'
+                                  ? subStatus.codex
+                                  : c === 'gemini'
+                                    ? subStatus.gemini
+                                    : c === 'grok'
+                                      ? subStatus.grok
+                                      : false
                         }
                     />
 
@@ -745,6 +922,10 @@ export function SettingsView({ onDone }: SettingsViewProps) {
                             setImageAIModelSelection(s);
                         }}
                         apiKeyAvailable={(c) => stored[c as Provider]}
+                        // 이미지 구독은 OpenAI(codex)만 — Gemini 는 구독 미지원이라 false.
+                        subscriptionAvailable={(c) =>
+                            c === 'openai' ? subStatus.codex : c === 'grok' ? subStatus.grok : false
+                        }
                     />
 
                     <hr className="settings-divider" />

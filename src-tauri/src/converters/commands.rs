@@ -246,6 +246,20 @@ pub async fn ai_generate_codex(
     .map_err(err_to_string)
 }
 
+// ─── Gemini 구독(Antigravity CLI) 텍스트 생성 ───────────────────────────────
+//
+// `agy` CLI 를 PTY 로 호출한다(비TTY 출력 버그 회피). 인증은 agy 가 macOS Keychain
+// (Antigravity IDE 공유)에서 읽으므로 토큰을 직접 다루지 않는다. model 은 agy 모델명.
+#[tauri::command]
+pub async fn ai_generate_gemini_agy(
+    system: Option<String>,
+    prompt: String,
+    model: String,
+) -> Result<String, String> {
+    use super::llm::gemini_agy;
+    gemini_agy::generate_text(&model, system.as_deref(), &prompt).await
+}
+
 // ─── OpenAI API 키 텍스트 생성 (구독 codex 와 별개 경로) ─────────────────────
 //
 // 표준 chat completions(api.openai.com). React AI 모드가 OpenAI + API 키 선택 시 사용.
@@ -264,6 +278,33 @@ pub async fn ai_generate_openai(
         .await
         .map(|r| r.text)
         .map_err(err_to_string)
+}
+
+// ─── Grok(xAI) API 키 텍스트 생성 ──────────────────────────────────────────
+//
+// OpenAI 호환 chat completions(api.x.ai). React AI 모드가 Grok + API 키 선택 시 사용.
+// 구독(Grok Build CLI 토큰) 경로와 별개. grok 모듈은 String 에러를 직접 반환.
+#[tauri::command]
+pub async fn ai_generate_grok(
+    system: Option<String>,
+    prompt: String,
+    model: String,
+    grok_auth: String,
+) -> Result<String, String> {
+    let key = grok_bearer(&grok_auth)?;
+    super::llm::grok::generate_text(&key, &model, system.as_deref(), &prompt).await
+}
+
+/// Grok 호출에 쓸 Bearer 토큰 — 구독(auth.json OAuth) 또는 API 키(Keychain).
+fn grok_bearer(grok_auth: &str) -> Result<String, String> {
+    use super::keychain::{get_key, Provider};
+    if grok_auth == "subscription" {
+        crate::subscription_auth::read_grok_token()
+    } else {
+        get_key(Provider::Grok)
+            .map_err(err_to_string)?
+            .ok_or_else(|| "Grok API 키가 없습니다. Settings 에서 등록하세요.".to_string())
+    }
 }
 
 // ─── 이미지 생성 (Gemini 3.1 Flash Image / OpenAI gpt-image-1) ──────────────
@@ -303,6 +344,41 @@ pub async fn generate_image_openai(
         .map_err(err_to_string)?
         .ok_or_else(|| "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
     image_gen::generate_openai(&key, &model, &prompt, &aspect_ratio, &resolution, &quality, &reference_images).await
+}
+
+// ─── ChatGPT(Codex 구독) 이미지 생성 ────────────────────────────────────────
+//
+// 본인 Codex CLI 로그인 토큰으로 구독 이미지 생성(Responses API + image_generation 툴).
+// codex backend 는 size/quality 를 무시(항상 1254x1254/low, 실측 2026-06-19)하므로 보내지
+// 않는다. 비율은 프론트가 프롬프트로 후처리("image ratio of 16:9"), 품질 UI 는 숨긴다.
+// 참조 이미지도 codex 경로 미지원. 반환 형식은 API 키 경로와 동일(data URL).
+#[tauri::command]
+pub async fn generate_image_codex(model: String, prompt: String) -> Result<Vec<String>, String> {
+    use super::llm::openai_codex;
+    let tokens = crate::subscription_auth::read_codex_tokens()?;
+    openai_codex::generate_image(
+        &tokens.access_token,
+        tokens.account_id.as_deref(),
+        &model,
+        &prompt,
+    )
+    .await
+}
+
+// ─── Grok(xAI) 이미지 생성 ──────────────────────────────────────────────────
+//
+// grok-imagine-*(api.x.ai/v1/images/generations). 비율·해상도(1k/2k)를 직접 받아
+// gpt-image 처럼 size 환산이 필요 없다. 참조 이미지는 grok-imagine 미지원이라 받지 않는다.
+#[tauri::command]
+pub async fn generate_image_grok(
+    model: String,
+    prompt: String,
+    aspect_ratio: String,
+    resolution: String,
+    grok_auth: String,
+) -> Result<Vec<String>, String> {
+    let key = grok_bearer(&grok_auth)?;
+    super::llm::grok::generate_image(&key, &model, &prompt, &aspect_ratio, &resolution).await
 }
 
 // ─── 화자 라벨 후처리 (STT 결과 정리용) ─────────────────────────
