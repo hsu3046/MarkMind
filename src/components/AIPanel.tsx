@@ -305,7 +305,7 @@ export function AIPanel({
                                 className="ai-prompt-input"
                                 placeholder={
                                     mode === 'improve'
-                                        ? '문서 개선 지시사항을 입력하세요... (필수)'
+                                        ? '원하는 작업을 입력하세요 — 개선·추가·재구성·요약·표 만들기 등 (필수)'
                                         : '상세 지시사항 (선택)'
                                 }
                                 value={prompt}
