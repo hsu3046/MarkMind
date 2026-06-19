@@ -106,6 +106,25 @@ fn read_claude_creds() -> Option<ClaudeCreds> {
     serde_json::from_str::<ClaudeCreds>(&raw).ok()
 }
 
+/// Claude Code 로그인 "존재"만 확인 — `security find`(비밀번호 `-g` 없이)로 keychain 항목
+/// 메타만 조회하므로 **인증창이 뜨지 않는다**. 실제 토큰은 `claude_access_token()` 이 호출
+/// 시 1번 `get_password`(그때만 인증). 감지(detect)는 이 함수를 써서 앱 시작 인증창을 없앤다.
+/// (keyring crate 의 get_password 는 항상 ACL 인증을 요구해, 다른 앱 항목인 Claude Code
+///  토큰을 읽으면 새 빌드/인스톨마다 인증창이 떴다.)
+fn claude_logged_in() -> bool {
+    std::process::Command::new("security")
+        .args([
+            "find-generic-password",
+            "-s",
+            CLAUDE_KEYCHAIN_SERVICE,
+            "-a",
+            &current_user(),
+        ])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 fn write_claude_creds(creds: &ClaudeCreds) -> Result<(), String> {
     let json = serde_json::to_string(creds).map_err(|e| e.to_string())?;
     claude_entry()?.set_password(&json).map_err(|e| e.to_string())
@@ -296,16 +315,6 @@ fn capitalize(s: &str) -> String {
     }
 }
 
-/// Claude 플랜 라벨 — keychain 의 subscriptionType ("max" → "Max"). 없으면 None.
-fn claude_plan_label(creds: &ClaudeCreds) -> Option<String> {
-    creds
-        .claude_ai_oauth
-        .subscription_type
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .map(capitalize)
-}
-
 /// JWT(헤더.페이로드.서명) 의 payload(base64url) 를 JSON 으로 디코드.
 fn decode_jwt_payload(jwt: &str) -> Option<serde_json::Value> {
     let payload = jwt.split('.').nth(1)?;
@@ -378,12 +387,10 @@ pub struct SubscriptionStatus {
 
 #[tauri::command]
 pub fn detect_subscription_logins() -> SubscriptionStatus {
-    let claude_creds = read_claude_creds();
-    let claude = claude_creds
-        .as_ref()
-        .map(|c| !c.claude_ai_oauth.access_token.is_empty())
-        .unwrap_or(false);
-    let claude_plan = claude_creds.as_ref().and_then(claude_plan_label);
+    // 감지 단계는 토큰을 읽지 않는다(앱 시작 keychain 인증창 회피). Claude 는 항목 "존재"만
+    // security 로 확인, Codex/Grok 은 파일, Gemini 는 agy 바이너리 + security(메타). 실제 토큰
+    // get_password 는 해당 구독으로 LLM 을 호출할 때 1번만 일어난다.
+    let claude = claude_logged_in();
     let codex = codex_logged_in();
     let gemini = gemini_agy_available();
     let grok = grok_logged_in();
@@ -392,7 +399,9 @@ pub fn detect_subscription_logins() -> SubscriptionStatus {
         codex,
         gemini,
         grok,
-        claude_plan: if claude { claude_plan } else { None },
+        // Claude 플랜(Max 등)도 토큰 안에 있어 감지 단계에선 읽지 않는다(인증창 회피) → None.
+        // Gemini/Grok 도 None(표시 통일). Codex 는 파일(id_token)이라 인증창 없이 plan 추출 가능.
+        claude_plan: None,
         codex_plan: if codex { codex_plan_label() } else { None },
         // 표시 통일 — agy 가 실제 등급(AI Pro/Ultra)을 노출하지 않으므로, 방식명("Antigravity")
         // 대신 "연결됨"만 표시(Grok 과 동일). 실등급 추출 경로 생기면 그때 채운다.
