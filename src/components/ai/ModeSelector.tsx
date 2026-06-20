@@ -18,9 +18,9 @@ const MODES: { value: AIMode; label: string; Icon: LucideIcon }[] = [
     { value: 'grammar', label: '문법 교정', Icon: SpellCheck },
     { value: 'translate', label: '번역', Icon: Languages },
     { value: 'image-gen', label: '이미지 생성', Icon: ImagePlus },
-    { value: 'stt', label: '음성 텍스트 변환', Icon: Mic },
-    { value: 'ocr', label: '이미지 텍스트 변환', Icon: ScanText },
-    { value: 'meeting-notes', label: '회의록 작성', Icon: FileText },
+    { value: 'stt', label: '음성 → 텍스트 변환', Icon: Mic },
+    { value: 'ocr', label: '이미지 → 텍스트 변환', Icon: ScanText },
+    { value: 'meeting-notes', label: '녹취록 → 회의록 변환', Icon: FileText },
     { value: 'pptx', label: '슬라이드 만들기', Icon: Presentation },
 ];
 
