@@ -1,0 +1,26 @@
+/* 플로우차트 생성 패널 — 옵션 그룹(관점/방향/상세도). 모달 골격(fw-*)은 FrameworkPanel.css 재사용. */
+.fc-opt-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.fc-opt-label {
+    font-size: 12px;
+    color: var(--text-secondary, #888888);
+}
+
+.fc-opt-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    font-size: 13px;
+    color: var(--text-primary, #222222);
+}
+
+.fc-opt-row label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+}

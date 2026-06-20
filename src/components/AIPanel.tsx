@@ -48,6 +48,8 @@ interface AIPanelProps {
     onLanguageChange: (lang: TranslateLanguage) => void;
     onNotesTemplateChange: (t: string) => void;
     onRun: (content: string, prompt?: string) => void;
+    /** 진행 중 AI 호출 중지(JS-only). */
+    onStop: () => void;
     onShowSettings: () => void;
     // ── 입력 변환(stt/ocr) ──
     converter: ReturnType<typeof useConverter>;
@@ -104,6 +106,7 @@ export function AIPanel({
     onLanguageChange,
     onNotesTemplateChange,
     onRun,
+    onStop,
     onShowSettings,
     converter,
     audioDropped,
@@ -300,19 +303,21 @@ export function AIPanel({
                     )}
 
                     <div className="ai-prompt-actions">
-                        <button
-                            className="ai-btn primary"
-                            onClick={handleRun}
-                            disabled={runDisabled}
-                            title="실행"
-                        >
-                            {isLoading ? <Loader2 size={14} className="spinning" /> : <Send size={14} />}
-                            {isLoading
-                                ? '처리 중...'
-                                : mode === 'meeting-notes'
-                                    ? '회의록 생성'
-                                    : '실행'}
-                        </button>
+                        {isLoading ? (
+                            <button className="ai-btn" onClick={onStop} title="중지">
+                                <Loader2 size={14} className="spinning" /> 중지
+                            </button>
+                        ) : (
+                            <button
+                                className="ai-btn primary"
+                                onClick={handleRun}
+                                disabled={runDisabled}
+                                title="실행"
+                            >
+                                <Send size={14} />
+                                {mode === 'meeting-notes' ? '회의록 생성' : '실행'}
+                            </button>
+                        )}
                     </div>
 
                     {error && (

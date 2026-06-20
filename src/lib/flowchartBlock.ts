@@ -15,6 +15,8 @@ const FLOW_BLOCK_RE = /```markmind-flow[ \t]*\n([\s\S]*?)\n```/;
 
 export interface StoredFlowchart {
     title?: string;
+    /** 레이아웃 방향 — dagre rankdir(LR 가로 / TB 세로). 기본 LR. */
+    direction?: 'LR' | 'TB';
     nodes: FlowchartNode[];
     edges: FlowchartEdge[];
 }
@@ -26,7 +28,8 @@ export function parseFlowchartBlock(md: string): StoredFlowchart | null {
     try {
         const data = JSON.parse(m[1]);
         if (!Array.isArray(data?.nodes) || !Array.isArray(data?.edges)) return null;
-        return { title: data.title, nodes: data.nodes, edges: data.edges };
+        const direction = data.direction === 'TB' ? 'TB' : data.direction === 'LR' ? 'LR' : undefined;
+        return { title: data.title, direction, nodes: data.nodes, edges: data.edges };
     } catch {
         return null;
     }
@@ -37,12 +40,20 @@ export function hasFlowchartBlock(md: string): boolean {
     return FLOW_BLOCK_RE.test(md);
 }
 
-/** 문서에 플로우차트 블록을 삽입/교체한다. position 은 제외하고 저장. */
-export function upsertFlowchartBlock(md: string, fc: StoredFlowchart): string {
+/**
+ * 문서에 플로우차트 블록을 삽입/교체한다.
+ * @param keepPosition true 면 노드 position 을 저장(사용자가 드래그로 배치한 자유
+ *   레이아웃 보존, Phase 1 편집). 기본 false — AI 생성 직후엔 dagre 가 매번 재계산하도록
+ *   블록을 가볍게 유지(position 제외).
+ */
+export function upsertFlowchartBlock(md: string, fc: StoredFlowchart, keepPosition = false): string {
     const stripped = {
         title: fc.title,
-        // position 제외 — dagre 재계산. 나머지(type/label/description/image_* 등) 보존.
-        nodes: fc.nodes.map(({ position: _omit, ...rest }) => rest),
+        direction: fc.direction,
+        // 나머지(type/label/description/image_* 등)는 항상 보존.
+        nodes: keepPosition
+            ? fc.nodes
+            : fc.nodes.map(({ position: _omit, ...rest }) => rest),
         edges: fc.edges,
     };
     const block = '```markmind-flow\n' + JSON.stringify(stripped, null, 2) + '\n```';

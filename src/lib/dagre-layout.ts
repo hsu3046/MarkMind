@@ -125,12 +125,15 @@ export function layoutFlowchart(
 
     // dagre yields each node's center (x, y). Our canvas uses
     // nodeOrigin=[0.5, 0.5] so position is also a center → assign directly.
-    // Read all positions first so the centering pass below can reference
-    // them before we apply grid snap.
+    // Snap HERE (before centering) so the branch-centering median below is the
+    // exact midpoint of already-snapped children → symmetric branch stems.
+    // (Snapping again after the median would re-round it off the true center,
+    //  e.g. children at 300/400 → median 350 → snap 360 → stems 60 vs 40.)
+    const snap = (v: number) => Math.round(v / GRID_SIZE) * GRID_SIZE
     const rawPos = new Map<string, { x: number; y: number }>()
     for (const n of nodes) {
         const d = g.node(n.id)
-        if (d) rawPos.set(n.id, { x: d.x, y: d.y })
+        if (d) rawPos.set(n.id, { x: snap(d.x), y: snap(d.y) })
     }
 
     // ─── Branch/merge centering pass ───────────────────────────────────────
@@ -195,17 +198,54 @@ export function layoutFlowchart(
         adjusted.set(n.id, crossAxis === 'y' ? { x: cur.x, y: median } : { x: median, y: cur.y })
     }
 
-    // Snap to the grid so dots line up with node centers (as in manual drag).
+    // ─── Forward chain alignment ───────────────────────────────────────────
+    // 단일 forward(out=1 & in=1)로 이어진 노드는 같은 cross-axis 값이어야
+    // smoothstep 이 곧은 직선이 된다. 위 branch centering 이 분기 노드(decision)를
+    // 자식 중앙으로 옮기면 그 노드로 들어오는 메인 체인(…→decision)이 어긋나
+    // 지그재그가 생긴다. 그래서 분기/merge anchor 의 cross 값을 단일 forward 로
+    // 이어진 체인에 BFS 전파해 메인 흐름을 직선으로 맞춘다. 분기 자식 edge 는
+    // source 의 fanOut≥2 라 단일 링크가 아니어서 건드리지 않는다(분기 모양 보존).
+    const fanOutOf = (id: string) => (outBranches.get(id) ?? []).length
+    const fanInOf = (id: string) => (inBranches.get(id) ?? []).length
+    const getCross = (p: { x: number; y: number }) => (crossAxis === 'y' ? p.y : p.x)
+    const setCross = (p: { x: number; y: number }, v: number) =>
+        crossAxis === 'y' ? { x: p.x, y: v } : { x: v, y: p.y }
+    const isAnchor = (id: string) => fanOutOf(id) >= 2 || fanInOf(id) >= 2
+    const aligned = new Set<string>()
+    const queue: string[] = []
+    // 시작점 ①: 분기/merge anchor — branch centering 으로 자리가 고정된 기준.
+    for (const n of nodes) if (isAnchor(n.id) && adjusted.has(n.id)) { queue.push(n.id); aligned.add(n.id) }
+    // 시작점 ②: source(forward-in 0). decision 의 분기가 'forward 1개 + markerLoop'
+    // 면(예: 달성→배포 + 미달성→재시도 loop) 그 decision 은 fanOut=1 이라 anchor 가
+    // 아니다. 이런 순수 선형 체인은 ①만으론 정렬이 안 돼 지그재그가 남으므로,
+    // source(forward 진입 0)에서 forward 전파해 한 줄로 맞춘다. anchor 인접 체인은
+    // 위에서 이미 점유(aligned)돼 안전(중복 정렬·진동 없음).
+    for (const n of nodes) if (!aligned.has(n.id) && fanInOf(n.id) === 0 && adjusted.has(n.id)) { queue.push(n.id); aligned.add(n.id) }
+    while (queue.length) {
+        const id = queue.shift() as string
+        const base = adjusted.get(id)
+        if (!base) continue
+        for (const e of edges) {
+            if (e.markerLoop) continue
+            let other: string | null = null
+            // id 와 단일 forward(양끝 모두 fan=1 인 링크)로 이어진 이웃만 정렬
+            if (e.target === id && fanOutOf(e.source) === 1 && fanInOf(id) === 1) other = e.source
+            else if (e.source === id && fanInOf(e.target) === 1 && fanOutOf(id) === 1) other = e.target
+            if (!other || aligned.has(other)) continue
+            const op = adjusted.get(other)
+            if (op) adjusted.set(other, setCross(op, getCross(base)))
+            aligned.add(other)
+            queue.push(other)
+        }
+    }
+
+    // adjusted 는 이미 grid-snap 됨(분기 노드만 자식-중앙이라 약간 off-grid).
     // Isolated nodes (no edges) were never added to dagre — `adjusted` won't
-    // have them, so the map fallback keeps their existing position untouched.
-    const snap = (v: number) => Math.round(v / GRID_SIZE) * GRID_SIZE
+    // have them, so the fallback keeps their existing position untouched.
     const newNodes = nodes.map(n => {
         const d = adjusted.get(n.id)
         if (!d) return n   // isolated node → keep original position
-        return {
-            ...n,
-            position: { x: snap(d.x), y: snap(d.y) },
-        }
+        return { ...n, position: d }
     })
 
     // Handle assignment matches the flow direction so smoothstep edges go
