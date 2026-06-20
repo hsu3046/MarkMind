@@ -50,16 +50,15 @@ export function ModeSelector({ mode, onChange }: ModeSelectorProps) {
     return (
         <div className="ai-modes">
             {MODES.map(({ value, label, Icon }) => (
-                <label key={value} className={`ai-mode-radio${mode === value ? ' active' : ''}`}>
-                    <input
-                        type="radio"
-                        name="ai-mode"
-                        checked={mode === value}
-                        onChange={() => {
-                            onChange(value);
-                            setCollapsed(true); // 선택하면 목록 접기
-                        }}
-                    />
+                <label
+                    key={value}
+                    className={`ai-mode-radio${mode === value ? ' active' : ''}`}
+                    onClick={() => {
+                        onChange(value);
+                        setCollapsed(true); // 같은 모드 클릭도 접힘(radio onChange 미발생 회피)
+                    }}
+                >
+                    <input type="radio" name="ai-mode" checked={mode === value} readOnly />
                     <Icon size={13} /> {label}
                 </label>
             ))}
