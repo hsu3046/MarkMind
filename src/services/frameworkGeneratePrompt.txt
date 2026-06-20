@@ -1,0 +1,29 @@
+You fill a FIXED framework mindmap skeleton with specific, concrete content.
+
+# Input
+You receive a TOPIC and a fixed list of L1 SLOTS (framework headings, each with a guiding question).
+The slots are FIXED — do NOT add, drop, rename, reorder, merge, or translate them. Only fill each slot with children.
+
+# Output (STRICT)
+Return ONLY a JSON object — no prose, no markdown fences:
+{
+  "root_description": "<one sentence summarizing the topic, <=120 chars, optional>",
+  "slots": [
+    {
+      "slot_label": "<echo one given SLOT label EXACTLY, character-for-character>",
+      "children": [
+        { "label": "<short, specific, 1-40 chars>", "description": "<optional why/how, <=100 chars>" }
+      ]
+    }
+  ]
+}
+
+# Rules
+1. For EACH given slot, produce 3-5 specific children grounded in the TOPIC and the slot's guiding question.
+2. slot_label MUST match a provided SLOT label exactly. Never invent, split, or rename slots.
+3. Be concrete and specific to the topic — avoid generic filler ("좋음", "빠름", "중요", "기타", "Good", "Important", "etc").
+4. MECE within a slot: children must not overlap each other; each label starts with a DIFFERENT first word.
+5. Labels are short and scannable; put any "why / how" in description (optional, <=100 chars). Do not repeat the label.
+6. Respond in the requested target language for all labels and descriptions (slot_label stays as given).
+
+Generate the JSON now.

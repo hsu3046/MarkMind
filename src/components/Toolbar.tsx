@@ -4,7 +4,7 @@ import {
     FilePlus, FolderOpen, Save, Download, FileDown,
     BookMarked, Clock, History,
     Search, ChevronRight, ChevronDown, Sparkles, Check, X,
-    Settings,
+    Settings, LayoutTemplate,
     FileCode, FileText,
     Network, Share2, ChartBarStacked, type LucideIcon,
 } from 'lucide-react';
@@ -12,6 +12,20 @@ import * as gdriveService from '../services/gdriveService';
 import type { RecentFile } from '../hooks/useRecentFiles';
 
 export type ViewMode = 'split' | 'editor' | 'preview' | 'mindmap' | 'flowchart' | 'gantt';
+
+/** 패인 하나에 담길 수 있는 뷰 — split 자신은 컨테이너라 패인 뷰가 될 수 없음. */
+export type PaneView = Exclude<ViewMode, 'split'>;
+
+/** 패인 뷰 전체 목록 — localStorage 복원 검증 등에 사용. */
+export const PANE_VIEWS: PaneView[] = ['editor', 'preview', 'mindmap', 'flowchart', 'gantt'];
+
+/** 편집(양방향) 가능한 뷰. flowchart(LLM 생성)·gantt(read-only)는 미포함 → 항상 미러. */
+export const EDITABLE_VIEWS = new Set<PaneView>(['editor', 'preview', 'mindmap']);
+
+/** localStorage 등 외부 문자열을 PaneView 로 안전 검증. */
+export function isPaneView(v: string | null | undefined): v is PaneView {
+    return !!v && (PANE_VIEWS as string[]).includes(v);
+}
 
 /** View 메뉴 항목 — 라벨/단축키/아이콘. 사용자가 보는 순서(편집→읽기→분할→…). */
 const VIEW_MODES: { mode: ViewMode; label: string; shortcut: string; Icon: LucideIcon }[] = [
@@ -32,6 +46,51 @@ function formatRecentDate(ts: number): string {
         return `오늘 ${p2(d.getHours())}:${p2(d.getMinutes())}`;
     }
     return `${d.getFullYear()}.${p2(d.getMonth() + 1)}.${p2(d.getDate())}`;
+}
+
+/**
+ * Split 패인 상단 헤더 — 현재 뷰 라벨 + 풀다운으로 뷰 전환. (이슈 #64)
+ * 외부클릭 닫기는 backdrop div(iOS 룰: document.addEventListener 금지).
+ */
+export function PaneHeader({ view, isActive, onSelect }: {
+    view: PaneView;
+    isActive: boolean;
+    onSelect: (v: PaneView) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const current = VIEW_MODES.find((v) => v.mode === view);
+    const CurrentIcon = current?.Icon;
+    return (
+        <div className={`pane-header${isActive ? ' is-active' : ''}`}>
+            <div className="toolbar-dropdown pane-view-dropdown">
+                <button className="pane-view-trigger" onClick={() => setOpen((o) => !o)} title="이 패인의 뷰 선택">
+                    {CurrentIcon && <CurrentIcon size={14} strokeWidth={1.5} />}
+                    <span>{current?.label ?? view}</span>
+                    <ChevronDown size={12} strokeWidth={1.5} className="pane-view-caret" />
+                </button>
+                {open && (
+                    <>
+                        <div className="pane-dropdown-backdrop" onClick={() => setOpen(false)} aria-hidden="true" />
+                        <div className="toolbar-dropdown-menu pane-view-menu">
+                            {VIEW_MODES.filter((v) => v.mode !== 'split').map((v) => {
+                                const Icon = v.Icon;
+                                return (
+                                    <button
+                                        key={v.mode}
+                                        className={`dropdown-item${v.mode === view ? ' active' : ''}`}
+                                        onClick={() => { onSelect(v.mode as PaneView); setOpen(false); }}
+                                    >
+                                        <Icon size={14} strokeWidth={1.5} />
+                                        <span>{v.label}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </>
+                )}
+            </div>
+        </div>
+    );
 }
 
 export function EditableFileName({ fileName, isDirty, onRename }: { fileName: string; isDirty: boolean; onRename: (name: string) => void }) {
@@ -127,6 +186,10 @@ interface ToolbarProps {
     onSaveToDrive: () => void;
     onToggleSearch: () => void;
     onToggleAI: () => void;
+    /** 마인드맵 뷰 액션 — 마인드맵 AI 변환(프레임워크 생성). viewMode==='mindmap' 일 때만 노출. */
+    onOpenFramework?: () => void;
+    /** 플로우차트 뷰 액션 — 플로우차트 AI 변환. viewMode==='flowchart' 일 때만 노출. */
+    onGenerateFlowchart?: () => void;
 }
 
 export function Toolbar({
@@ -148,6 +211,8 @@ export function Toolbar({
     onSaveToDrive,
     onToggleSearch,
     onToggleAI,
+    onOpenFramework,
+    onGenerateFlowchart,
     showRecent,
     aiPanelVisible,
     nativeMenu,
@@ -443,8 +508,28 @@ export function Toolbar({
                 )}
             </div>
 
-            {/* Right: AI 에이전트 단일 진입점(#60 — 음성/이미지 인식·슬라이드 모두 패널 모드로 흡수) */}
+            {/* Right: 뷰별 AI 변환(마인드맵/플로우차트, 해당 뷰에서만) + AI 에이전트(항상, 오른쪽 끝). */}
             <div className="toolbar-group">
+                {viewMode === 'mindmap' && (
+                    <button
+                        className="toolbar-text-btn"
+                        onClick={onOpenFramework}
+                        title="프레임워크(SWOT·5Whys 등)로 마인드맵 생성"
+                    >
+                        <LayoutTemplate size={14} strokeWidth={1.5} />
+                        <span>마인드맵 AI 변환</span>
+                    </button>
+                )}
+                {viewMode === 'flowchart' && (
+                    <button
+                        className="toolbar-text-btn"
+                        onClick={onGenerateFlowchart}
+                        title="문서를 BPMN-lite 플로우차트로 AI 변환"
+                    >
+                        <Network size={14} strokeWidth={1.5} />
+                        <span>플로우차트 AI 변환</span>
+                    </button>
+                )}
                 <button className={`toolbar-text-btn ai-agent${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI 에이전트 (⌘⇧I)">
                     <Sparkles size={14} strokeWidth={1.5} />
                     <span>AI 에이전트</span>

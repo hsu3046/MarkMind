@@ -32,6 +32,8 @@ interface EditorProps {
     onSelectionChange?: (text: string, coords: { top: number; left: number } | null) => void;
     /** 클립보드 이미지 붙여넣기 시 — assets/ 에 이미지 인라인 첨부(#56). */
     onImagePaste?: (file: File) => void;
+    /** false 면 read-only(키 입력·문서 변경 차단). split 비활성 패인의 미러용. 기본 true. */
+    editable?: boolean;
 }
 
 /** 검색 결과 요약 — 총 매치 수 + 현재 매치 0-based index(-1=없음). */
@@ -176,7 +178,7 @@ const BASIC_SETUP = {
 };
 
 export const Editor = forwardRef<EditorHandle, EditorProps>(
-    function Editor({ content, onChange, theme, onSelectionChange, onImagePaste }, ref) {
+    function Editor({ content, onChange, theme, onSelectionChange, onImagePaste, editable = true }, ref) {
         const cmRef = useRef<ReactCodeMirrorRef>(null);
         // onChange via ref → handleChange 가 안정 참조라 부모 리렌더 시 reconfigure 안 됨.
         const onChangeRef = useRef(onChange);
@@ -266,6 +268,9 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                 EditorView.lineWrapping,
                 KO_PHRASES,
                 search(), // 검색 상태 + 전체 매치 하이라이트(패널은 안 띄움 — 통일 SearchBar 가 구동)
+                // read-only(미러) — editable.of(false) 로 키 입력 막고 readOnly.of(true) 로 문서 변경 차단.
+                EditorView.editable.of(editable),
+                EditorState.readOnly.of(!editable),
                 ...(theme === 'dark' ? [syntaxHighlighting(darkHighlight)] : []),
             ];
 
@@ -318,7 +323,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
             }
 
             return exts;
-        }, [theme, onSelectionChange, onImagePaste]);
+        }, [theme, onSelectionChange, onImagePaste, editable]);
 
         return (
             <div className="editor-wrapper">

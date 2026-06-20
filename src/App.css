@@ -1428,8 +1428,103 @@ body {
   flex-direction: column;
 }
 
-.pane-editor {
+.pane-editor,
+.pane-left {
   border-right: 1px solid var(--border-primary);
+}
+
+/* ----- Split 패인 헤더 + 풀다운 (이슈 #64) ----- */
+/* 헤더 아래 콘텐츠가 남은 높이를 채움 (PaneHeader 는 자기 높이). */
+.split-pane .pane > :last-child {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.pane-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--border-secondary);
+  background: var(--bg-secondary);
+}
+
+.pane-view-dropdown {
+  position: relative;
+}
+
+.pane-view-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.pane-view-trigger:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.pane-view-caret {
+  opacity: 0.6;
+}
+
+.pane-view-menu {
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 2px;
+  min-width: 150px;
+  z-index: 50;
+}
+
+/* 외부클릭 닫기 backdrop (iOS 룰: document 리스너 금지) */
+.pane-dropdown-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+/* active 패인 강조 / 비active dim */
+.pane.is-active .pane-header {
+  background: var(--bg-tertiary);
+}
+.pane.is-active .pane-view-trigger {
+  color: var(--text-primary);
+}
+.split-pane .pane:not(.is-active) .pane-header {
+  opacity: 0.7;
+}
+
+/* swap 버튼 — sync-toggle 스타일 공유 */
+.pane-swap-btn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+  margin: 4px 0;
+}
+.pane-swap-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 /* Disable pointer events on panes while dragging split handle */
@@ -1476,33 +1571,6 @@ body.is-resizing .split-pane {
 .split-handle:hover,
 .split-handle.dragging {
   background: var(--accent);
-}
-
-.sync-toggle {
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-primary);
-  background: var(--bg-secondary);
-  color: var(--text-tertiary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all var(--transition-fast);
-  margin: 4px 0;
-}
-
-.sync-toggle:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.sync-toggle.active {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
 }
 
 /* ---------- Editor ---------- */

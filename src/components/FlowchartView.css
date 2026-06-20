@@ -75,54 +75,48 @@
     background: #ffffff;
 }
 
-/* #46 M3-A3 — 뷰 툴바(모드 표시 + AI 생성 버튼) */
+/* 플로우차트 뷰 — 캔버스만(액션 버튼은 메인 툴바로 통합, #60). 로딩/에러는 오버레이. */
 .flowchart-view {
     display: flex;
     flex-direction: column;
     height: 100%;
-}
-.flowchart-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border-primary, #e5e5e5);
-}
-.flowchart-mode {
-    font-size: 12px;
-    color: var(--text-secondary, #888888);
-}
-.flowchart-count-warn {
-    color: #ef4444;
-}
-.flowchart-gen-btn {
-    margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    border: 1px solid var(--border-primary, #cccccc);
-    border-radius: 6px;
-    background: var(--bg-secondary, #f5f5f5);
-    color: var(--text-primary, #222222);
-    cursor: pointer;
-    font-size: 13px;
-}
-.flowchart-gen-btn:hover:not(:disabled) {
-    background: var(--bg-hover, #ececec);
-}
-.flowchart-gen-btn:disabled {
-    opacity: 0.6;
-    cursor: default;
-}
-.flowchart-error {
-    padding: 6px 12px;
-    color: #ef4444;
-    font-size: 12px;
+    position: relative; /* 로딩/에러 오버레이의 위치 기준 */
 }
 .flowchart-canvas {
     flex: 1;
     min-height: 0;
+}
+
+/* AI 생성 중 — 캔버스 위 중앙 오버레이 */
+.flowchart-loading {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: color-mix(in srgb, var(--bg-primary, #ffffff) 68%, transparent);
+    color: var(--text-secondary, #888888);
+    font-size: 13px;
+}
+
+/* 에러 — 하단 중앙 토스트(다음 생성 시 사라짐) */
+.flowchart-error {
+    position: absolute;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    z-index: 25;
+    max-width: min(520px, calc(100% - 32px));
+    padding: 8px 12px;
+    border: 1px solid #ef4444;
+    border-radius: 8px;
+    background: var(--bg-primary, #ffffff);
+    color: var(--text-primary, #222222);
+    font-size: 13px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
 }
 .flowchart-view .spinning {
     animation: flowchart-spin 1s linear infinite;
