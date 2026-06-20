@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
-import { AIMode, AIResponse, TranslateLanguage } from '../types/ai';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { AIMode, AIResponse, TranslateLanguage, AITurn } from '../types/ai';
 import { callAI, hasApiKey, isTextAIUsable, getApiKey, setApiKey, removeApiKey, applyDiff, isAuthError } from '../services/aiService';
 import { getAIModelSelection } from '../services/aiModelConfig';
 import { setValidationStatus } from '../services/apiValidation';
@@ -12,6 +12,10 @@ export function useAI() {
     const [error, setError] = useState<string | null>(null);
     const [response, setResponse] = useState<AIResponse | null>(null);
     const [streamingText, setStreamingText] = useState<string>('');
+    // 멀티턴(improve): 대화 히스토리 — LLM fold-in + 타임라인 표시 공용.
+    const [conversationHistory, setConversationHistory] = useState<AITurn[]>([]);
+    // 현재 턴의 지시(prompt) — 적용 확정(commitTurn) 시 히스토리에 push.
+    const lastInstructionRef = useRef<string>('');
     const [apiKeySet, setApiKeySet] = useState(hasApiKey());
     const [panelVisible, setPanelVisible] = useState(false);
     // 회의록 작성 (mode === 'meeting-notes') 전용 옵션/결과
@@ -58,6 +62,8 @@ export function useAI() {
         modeOverride?: AIMode,
     ) => {
         const activeMode = modeOverride ?? mode;
+        // improve 멀티턴: 이번 지시를 기억(적용 시 commitTurn 으로 히스토리에 push).
+        if (activeMode === 'improve') lastInstructionRef.current = prompt ?? '';
         setIsLoading(true);
         setError(null);
         setResponse(null);
@@ -71,6 +77,8 @@ export function useAI() {
                     prompt,
                     language: activeMode === 'translate' ? language : undefined,
                     improveQuality: activeMode === 'improve' ? 'quality' : undefined,
+                    // improve 면 직전 히스토리 동봉 → callAI 가 <conversation_history> 로 fold-in.
+                    conversationHistory: activeMode === 'improve' ? conversationHistory : undefined,
                 },
                 (text) => setStreamingText(text),
             );
@@ -96,7 +104,7 @@ export function useAI() {
         } finally {
             setIsLoading(false);
         }
-    }, [mode, language]);
+    }, [mode, language, conversationHistory]);
 
     // Accept/Reject individual chunk
     const acceptChunk = useCallback((chunkId: number) => {
@@ -135,6 +143,26 @@ export function useAI() {
         setStreamingText('');
     }, []);
 
+    // 적용 확정 시 현재 턴(지시 + 적용요약)을 히스토리에 push — improve 멀티턴.
+    const commitTurn = useCallback((assistantSummary: string) => {
+        const instr = lastInstructionRef.current;
+        if (!instr) return;
+        setConversationHistory(prev =>
+            [
+                ...prev,
+                { role: 'user' as const, content: instr },
+                { role: 'assistant' as const, content: assistantSummary },
+            ].slice(-12), // 최근 6턴(12 메시지) 상한 — 토큰 누적 가드
+        );
+        lastInstructionRef.current = '';
+    }, []);
+
+    // 대화 스레드 초기화 (새 문서 / [새 대화]).
+    const resetThread = useCallback(() => {
+        setConversationHistory([]);
+        lastInstructionRef.current = '';
+    }, []);
+
     // Build final text from accepted/rejected chunks
     const getFinalText = useCallback((): string | null => {
         if (!response) return null;
@@ -169,6 +197,7 @@ export function useAI() {
         panelVisible,
         allDecided,
         undecidedCount,
+        conversationHistory,
         notesTemplate,
         notesResult,
 
@@ -185,6 +214,8 @@ export function useAI() {
         rejectChunk,
         acceptAll,
         rejectAll,
+        commitTurn,
+        resetThread,
         getFinalText,
         setResponse,
         setError,

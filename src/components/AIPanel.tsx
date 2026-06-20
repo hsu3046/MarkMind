@@ -9,7 +9,7 @@
  */
 
 import { useState, useRef, useEffect, ReactNode } from 'react';
-import { AIMode, TranslateLanguage } from '../types/ai';
+import { AIMode, TranslateLanguage, AITurn } from '../types/ai';
 import { Sparkles, Send, Loader2, AlertCircle, Presentation } from 'lucide-react';
 import type { NotesJobResult, TemplateInfo } from '../types/converter';
 import type { useConverter } from '../hooks/useConverter';
@@ -26,6 +26,7 @@ import {
 import { detectSubscriptionLogins } from '../services/subscriptionService';
 import { InlineModelDropdown } from './ai/InlineModelDropdown';
 import { ModeSelector } from './ai/ModeSelector';
+import { ConversationTimeline } from './ai/ConversationTimeline';
 import { NotesOptions } from './ai/NotesOptions';
 import { NotesResultCard } from './ai/NotesResultCard';
 import { ImageGenPanel } from './ai/ImageGenPanel';
@@ -65,6 +66,9 @@ interface AIPanelProps {
     onInsertGeneratedImage: (dataUrl: string) => void;
     imageGenRefDropped: string[] | null;
     onConsumeImageGenRefDropped: () => void;
+    // ── 문서 개선(improve) 멀티턴 ──
+    conversationHistory: AITurn[];
+    onNewThread: () => void;
 }
 
 /** stt/ocr 모드 본문 — secureStorage 초기화 가드(기존 ConvertSidebar 패턴). */
@@ -115,6 +119,8 @@ export function AIPanel({
     onInsertGeneratedImage,
     imageGenRefDropped,
     onConsumeImageGenRefDropped,
+    conversationHistory,
+    onNewThread,
 }: AIPanelProps) {
     const [prompt, setPrompt] = useState('');
     const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -276,6 +282,9 @@ export function AIPanel({
             {!isConvertMode && !isPptxMode && !isImageGenMode && !keyGated && (
                 <>
                     {textModelDropdown}
+                    {mode === 'improve' && (
+                        <ConversationTimeline messages={conversationHistory} onNewThread={onNewThread} />
+                    )}
                     {mode === 'translate' && (
                         <div className="ai-language-select">
                             <span>번역 언어:</span>

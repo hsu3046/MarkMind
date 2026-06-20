@@ -18,6 +18,7 @@ import { RecentFilesPanel } from './components/RecentFilesPanel';
 import { AIPanel } from './components/AIPanel';
 import { FloatingAIBar } from './components/FloatingAIBar';
 import { InlineDiffView } from './components/InlineDiffView';
+import { BeforeAfterView } from './components/BeforeAfterView';
 import { AuthCallback } from './components/AuthCallback';
 import { SettingsModal } from './components/SettingsModal';
 import { DriveBrowser } from './components/DriveBrowser';
@@ -435,6 +436,11 @@ function App() {
     filePathRef.current = filePath;
   }, [filePath]);
 
+  // 문서(파일)가 바뀌면 멀티턴 대화 스레드 초기화 — 이전 문서 맥락 오염 방지.
+  useEffect(() => {
+    ai.resetThread();
+  }, [filePath, ai.resetThread]);
+
   // 다른 창(AI 패널)에서 화자 정리가 적용되면, 현재 열린 파일이 그 대상일 때 리로드한다.
   // rename_speakers 는 디스크만 바꾸므로 이미 열린 창엔 'speaker-relabeled' 이벤트로 알린다.
   // (openFromRecent 는 useCallback([]) 로 안정적이라 리스너는 mount 시 1회만 등록된다.)
@@ -682,6 +688,15 @@ function App() {
       await ai.runAI(runContent, runPrompt);
     }
   }, [ai, converter, fileName]);
+
+  // 문서 개선(improve) 결과는 chunk diff 대신 before/after Split 으로 검토(전체 변형이라 diff 가 노이즈).
+  const improveResult = !!ai.response && !ai.isLoading && ai.mode === 'improve';
+  const handleImproveApply = useCallback(() => {
+    if (!ai.response) return;
+    updateContent(ai.response.modifiedText);
+    ai.commitTurn('전체 적용');
+    ai.setResponse(null);
+  }, [ai, updateContent]);
 
   // 마인드맵 정리(#60) — 마인드맵 뷰 상단 버튼에서 호출. structurize 로 현재 문서를
   // 계층 아웃라인으로 재구성 → 응답 오면 위 effect 가 editor 로 전환해 InlineDiff 표시.
@@ -1506,7 +1521,15 @@ function App() {
         <OutlinePanel content={content} visible={outlineVisible} onHeadingClick={handleOutlineClick} />
 
         <div className="split-pane">
-          {viewMode === 'mindmap' ? (
+          {improveResult && ai.response ? (
+            <BeforeAfterView
+              before={ai.response.originalText}
+              after={ai.response.modifiedText}
+              fontSize={fontSize}
+              onApply={handleImproveApply}
+              onCancel={() => ai.setResponse(null)}
+            />
+          ) : viewMode === 'mindmap' ? (
             <div className="pane" style={{ width: '100%', flexDirection: 'column' }}>
               {mcpBanner}
               <MindmapView
@@ -1554,6 +1577,11 @@ function App() {
                         aiSelectionRef.current = null;
                       } else {
                         updateContent(modified);
+                        // improve 전체문서 적용 → 멀티턴 턴 커밋(선택영역 편집은 단일 턴 유지).
+                        if (ai.mode === 'improve') {
+                          const n = ai.response.chunks.filter((c) => c.type !== 'unchanged').length;
+                          if (n > 0) ai.commitTurn(`${n}곳 변경 적용`);
+                        }
                       }
                     }
                     ai.setResponse(null);
@@ -1574,6 +1602,11 @@ function App() {
                         aiSelectionRef.current = null;
                       } else {
                         updateContent(finalText);
+                        // improve 부분 적용 → 수락된 변경만 턴 커밋.
+                        if (ai.mode === 'improve' && ai.response) {
+                          const n = ai.response.chunks.filter((c) => c.type !== 'unchanged' && c.accepted).length;
+                          if (n > 0) ai.commitTurn(`${n}곳 변경 적용`);
+                        }
                       }
                     }
                     ai.setResponse(null);
@@ -1666,6 +1699,8 @@ function App() {
           onInsertGeneratedImage={handleInsertGeneratedImage}
           imageGenRefDropped={imageGenRefDropped}
           onConsumeImageGenRefDropped={() => setImageGenRefDropped(null)}
+          conversationHistory={ai.conversationHistory}
+          onNewThread={ai.resetThread}
         />
 
       </div>

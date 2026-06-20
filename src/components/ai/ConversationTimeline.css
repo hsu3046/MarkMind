@@ -1,0 +1,79 @@
+/* 문서 개선 멀티턴 대화 타임라인 (AIPanel 내부) */
+
+.ai-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.ai-timeline-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.ai-timeline-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.ai-timeline-new {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.ai-timeline-new:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.ai-timeline-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.ai-msg {
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 6px 10px;
+    border-radius: 8px;
+    max-width: 88%;
+    word-break: break-word;
+}
+
+/* 사용자 지시 — 우측 정렬 버블 */
+.ai-msg-user {
+    align-self: flex-end;
+    background: var(--accent, #2563eb);
+    color: #fff;
+}
+
+/* AI 적용 결과 — 좌측 칩(요약) */
+.ai-msg-assistant {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-primary);
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+.ai-msg-check {
+    color: #16a34a;
+    flex-shrink: 0;
+}

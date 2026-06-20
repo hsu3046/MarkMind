@@ -431,10 +431,20 @@ export async function callAI(
     const hasPrompt = !!request.prompt?.trim();
     const systemPrompt = getSystemPrompt(request);
 
+    // 멀티턴(improve): 직전 대화 맥락을 <conversation_history> 로 fold-in한다(provider 무관 —
+    // 단일 user 메시지 본문에 합침). 문서 전문은 <document> 로 매 턴 1회만 전달하므로,
+    // 히스토리엔 지시/적용요약만 담는다(같은 문서를 N번 중복 전송 = 토큰 폭발 방지).
+    let historyBlock = '';
+    if (request.mode === 'improve' && request.conversationHistory?.length) {
+        const lines = request.conversationHistory
+            .map((t) => (t.role === 'user' ? `[이전 요청] ${t.content}` : `[적용됨] ${t.content}`))
+            .join('\n');
+        historyBlock = `<conversation_history>\n${lines}\n</conversation_history>\n\n`;
+    }
     // 문서는 <document> 로 격리(경계 명확 + injection 완화), 지시는 <instructions> 한 곳으로.
-    let userContent = `<document>\n${request.content}\n</document>`;
+    let userContent = `${historyBlock}<document>\n${request.content}\n</document>`;
     if (hasPrompt) {
-        userContent = `<instructions>\n${request.prompt}\n</instructions>\n\n<document>\n${request.content}\n</document>`;
+        userContent = `${historyBlock}<instructions>\n${request.prompt}\n</instructions>\n\n<document>\n${request.content}\n</document>`;
     }
 
     let modifiedText = '';
@@ -514,7 +524,8 @@ export async function callAI(
         .replace(/\n```\s*$/, '')
         .trim();
 
-    const chunks = generateDiff(request.content, modifiedText);
+    // improve 는 결과를 before/after 로 비교(chunk diff 미사용)라 LCS 생략(대형 문서 절약).
+    const chunks = request.mode === 'improve' ? [] : generateDiff(request.content, modifiedText);
 
     return {
         originalText: request.content,

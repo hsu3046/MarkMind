@@ -21,6 +21,12 @@ export type AIMode =
 /** 번역 대상 언어 */
 export type TranslateLanguage = 'ko' | 'en' | 'ja';
 
+/** 멀티턴 대화의 한 메시지(provider 중립). improve 모드의 대화 히스토리 fold-in 용. */
+export interface AITurn {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
 /** AI 요청 */
 export interface AIRequest {
     mode: AIMode;
@@ -28,6 +34,9 @@ export interface AIRequest {
     prompt?: string;
     language?: TranslateLanguage;
     improveQuality?: ImproveQuality;
+    /** 멀티턴(improve 전용): 직전 턴들. user=이전 지시, assistant=적용 요약.
+        callAI 가 프롬프트의 <conversation_history> 로 fold-in(문서 전문은 미포함 — 토큰 절약). */
+    conversationHistory?: AITurn[];
 }
 
 /** 라인 내부 단어 단위 세그먼트 (word-level inline diff) */
