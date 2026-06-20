@@ -15,6 +15,8 @@ const FLOW_BLOCK_RE = /```markmind-flow[ \t]*\n([\s\S]*?)\n```/;
 
 export interface StoredFlowchart {
     title?: string;
+    /** 레이아웃 방향 — dagre rankdir(LR 가로 / TB 세로). 기본 LR. */
+    direction?: 'LR' | 'TB';
     nodes: FlowchartNode[];
     edges: FlowchartEdge[];
 }
@@ -26,7 +28,8 @@ export function parseFlowchartBlock(md: string): StoredFlowchart | null {
     try {
         const data = JSON.parse(m[1]);
         if (!Array.isArray(data?.nodes) || !Array.isArray(data?.edges)) return null;
-        return { title: data.title, nodes: data.nodes, edges: data.edges };
+        const direction = data.direction === 'TB' ? 'TB' : data.direction === 'LR' ? 'LR' : undefined;
+        return { title: data.title, direction, nodes: data.nodes, edges: data.edges };
     } catch {
         return null;
     }
@@ -41,6 +44,7 @@ export function hasFlowchartBlock(md: string): boolean {
 export function upsertFlowchartBlock(md: string, fc: StoredFlowchart): string {
     const stripped = {
         title: fc.title,
+        direction: fc.direction,
         // position 제외 — dagre 재계산. 나머지(type/label/description/image_* 등) 보존.
         nodes: fc.nodes.map(({ position: _omit, ...rest }) => rest),
         edges: fc.edges,

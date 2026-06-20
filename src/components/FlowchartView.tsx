@@ -11,7 +11,7 @@
  * (MD 단일 SSOT). 렌더는 읽기 전용(노드 드래그/편집은 후속).
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import {
     ReactFlow,
     ReactFlowProvider,
@@ -24,14 +24,12 @@ import {
     type Edge,
     type NodeProps,
 } from '@xyflow/react';
-import { Loader2 } from 'lucide-react';
 import { documentToTree } from '../lib/markdownTree';
 import { mindmapToFlowchart } from '../lib/flowchart-converter';
 import { layoutFlowchart } from '../lib/dagre-layout';
 import { parseFlowchartBlock, upsertFlowchartBlock } from '../lib/flowchartBlock';
-import { generateFlowchart } from '../services/aiService';
 import type { FlowchartNode, FlowchartEdge } from '../types/flowchart';
-import { confirmAction } from '../services/dialogService';
+import { FlowchartPanel } from './FlowchartPanel';
 import '@xyflow/react/dist/style.css';
 import './FlowchartView.css';
 
@@ -46,19 +44,22 @@ function FlowNode({ data }: NodeProps) {
     const d = data as FlowNodeData;
     return (
         <div className={`flow-node flow-node--${d.flowType}`} title={d.description || undefined}>
-            <Handle type="target" position={Position.Left} />
+            {/* dagre-layout 이 지정하는 source/targetHandle(id) 과 매칭 — forward(LR=right/left, TB=bottom/top)
+                + loop(LR=top, TB=left). markerLoop(retry)가 top handle 로 위로 빠져나가 명확한 arc 가 된다. */}
+            <Handle type="source" position={Position.Right} id="right-source" />
+            <Handle type="target" position={Position.Right} id="right-target" />
+            <Handle type="source" position={Position.Left} id="left-source" />
+            <Handle type="target" position={Position.Left} id="left-target" />
+            <Handle type="source" position={Position.Top} id="top-source" />
+            <Handle type="target" position={Position.Top} id="top-target" />
+            <Handle type="source" position={Position.Bottom} id="bottom-source" />
+            <Handle type="target" position={Position.Bottom} id="bottom-target" />
             <span className="flow-node__label">{d.label}</span>
-            <Handle type="source" position={Position.Right} />
         </div>
     );
 }
 
 const nodeTypes = { flow: FlowNode };
-
-// 가드레일(#46) — LLM 본격 호출 전 입력 길이 체크.
-const MIN_CHARS = 80; // 미만: 흐름도 변환 무의미 → 버튼 비활성
-const WARN_CHARS = 6000; // 이상: 핵심만 추출·단순화 경고
-const HARD_CHARS = 30000; // 이상: 시간·비용↑·부정확/실패 강경고
 
 /** FlowchartNode/Edge → React Flow Node/Edge. */
 function toReactFlow(nodes: FlowchartNode[], edges: FlowchartEdge[]): { nodes: Node[]; edges: Edge[] } {
@@ -73,6 +74,17 @@ function toReactFlow(nodes: FlowchartNode[], edges: FlowchartEdge[]): { nodes: N
             id: e.id,
             source: e.source,
             target: e.target,
+            // dagre-layout 이 방향(forward=right/left, loop=top/left)에 맞춰 지정한 handle id —
+            // 이걸 넘겨야 markerLoop(retry)가 노드 위쪽 handle 로 빠져 arc 가 된다.
+            // (누락하면 React Flow 가 기본 handle 로 떨어져 메인 흐름과 겹쳐 직선처럼 보임)
+            sourceHandle: e.sourceHandle,
+            targetHandle: e.targetHandle,
+            // smoothstep: 같은 높이(일직선 구간)는 곧은 직선, 높이가 다르면(분기·loop) 직각 ㄷ 자.
+            // → forward 일직선=직선, decision 분기·markerLoop(retry)=직각으로 통일(bezier 곡선 제거).
+            type: 'smoothstep',
+            // markerLoop(retry)는 메인 흐름 위를 가로지르는 ㄷ자라 offset(노드 top↔첫 꺾임
+            // 거리)을 키워 위로 더 띄운다. 기본 20 은 노드 윗변에 바싹 붙어 답답하다.
+            pathOptions: e.markerLoop ? { offset: 48 } : undefined,
             label: e.label,
             markerEnd: e.markerEnd !== false ? { type: MarkerType.ArrowClosed } : undefined,
         })),
@@ -87,24 +99,20 @@ interface FlowchartViewProps {
     content: string;
     fileName: string;
     onChange: (md: string) => void;
-    /** 메인 툴바 "플로우차트 AI 변환" 클릭 시그널 — 값이 바뀔 때마다 생성 트리거(#60 통합). */
-    genNonce?: number;
+    /** 모달(FlowchartPanel) 열림 — 메인 툴바 "플로우차트 생성" 클릭을 App 이 토글. */
+    flowchartPanelOpen?: boolean;
+    onCloseFlowchartPanel?: () => void;
 }
 
-function FlowchartViewInner({ content, fileName, onChange, genNonce }: FlowchartViewProps) {
+function FlowchartViewInner({ content, fileName, onChange, flowchartPanelOpen, onCloseFlowchartPanel }: FlowchartViewProps) {
     const stem = useMemo(() => stemOf(fileName), [fileName]);
-    const charCount = content.trim().length;
-    const [generating, setGenerating] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const generatingRef = useRef(false);
-    const genNonceRef = useRef(genNonce ?? 0);
 
     const { nodes, edges, isAi } = useMemo(() => {
         const stored = parseFlowchartBlock(content);
         if (stored) {
             // 저장된 AI 흐름도 — position 없으니 dagre LR 재계산
             const seeded = stored.nodes.map((n) => ({ ...n, position: n.position ?? { x: 0, y: 0 } }));
-            const lo = layoutFlowchart(seeded, stored.edges, { rankdir: 'LR' });
+            const lo = layoutFlowchart(seeded, stored.edges, { rankdir: stored.direction ?? 'LR' });
             return { ...toReactFlow(lo.nodes, lo.edges), isAi: true };
         }
         // 구조 미러 프리뷰
@@ -112,58 +120,6 @@ function FlowchartViewInner({ content, fileName, onChange, genNonce }: Flowchart
         const fc = mindmapToFlowchart(tree);
         return { ...toReactFlow(fc.result.nodes, fc.result.edges), isAi: false };
     }, [content, stem]);
-
-    const handleGenerate = async () => {
-        if (generatingRef.current) return; // 동시/중복 트리거 차단(confirm 대기 중 포함)
-        generatingRef.current = true;
-        try {
-            // 가드레일: LLM 본격 호출 전 길이 체크(#46)
-            if (charCount < MIN_CHARS) {
-                setError('흐름도로 만들기엔 내용이 너무 짧습니다.');
-                return;
-            }
-            if (charCount > HARD_CHARS) {
-                const ok = await confirmAction(
-                    `문서가 매우 깁니다 (${charCount.toLocaleString()}자).\n\n` +
-                        'AI 변환에 드는 비용과 시간이 크게 늘고, 핵심을 제대로 추리지 못하거나 ' +
-                        '도중에 실패할 수 있어요.\n\n' +
-                        '짧은 문서로 나눠서 만드는 걸 권장합니다. 그래도 지금 진행할까요?',
-                    { title: '경고', kind: 'warning' },
-                );
-                if (!ok) return;
-            } else if (charCount > WARN_CHARS) {
-                const ok = await confirmAction(
-                    `문서가 깁니다 (${charCount.toLocaleString()}자).\n\n` +
-                        'AI 가 전체에서 핵심 흐름만 추려 만들기 때문에 세부 내용은 생략·단순화될 수 있어요. ' +
-                        '또 문서가 길수록 AI 사용량(토큰 비용)도 함께 늘어납니다.\n\n' +
-                        '계속할까요?',
-                    { title: '주의', kind: 'info' },
-                );
-                if (!ok) return;
-            }
-            setGenerating(true);
-            setError(null);
-            try {
-                const fc = await generateFlowchart(content);
-                onChange(upsertFlowchartBlock(content, fc)); // MD 에 저장 → 재파싱되어 AI 흐름도로 표시
-            } catch (e) {
-                setError(e instanceof Error ? e.message : '플로우차트 생성에 실패했습니다.');
-            } finally {
-                setGenerating(false);
-            }
-        } finally {
-            generatingRef.current = false;
-        }
-    };
-
-    // 메인 툴바 "플로우차트 AI 변환" 버튼이 genNonce 를 증가 → 생성 트리거(시그널).
-    // 로딩/에러는 이 뷰가 자체 표시(오버레이) — 마인드맵 프레임워크 패널과 동형 통합.
-    useEffect(() => {
-        if (genNonce === undefined || genNonce === genNonceRef.current) return;
-        genNonceRef.current = genNonce;
-        void handleGenerate();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [genNonce]);
 
     return (
         <div className="flowchart-view">
@@ -173,6 +129,11 @@ function FlowchartViewInner({ content, fileName, onChange, genNonce }: Flowchart
                     nodes={nodes}
                     edges={edges}
                     nodeTypes={nodeTypes}
+                    // dagre-layout 이 position 을 노드 '중심' 으로 계산하므로 nodeOrigin 도
+                    // center 여야 한다. 누락 시 React Flow 가 기본 [0,0](top-left)로 해석해
+                    // 노드 높이가 다른 연결(process↔decision)에서 handle y 가 어긋나 edge 가
+                    // 직선이 아니라 꺾인다(같은 높이끼리는 안 어긋나 못 알아챘던 버그).
+                    nodeOrigin={[0.5, 0.5]}
                     nodesDraggable={false}
                     nodesConnectable={false}
                     elementsSelectable
@@ -186,13 +147,13 @@ function FlowchartViewInner({ content, fileName, onChange, genNonce }: Flowchart
                     <Controls showInteractive={false} />
                 </ReactFlow>
             </div>
-            {generating && (
-                <div className="flowchart-loading">
-                    <Loader2 size={22} className="spinning" />
-                    <span>AI 흐름도 생성 중…</span>
-                </div>
+            {flowchartPanelOpen && (
+                <FlowchartPanel
+                    content={content}
+                    onApply={(fc) => onChange(upsertFlowchartBlock(content, fc))}
+                    onClose={() => onCloseFlowchartPanel?.()}
+                />
             )}
-            {error && <div className="flowchart-error">{error}</div>}
         </div>
     );
 }

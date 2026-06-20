@@ -6,7 +6,7 @@
  * AI 추천(suggestFramework)은 선택을 하이라이트만 — 차단하지 않고 오버라이드 가능.
  */
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Sparkles, Loader2, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { frameworkList, FRAMEWORKS, type Framework } from '../lib/frameworks';
 import { generateFrameworkMindmap, suggestFramework } from '../services/aiService';
@@ -44,6 +44,7 @@ export function FrameworkPanel({ initialTopic, docNonEmpty, onApply, onClose }: 
     const [mode, setMode] = useState<'replace' | 'append'>(docNonEmpty ? 'append' : 'replace');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const abortRef = useRef<AbortController | null>(null);
 
     const selected = FRAMEWORKS[selectedId];
     const isSuggest = selectedId === SUGGEST_ID;
@@ -57,6 +58,8 @@ export function FrameworkPanel({ initialTopic, docNonEmpty, onApply, onClose }: 
             const ok = window.confirm('현재 문서 내용을 교체합니다. 계속할까요? (⌘Z 로 되돌릴 수 있습니다)');
             if (!ok) return;
         }
+        const controller = new AbortController();
+        abortRef.current = controller;
         setLoading(true);
         setError(null);
         try {
@@ -67,10 +70,11 @@ export function FrameworkPanel({ initialTopic, docNonEmpty, onApply, onClose }: 
                 fw = FRAMEWORKS[frameworkId] ?? FRAMEWORKS.LOGIC;
             }
             if (!fw) { setLoading(false); return; }
-            const tree = await generateFrameworkMindmap(t, fw, fw.intent);
+            const tree = await generateFrameworkMindmap(t, fw, fw.intent, 'Korean', controller.signal);
             onApply(tree, mode);
             onClose();
         } catch (e) {
+            if (e instanceof DOMException && e.name === 'AbortError') { setLoading(false); return; } // 중지
             setError(e instanceof Error ? e.message : 'AI 생성에 실패했습니다.');
             setLoading(false);
         }
@@ -80,7 +84,7 @@ export function FrameworkPanel({ initialTopic, docNonEmpty, onApply, onClose }: 
         <div className="fw-backdrop" onClick={loading ? undefined : onClose} aria-hidden>
             <div className="fw-panel" role="dialog" aria-modal onClick={(e) => e.stopPropagation()}>
                 <div className="fw-head">
-                    <span>마인드맵 자동 생성</span>
+                    <span>마인드맵 생성</span>
                     <button type="button" className="modal-close" onClick={onClose} title="닫기" disabled={loading}>
                         <X size={18} />
                     </button>
@@ -148,15 +152,15 @@ export function FrameworkPanel({ initialTopic, docNonEmpty, onApply, onClose }: 
                 {error && <div className="fw-error">{error}</div>}
 
                 <div className="modal-actions">
-                    <button type="button" className="modal-btn modal-btn-primary modal-btn-full" onClick={runGenerate} disabled={loading || !topic.trim()}>
-                        {loading ? (
-                            <>
-                                <Loader2 size={14} className="spinning" /> 생성 중…
-                            </>
-                        ) : (
-                            '생성'
-                        )}
-                    </button>
+                    {loading ? (
+                        <button type="button" className="modal-btn modal-btn-full" onClick={() => abortRef.current?.abort()}>
+                            <Loader2 size={14} className="spinning" /> 중지
+                        </button>
+                    ) : (
+                        <button type="button" className="modal-btn modal-btn-primary modal-btn-full" onClick={runGenerate} disabled={!topic.trim()}>
+                            생성
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

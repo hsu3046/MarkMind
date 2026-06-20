@@ -12,6 +12,7 @@ export function useAI() {
     const [error, setError] = useState<string | null>(null);
     const [response, setResponse] = useState<AIResponse | null>(null);
     const [streamingText, setStreamingText] = useState<string>('');
+    const abortRef = useRef<AbortController | null>(null);
     // 멀티턴(improve): 대화 히스토리 — LLM fold-in + 타임라인 표시 공용.
     const [conversationHistory, setConversationHistory] = useState<AITurn[]>([]);
     // 현재 턴의 지시(prompt) — 적용 확정(commitTurn) 시 히스토리에 push.
@@ -64,6 +65,8 @@ export function useAI() {
         const activeMode = modeOverride ?? mode;
         // improve 멀티턴: 이번 지시를 기억(적용 시 commitTurn 으로 히스토리에 push).
         if (activeMode === 'improve') lastInstructionRef.current = prompt ?? '';
+        const controller = new AbortController();
+        abortRef.current = controller;
         setIsLoading(true);
         setError(null);
         setResponse(null);
@@ -81,10 +84,12 @@ export function useAI() {
                     conversationHistory: activeMode === 'improve' ? conversationHistory : undefined,
                 },
                 (text) => setStreamingText(text),
+                controller.signal,
             );
             setResponse(result);
             return result;
         } catch (err) {
+            if (err instanceof DOMException && err.name === 'AbortError') return null; // 중지 — 조용히
             // 실제 사용 중 인증 실패(키 무효)면 설정 검증 상태를 invalid 로 갱신(정상→확인 필요).
             // API 키 인증일 때만 — 구독 인증은 별개(설정의 "연결됨" 표시로 관리).
             const sel = getAIModelSelection();
@@ -105,6 +110,9 @@ export function useAI() {
             setIsLoading(false);
         }
     }, [mode, language, conversationHistory]);
+
+    /** 진행 중 AI 호출 중지(JS-only) — invoke 경로는 백그라운드 계속(별도 이슈). */
+    const stopAI = useCallback(() => abortRef.current?.abort(), []);
 
     // Accept/Reject individual chunk
     const acceptChunk = useCallback((chunkId: number) => {
@@ -210,6 +218,7 @@ export function useAI() {
         clearApiKey,
         currentApiKey,
         runAI,
+        stopAI,
         acceptChunk,
         rejectChunk,
         acceptAll,

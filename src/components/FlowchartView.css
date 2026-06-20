@@ -1,5 +1,18 @@
 /* #46 M3 플로우차트 노드 — type 별 색/모양. min-width 는 dagre 의 SHAPE_DIMENSIONS
    와 맞춰 레이아웃 겹침을 막는다. 정교한 다이아몬드(decision)는 ④에서. */
+
+/* 8방향 연결점(handle) — read-only 뷰라 점은 숨기고 edge 연결 위치로만 사용.
+   특히 markerLoop(retry)가 top handle 로 빠져나가 위쪽 arc(되돌아가는 loop)를 그린다. */
+.flowchart-view .react-flow__handle {
+    opacity: 0;
+    pointer-events: none;
+    width: 1px;
+    height: 1px;
+    min-width: 1px;
+    min-height: 1px;
+    border: none;
+}
+
 .flow-node {
     box-sizing: border-box;
     min-height: 60px;
