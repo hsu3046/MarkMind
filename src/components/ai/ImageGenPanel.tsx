@@ -15,13 +15,11 @@ import { Loader2, AlertCircle, Sparkles, FileInput, Download, X, ImageIcon } fro
 import { hasKey } from '../../services/secureStorage';
 import {
     getImageAIModelSelection,
-    setImageAIModelSelection,
     IMAGE_AI_CATALOG,
     resolveUsableSelection,
     type ImageAICompany,
     type AIAuthMode,
 } from '../../services/aiModelConfig';
-import { InlineModelDropdown } from './InlineModelDropdown';
 import { detectSubscriptionLogins } from '../../services/subscriptionService';
 import {
     generateImage,
@@ -78,7 +76,6 @@ export function ImageGenPanel({
     // (resolveUsableTextSelection)와 동일 규칙으로 가용성 판정.
     const [subCodex, setSubCodex] = useState(false);
     const [subGrok, setSubGrok] = useState(false);
-    const [, bumpSel] = useState(0); // 인라인 드롭다운 모델 변경 시 리렌더 트리거
     useEffect(() => {
         detectSubscriptionLogins()
             .then((s) => {
@@ -204,18 +201,6 @@ export function ImageGenPanel({
 
     return (
         <div className="imggen">
-            {/* 현재 이미지 모델 — 인라인 드롭다운으로 즉시 전환(가용 모델만) */}
-            <InlineModelDropdown
-                label="이미지 모델"
-                catalog={IMAGE_AI_CATALOG}
-                selection={imgModel}
-                onChange={(s) => {
-                    setImageAIModelSelection(s);
-                    bumpSel((n) => n + 1);
-                }}
-                isUsable={isUsable}
-            />
-
             {!providerUsable ? (
                 <div className="ai-no-key">
                     <AlertCircle size={20} />

@@ -130,6 +130,18 @@
     color: var(--accent, #3b82f6);
     font-weight: 500;
 }
+/* 모드 목록 접힘 — 현재 모드 한 줄(클릭 시 펼침) */
+.ai-mode-current {
+    width: 100%;
+    border: none;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.ai-modes-caret {
+    margin-left: auto;
+    color: var(--text-tertiary);
+}
 
 /* ─── Language Select ────────────────────────────── */
 

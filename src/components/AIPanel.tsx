@@ -14,17 +14,7 @@ import { Sparkles, Send, Loader2, AlertCircle, Presentation } from 'lucide-react
 import type { NotesJobResult, TemplateInfo } from '../types/converter';
 import type { useConverter } from '../hooks/useConverter';
 import type { DroppedFile } from './convert/types';
-import { initSecureStorage, hasKey } from '../services/secureStorage';
-import {
-    AI_CATALOG,
-    getAIModelSelection,
-    setAIModelSelection,
-    resolveUsableSelection,
-    type AICompany,
-    type AIAuthMode,
-} from '../services/aiModelConfig';
-import { detectSubscriptionLogins } from '../services/subscriptionService';
-import { InlineModelDropdown } from './ai/InlineModelDropdown';
+import { initSecureStorage } from '../services/secureStorage';
 import { ModeSelector } from './ai/ModeSelector';
 import { ConversationTimeline } from './ai/ConversationTimeline';
 import { NotesOptions } from './ai/NotesOptions';
@@ -125,13 +115,6 @@ export function AIPanel({
     const [prompt, setPrompt] = useState('');
     const promptRef = useRef<HTMLTextAreaElement>(null);
 
-    // 인라인 모델 드롭다운 — 텍스트 작업·슬라이드 공통(전역 텍스트 모델). 가용성=키 or 구독.
-    const [, bumpModel] = useState(0);
-    const [subStatus, setSubStatus] = useState({ claude: false, codex: false, gemini: false, grok: false });
-    useEffect(() => {
-        detectSubscriptionLogins().then(setSubStatus).catch(() => {});
-    }, []);
-
     useEffect(() => {
         if (mode === 'improve' && promptRef.current) {
             promptRef.current.focus();
@@ -147,6 +130,7 @@ export function AIPanel({
         }
         if (mode === 'improve' && !prompt.trim()) return;
         onRun(content, prompt || undefined);
+        setPrompt(''); // 실행 후 입력창 자동 리셋
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -167,34 +151,6 @@ export function AIPanel({
     const isPptxMode = mode === 'pptx';
     const isImageGenMode = mode === 'image-gen';
     const keyGated = !isConvertMode && !isPptxMode && !isImageGenMode && !apiKeySet;
-
-    // 인라인 모델 드롭다운 JSX — 텍스트 작업(improve/grammar/translate/structurize/meeting-notes)
-    // 과 슬라이드(pptx)가 같은 전역 텍스트 모델을 쓰므로 하나를 공유한다.
-    const textIsUsable = (company: AICompany, auth: AIAuthMode): boolean =>
-        auth === 'subscription'
-            ? company === 'claude'
-                ? subStatus.claude
-                : company === 'openai'
-                  ? subStatus.codex
-                  : company === 'gemini'
-                    ? subStatus.gemini
-                    : company === 'grok'
-                      ? subStatus.grok
-                      : false
-            : hasKey(company);
-    const textSel = resolveUsableSelection(AI_CATALOG, getAIModelSelection(), textIsUsable);
-    const textModelDropdown = (
-        <InlineModelDropdown
-            label="AI 모델"
-            catalog={AI_CATALOG}
-            selection={textSel}
-            onChange={(s) => {
-                setAIModelSelection(s);
-                bumpModel((n) => n + 1);
-            }}
-            isUsable={textIsUsable}
-        />
-    );
 
     return (
         <div className="ai-panel">
@@ -240,7 +196,6 @@ export function AIPanel({
                         </div>
                     ) : (
                         <>
-                            {textModelDropdown}
                             <div className="ai-prompt-actions">
                                 <button
                                     className="ai-btn primary"
@@ -281,7 +236,6 @@ export function AIPanel({
 
             {!isConvertMode && !isPptxMode && !isImageGenMode && !keyGated && (
                 <>
-                    {textModelDropdown}
                     {mode === 'improve' && (
                         <ConversationTimeline messages={conversationHistory} onNewThread={onNewThread} />
                     )}
