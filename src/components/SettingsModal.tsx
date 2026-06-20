@@ -23,7 +23,7 @@ export function SettingsModal({ visible, onClose, viewer }: SettingsModalProps) 
                 <div className="settings-modal-header">
                     <span className="settings-modal-title">Settings</span>
                     <button
-                        className="settings-modal-close"
+                        className="modal-close"
                         onClick={onClose}
                         title="닫기 (Esc)"
                         aria-label="설정 닫기"

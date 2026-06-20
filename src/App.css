@@ -916,7 +916,8 @@ body {
   font-weight: 600;
   color: var(--text-primary);
 }
-.settings-modal-close {
+/* === 공통 모달 UI — 닫기 X 버튼 · 푸터 액션 버튼 통일 (모달 일관성) === */
+.modal-close {
   width: 32px;
   height: 32px;
   border: 1px solid var(--border-primary);
@@ -928,11 +929,72 @@ body {
   align-items: center;
   justify-content: center;
   transition: var(--transition-fast);
+  flex-shrink: 0;
 }
-.settings-modal-close:hover {
+.modal-close:hover {
   background: rgba(239, 68, 68, 0.1);
   color: #ef4444;
   border-color: #ef4444;
+}
+
+/* 보조 아이콘 버튼(새로고침 등) — modal-close 박스, hover 는 중립(빨강 아님) */
+.modal-icon-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-fast);
+  flex-shrink: 0;
+}
+.modal-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* 푸터 액션 영역 — 우측 정렬 취소(secondary) + 확인(primary) */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.modal-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border: 1px solid var(--border-primary);
+  border-radius: 7px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: var(--transition-fast);
+}
+.modal-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.modal-btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.modal-btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.modal-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+/* 단독 액션(취소 없이 confirm 한 개)일 때 — 가로 꽉 채움 */
+.modal-btn-full {
+  width: 100%;
+  justify-content: center;
 }
 .settings-modal-note {
   margin: 0;
@@ -992,24 +1054,6 @@ body {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-}
-.drive-browser-close {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: var(--transition-fast);
-}
-.drive-browser-close:hover {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-  border-color: #ef4444;
 }
 .drive-browser-saverow {
   display: flex;
@@ -1250,20 +1294,6 @@ body {
   display: flex; align-items: center; gap: 8px;
   font-size: 14px; font-weight: 600; color: var(--text-primary);
 }
-.speaker-editor-close {
-  width: 32px; height: 32px;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-}
-.speaker-editor-close:hover {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-  border-color: #ef4444;
-}
 .speaker-editor-desc {
   margin: 0; padding: 10px 18px 6px;
   font-size: 12px; color: var(--text-secondary);
@@ -1328,26 +1358,6 @@ body {
   border-radius: 6px;
   color: #ff6b6b; font-size: 12px;
 }
-.speaker-editor-actions {
-  display: flex; gap: 8px; justify-content: flex-end;
-  padding: 12px 18px;
-  border-top: 1px solid var(--border-primary);
-}
-.speaker-editor-actions button {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 14px;
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: 13px;
-}
-.speaker-editor-actions button.primary {
-  background: var(--accent); color: white; border-color: var(--accent);
-}
-.speaker-editor-actions button:hover:not(:disabled) { filter: brightness(1.08); }
-.speaker-editor-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -2876,8 +2886,7 @@ code.hljs {
   gap: 4px;
 }
 
-.recent-clear-btn,
-.recent-close-btn {
+.recent-clear-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2891,8 +2900,7 @@ code.hljs {
   transition: all var(--transition-fast);
 }
 
-.recent-clear-btn:hover,
-.recent-close-btn:hover {
+.recent-clear-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }

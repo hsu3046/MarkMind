@@ -107,7 +107,7 @@ export function SpeakerEditor({ visible, onClose, paths, onApplied }: SpeakerEdi
                         <span>화자 라벨 정리</span>
                     </div>
                     <button
-                        className="speaker-editor-close"
+                        className="modal-close"
                         onClick={onClose}
                         aria-label="닫기"
                         title="닫기 (Esc)"
@@ -158,12 +158,9 @@ export function SpeakerEditor({ visible, onClose, paths, onApplied }: SpeakerEdi
 
                 {error && <div className="speaker-editor-error">{error}</div>}
 
-                <div className="speaker-editor-actions">
-                    <button onClick={onClose} disabled={busy}>
-                        취소
-                    </button>
+                <div className="modal-actions">
                     <button
-                        className="primary"
+                        className="modal-btn modal-btn-primary modal-btn-full"
                         onClick={handleApply}
                         disabled={busy || loading}
                     >

@@ -3,11 +3,11 @@ import { FRAMEWORKS, frameworkToSkeleton, attachGeneratedSlots, frameworkList } 
 import { treeToMarkdown, documentToTree } from './markdownTree';
 
 describe('frameworks 카탈로그', () => {
-    it('frameworkList — 범용(general) 먼저, 비즈니스 나중', () => {
+    it('frameworkList — 기본(basic) 먼저, 고급 나중', () => {
         const list = frameworkList();
-        const generalIdx = list.map((f, i) => (f.general ? i : -1)).filter((i) => i >= 0);
-        const bizIdx = list.map((f, i) => (!f.general ? i : -1)).filter((i) => i >= 0);
-        expect(Math.max(...generalIdx)).toBeLessThan(Math.min(...bizIdx));
+        const basicIdx = list.map((f, i) => (f.basic ? i : -1)).filter((i) => i >= 0);
+        const advIdx = list.map((f, i) => (!f.basic ? i : -1)).filter((i) => i >= 0);
+        expect(Math.max(...basicIdx)).toBeLessThan(Math.min(...advIdx));
     });
 
     it('모든 프레임워크 — 1개 이상 슬롯 + 슬롯 라벨 고유', () => {

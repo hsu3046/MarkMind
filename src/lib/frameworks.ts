@@ -28,18 +28,18 @@ export interface Framework {
     /** 한 줄 설명(피커 + auto-select 프롬프트). */
     description: string;
     slots: FrameworkSlot[];
-    /** true = 범용 사고도구(전면 노출), false = 비즈니스(접기). */
-    general: boolean;
+    /** true = 기본(라벨 없이 노출), false = 고급(접기). */
+    basic: boolean;
 }
 
 export const FRAMEWORKS: Record<string, Framework> = {
-    // ─── 범용 사고도구 (general: true) ───
+    // ─── 기본 (basic: true) — 라벨 없이 노출 ───
     LOGIC: {
         id: 'LOGIC',
-        name: '5W1H (육하원칙)',
+        name: '5W1H',
         intent: 'diagnosis',
         description: '누가·언제·어디서·무엇을·어떻게·왜 — 주제를 육하원칙으로 빠짐없이 분해',
-        general: true,
+        basic: true,
         slots: [
             { label: '누가 (Who)', display: '누가 연관되어 있나?' },
             { label: '언제 (When)', display: '언제 일어나나/끝내나?' },
@@ -51,10 +51,10 @@ export const FRAMEWORKS: Record<string, Framework> = {
     },
     FIVE_WHYS: {
         id: 'FIVE_WHYS',
-        name: '5 Whys (근본 원인)',
+        name: '5 Whys',
         intent: 'diagnosis',
         description: '"왜?"를 다섯 번 물어 표면 증상에서 근본 원인까지 파고든다',
-        general: true,
+        basic: true,
         slots: [
             { label: '1차 왜', display: '왜 그런 문제가 생겼나?' },
             { label: '2차 왜', display: '그건 또 왜 그랬나?' },
@@ -65,10 +65,10 @@ export const FRAMEWORKS: Record<string, Framework> = {
     },
     CAUSE: {
         id: 'CAUSE',
-        name: '피쉬본 (특성요인도)',
+        name: 'Fishbone',
         intent: 'diagnosis',
         description: '문제의 원인을 사람·방법·환경·자원 네 갈래로 분해',
-        general: true,
+        basic: false,
         slots: [
             { label: '사람 (People)', display: '사람/조직의 문제는?' },
             { label: '방법 (Methods)', display: '프로세스/방식의 문제는?' },
@@ -78,10 +78,10 @@ export const FRAMEWORKS: Record<string, Framework> = {
     },
     PROS_CONS: {
         id: 'PROS_CONS',
-        name: '장단점 분석',
+        name: 'Pros & Cons',
         intent: 'choice',
         description: '선택지의 이득·손해·보완책·결론을 정리',
-        general: true,
+        basic: true,
         slots: [
             { label: '장점 (Pros)', display: '선택하면 무엇이 좋은가?' },
             { label: '단점 (Cons)', display: '무엇을 감수해야 하나?' },
@@ -91,10 +91,10 @@ export const FRAMEWORKS: Record<string, Framework> = {
     },
     SCAMPER: {
         id: 'SCAMPER',
-        name: 'SCAMPER (발상)',
+        name: 'SCAMPER',
         intent: 'creation',
         description: '대체·결합·응용·변형·전용·제거·역발상으로 아이디어 확장',
-        general: true,
+        basic: false,
         slots: [
             { label: '대체 (Substitute)', display: '무엇을 다른 걸로 바꿀까?' },
             { label: '결합 (Combine)', display: '무엇과 합칠까?' },
@@ -107,10 +107,10 @@ export const FRAMEWORKS: Record<string, Framework> = {
     },
     EISENHOWER: {
         id: 'EISENHOWER',
-        name: '아이젠하워 매트릭스',
+        name: 'Eisenhower Matrix',
         intent: 'choice',
         description: '긴급도 × 중요도로 할 일을 4분면으로 분류',
-        general: true,
+        basic: false,
         slots: [
             { label: '즉시 (긴급·중요)', display: '지금 당장 할 일은?' },
             { label: '계획 (중요·여유)', display: '미리 챙길 중요한 일은?' },
@@ -120,10 +120,10 @@ export const FRAMEWORKS: Record<string, Framework> = {
     },
     KPT: {
         id: 'KPT',
-        name: 'KPT 회고',
+        name: 'KPT',
         intent: 'strategy',
         description: '유지할 것 · 문제점 · 새로 시도할 것으로 회고',
-        general: true,
+        basic: false,
         slots: [
             { label: '유지 (Keep)', display: '잘해서 계속할 것은?' },
             { label: '문제 (Problem)', display: '아쉬웠던 것은?' },
@@ -132,10 +132,10 @@ export const FRAMEWORKS: Record<string, Framework> = {
     },
     OKR: {
         id: 'OKR',
-        name: 'OKR (목표·핵심결과)',
+        name: 'OKR',
         intent: 'strategy',
         description: '가슴 뛰는 목표와 그것을 측정할 핵심 결과·실행',
-        general: true,
+        basic: false,
         slots: [
             { label: '목표 (Objective)', display: '도달하고 싶은 정성적 목표는?' },
             { label: '핵심결과 1 (KR)', display: '성공을 보여줄 첫 번째 숫자는?' },
@@ -145,10 +145,10 @@ export const FRAMEWORKS: Record<string, Framework> = {
     },
     PERSONA: {
         id: 'PERSONA',
-        name: '페르소나',
+        name: 'Persona',
         intent: 'creation',
         description: '대상 인물의 프로필·니즈·불편·행동·계기를 구체화',
-        general: true,
+        basic: false,
         slots: [
             { label: '프로필 (Profile)', display: '그 사람은 누구인가?' },
             { label: '니즈 (Needs)', display: '간절히 원하는 것은?' },
@@ -159,10 +159,10 @@ export const FRAMEWORKS: Record<string, Framework> = {
     },
     DECISION_MATRIX: {
         id: 'DECISION_MATRIX',
-        name: '의사결정 매트릭스',
+        name: 'Decision Matrix',
         intent: 'choice',
         description: '선택지를 비용·효과 기준으로 비교 평가',
-        general: true,
+        basic: false,
         slots: [
             { label: '선택지 A', display: '1안의 장점과 평가는?' },
             { label: '선택지 B', display: '2안의 장점과 평가는?' },
@@ -172,10 +172,10 @@ export const FRAMEWORKS: Record<string, Framework> = {
     },
     PROCESS: {
         id: 'PROCESS',
-        name: '프로세스 (PDCA)',
+        name: 'PDCA',
         intent: 'strategy',
         description: '주제를 준비 → 실행 → 점검 → 개선 단계로 분해',
-        general: true,
+        basic: true,
         slots: [
             { label: '준비 (Plan)', display: '무엇을 어떻게 계획하나?' },
             { label: '실행 (Do)', display: '실제로 무엇을 하나?' },
@@ -184,13 +184,13 @@ export const FRAMEWORKS: Record<string, Framework> = {
         ],
     },
 
-    // ─── 비즈니스 (general: false, 접기) ───
+    // ─── 고급 (basic: false, 접기) ───
     SWOT: {
         id: 'SWOT',
-        name: 'SWOT 분석',
+        name: 'SWOT',
         intent: 'diagnosis',
         description: '강점·약점·기회·위협 — 내부/외부 요인 진단',
-        general: false,
+        basic: true,
         slots: [
             { label: '강점 (Strengths)', display: '우리의 확실한 무기는?' },
             { label: '약점 (Weaknesses)', display: '부족하거나 취약한 점은?' },
@@ -200,10 +200,10 @@ export const FRAMEWORKS: Record<string, Framework> = {
     },
     BMC: {
         id: 'BMC',
-        name: '비즈니스 모델 캔버스',
+        name: 'Business Model Canvas',
         intent: 'creation',
         description: '9개 블록으로 비즈니스 모델을 한눈에 설계',
-        general: false,
+        basic: false,
         slots: [
             { label: '가치 제안 (Value)', display: '고객에게 줄 핵심 가치는?' },
             { label: '고객 세그먼트', display: '누구를 위한 것인가?' },
@@ -218,10 +218,10 @@ export const FRAMEWORKS: Record<string, Framework> = {
     },
     LEAN: {
         id: 'LEAN',
-        name: '린 캔버스',
+        name: 'Lean Canvas',
         intent: 'creation',
         description: '스타트업 아이디어를 9칸으로 빠르게 검증',
-        general: false,
+        basic: false,
         slots: [
             { label: '문제 (Problem)', display: '해결할 진짜 문제 Top 3는?' },
             { label: '고객 세그먼트', display: '누가 가장 힘들어하나?' },
@@ -236,10 +236,10 @@ export const FRAMEWORKS: Record<string, Framework> = {
     },
     PESTEL: {
         id: 'PESTEL',
-        name: 'PESTEL 분석',
+        name: 'PESTEL',
         intent: 'strategy',
         description: '정치·경제·사회·기술·환경·법 거시환경 분석',
-        general: false,
+        basic: false,
         slots: [
             { label: '정치 (Political)', display: '정책/규제 이슈는?' },
             { label: '경제 (Economic)', display: '경기/시장 상황은?' },
@@ -254,7 +254,7 @@ export const FRAMEWORKS: Record<string, Framework> = {
 /** 범용 먼저, 그다음 비즈니스 — 카탈로그를 그룹 순서로 나열(피커용). */
 export function frameworkList(): Framework[] {
     const all = Object.values(FRAMEWORKS);
-    return [...all.filter((f) => f.general), ...all.filter((f) => !f.general)];
+    return [...all.filter((f) => f.basic), ...all.filter((f) => !f.basic)];
 }
 
 /**
