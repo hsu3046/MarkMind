@@ -13,6 +13,117 @@
     border: none;
 }
 
+/* 편집 토글 버튼 (React Flow Panel) — AI 흐름도에서 노드 드래그/편집 on/off */
+.flow-edit-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary, #334155);
+    background: var(--bg-secondary, #ffffff);
+    border: 1px solid var(--border-primary, #e2e8f0);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    cursor: pointer;
+    transition: filter 0.15s, background 0.15s, color 0.15s, border-color 0.15s;
+}
+.flow-edit-toggle:hover {
+    filter: brightness(0.97);
+}
+.flow-edit-toggle.is-active {
+    color: #ffffff;
+    background: #4f46e5;
+    border-color: #4f46e5;
+}
+
+/* 노드 라벨 인라인 편집 (더블클릭 → contentEditable) */
+.flow-node__edit {
+    min-width: 60px;
+    max-width: 220px;
+    padding: 2px 6px;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+    background: var(--bg-primary, #ffffff);
+    color: var(--text-primary, #222222);
+    border: 1px solid #4f46e5;
+    border-radius: 4px;
+    outline: none;
+}
+/* 편집 모드 노드 — 더블클릭 편집 + 삭제 버튼 기준(relative) */
+.flow-node.is-editable {
+    position: relative;
+    cursor: pointer;
+}
+/* 삭제 버튼 (편집 모드, 노드 우상단, hover 노출) */
+.flow-node__del {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    color: #ffffff;
+    background: #ef4444;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+.flow-node.is-editable:hover .flow-node__del {
+    opacity: 1;
+}
+/* 노드 추가 팔레트 (편집 모드, 우상단) */
+.flow-palette {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    background: var(--bg-secondary, #ffffff);
+    border: 1px solid var(--border-primary, #e2e8f0);
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+.flow-palette-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary, #64748b);
+    padding: 0 2px 2px;
+}
+.flow-palette-btn {
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary, #334155);
+    background: var(--bg-primary, #f8fafc);
+    border: 1px solid var(--border-primary, #e2e8f0);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+}
+.flow-palette-btn:hover {
+    background: #eef2ff;
+    border-color: #4f46e5;
+}
+
+/* 편집 모드 — handle(연결점) 노출(평소 숨김). 드래그해서 노드끼리 연결. */
+.flowchart-view.is-editing .react-flow__handle {
+    opacity: 1;
+    width: 9px;
+    height: 9px;
+    min-width: 9px;
+    min-height: 9px;
+    background: #4f46e5;
+    border: 1.5px solid #ffffff;
+    pointer-events: all;
+}
+
 .flow-node {
     box-sizing: border-box;
     min-height: 60px;

@@ -40,13 +40,20 @@ export function hasFlowchartBlock(md: string): boolean {
     return FLOW_BLOCK_RE.test(md);
 }
 
-/** 문서에 플로우차트 블록을 삽입/교체한다. position 은 제외하고 저장. */
-export function upsertFlowchartBlock(md: string, fc: StoredFlowchart): string {
+/**
+ * 문서에 플로우차트 블록을 삽입/교체한다.
+ * @param keepPosition true 면 노드 position 을 저장(사용자가 드래그로 배치한 자유
+ *   레이아웃 보존, Phase 1 편집). 기본 false — AI 생성 직후엔 dagre 가 매번 재계산하도록
+ *   블록을 가볍게 유지(position 제외).
+ */
+export function upsertFlowchartBlock(md: string, fc: StoredFlowchart, keepPosition = false): string {
     const stripped = {
         title: fc.title,
         direction: fc.direction,
-        // position 제외 — dagre 재계산. 나머지(type/label/description/image_* 등) 보존.
-        nodes: fc.nodes.map(({ position: _omit, ...rest }) => rest),
+        // 나머지(type/label/description/image_* 등)는 항상 보존.
+        nodes: keepPosition
+            ? fc.nodes
+            : fc.nodes.map(({ position: _omit, ...rest }) => rest),
         edges: fc.edges,
     };
     const block = '```markmind-flow\n' + JSON.stringify(stripped, null, 2) + '\n```';
