@@ -365,14 +365,7 @@ export function Toolbar({
                 <div className="toolbar-divider" />
                 </>)}
 
-                {/* 순서: Search → Outline → Open Recent → Settings */}
-                <button className="toolbar-btn" onClick={onToggleSearch} title="Search (⌘F)">
-                    <Search size={15} strokeWidth={1.5} />
-                </button>
-                <button className={`toolbar-btn${outlineVisible ? ' active' : ''}`} onClick={onToggleOutline} title="Outline">
-                    <BookMarked size={16} strokeWidth={1.5} />
-                </button>
-
+                {/* 순서: Open Recent → Outline → Search → Settings */}
                 {/* Open Recent — 드롭다운 메뉴(최근 파일 목록) */}
                 {showRecent && (
                     <div className="toolbar-dropdown" ref={recentMenuRef}>
@@ -409,6 +402,12 @@ export function Toolbar({
                         )}
                     </div>
                 )}
+                <button className={`toolbar-btn${outlineVisible ? ' active' : ''}`} onClick={onToggleOutline} title="Outline">
+                    <BookMarked size={16} strokeWidth={1.5} />
+                </button>
+                <button className="toolbar-btn" onClick={onToggleSearch} title="Search (⌘F)">
+                    <Search size={15} strokeWidth={1.5} />
+                </button>
 
                 {/* Settings — 설정 모달 열기 */}
                 <button className="toolbar-btn" onClick={onShowSettings} title="Settings">

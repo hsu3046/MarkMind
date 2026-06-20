@@ -18,6 +18,7 @@ import { RecentFilesPanel } from './components/RecentFilesPanel';
 import { AIPanel } from './components/AIPanel';
 import { FloatingAIBar } from './components/FloatingAIBar';
 import { InlineDiffView } from './components/InlineDiffView';
+import { BeforeAfterView } from './components/BeforeAfterView';
 import { AuthCallback } from './components/AuthCallback';
 import { SettingsModal } from './components/SettingsModal';
 import { DriveBrowser } from './components/DriveBrowser';
@@ -36,7 +37,7 @@ import { isTauri } from './services/platform';
 import { useNativeMenu } from './hooks/useNativeMenu';
 import { getCallbackPath } from './services/knowaiAuth';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
-import { Link, Unlink, BookOpen, X as IconX, Sparkles, Loader2 } from 'lucide-react';
+import { Link, Unlink, Sparkles, Loader2 } from 'lucide-react';
 import type { DroppedFile } from './components/convert/types';
 // 본문 명조(뷰어 설정) — Noto Serif KR 한글 서브셋 번들(영문은 Georgia 폴백). ~2MB.
 import '@fontsource/noto-serif-kr/korean-400.css';
@@ -171,7 +172,6 @@ function App() {
     setThemeTransient(luminance < 0.5 ? 'dark' : 'light');
   }, [luminance, setThemeTransient, resetThemeToOS]);
   const [outlineVisible, setOutlineVisible] = useState(false);
-  const [tutorialVisible, setTutorialVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   // macOS full screen 시 툴바 숨김 — Tauri 윈도우 fullscreen 상태 추적(진입/해제는 resize 동반)
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -411,7 +411,8 @@ function App() {
   }, [ai]);
 
   // AI 패널(stt/ocr 모드)로 drop된 파일을 자식 컴포넌트에 전달하기 위한 state
-  const [audioDropped, setAudioDropped] = useState<DroppedFile | null>(null);
+  // 음성(stt)은 한 번에 여러 파일을 받을 수 있어 배열(여러 번 set 의 race 없이 한 번에 전달).
+  const [audioDropped, setAudioDropped] = useState<DroppedFile[] | null>(null);
   const [ocrDropped, setOcrDropped] = useState<DroppedFile | null>(null);
   // 이미지 생성 모드에서 OS 드롭으로 들어온 참조 이미지 경로(ImageGenPanel 이 소비).
   const [imageGenRefDropped, setImageGenRefDropped] = useState<string[] | null>(null);
@@ -428,6 +429,46 @@ function App() {
   useEffect(() => {
     viewModeRef.current = viewMode;
   }, [viewMode]);
+
+  // 화자 정리(rename_speakers) 후 리로드 판정에 최신 열린 파일 경로를 stale 없이 참조.
+  const filePathRef = useRef(filePath);
+  useEffect(() => {
+    filePathRef.current = filePath;
+  }, [filePath]);
+
+  // 문서(파일)가 바뀌면 멀티턴 대화 스레드 초기화 — 이전 문서 맥락 오염 방지.
+  useEffect(() => {
+    ai.resetThread();
+  }, [filePath, ai.resetThread]);
+
+  // 다른 창(AI 패널)에서 화자 정리가 적용되면, 현재 열린 파일이 그 대상일 때 리로드한다.
+  // rename_speakers 는 디스크만 바꾸므로 이미 열린 창엔 'speaker-relabeled' 이벤트로 알린다.
+  // (openFromRecent 는 useCallback([]) 로 안정적이라 리스너는 mount 시 1회만 등록된다.)
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+    (async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      const fn = await listen<{ paths: string[] }>('speaker-relabeled', async (e) => {
+        const cur = filePathRef.current;
+        if (!cur || !(e.payload?.paths ?? []).includes(cur)) return;
+        try {
+          const { readTextFile } = await import('@tauri-apps/plugin-fs');
+          const text = await readTextFile(cur);
+          openFromRecent(cur, text, cur.split('/').pop() || 'Untitled.md');
+        } catch (err) {
+          console.error('[App] 화자 정리 후 리로드 실패:', err);
+        }
+      });
+      if (disposed) { fn(); return; }
+      unlisten = fn;
+    })();
+    return () => {
+      disposed = true;
+      if (unlisten) unlisten();
+    };
+  }, [openFromRecent]);
 
   // 드래그&드롭 핸들러에서 최신 handleOpenInCurrentEditor 를 stale 없이 호출(#14)
   const handleOpenInCurrentEditorRef = useRef<((path: string) => Promise<void>) | null>(null);
@@ -454,6 +495,10 @@ function App() {
           const mdExts = ['md','markdown','mdx','txt'];
           // 첨부 대상 이미지 확장자 (pdf 제외 — pdf 는 OCR 패널 전용)
           const imageExts = ['png','jpg','jpeg','webp','heic','heif','gif'];
+          const audioExts = ['mp3','wav','m4a','qta','aac','ogg','flac','wma','amr','opus','mp4','mov','webm','m4v'];
+          const ocrExts = ['png','jpg','jpeg','webp','heic','heif','gif','pdf'];
+          const extOf = (fp: string) => fp.split('.').pop()?.toLowerCase() ?? '';
+          const nameOf = (fp: string) => fp.split(/[\\/]/).pop() ?? fp;
 
           // 드롭 좌표 → 마우스가 가리킨 문서 위치에 삽입(#56). macOS 의 Tauri drop position 은
           // 이미 logical(CSS) 좌표라 devicePixelRatio 로 나누면 안 된다(나누면 위쪽으로 쏠림).
@@ -474,24 +519,37 @@ function App() {
             }
           };
 
-          // AI '이미지 생성' 모드: 드롭한 이미지는 에디터가 아니라 패널의 '참조 이미지'로 보낸다.
-          // (dragDropEnabled=true 라 webview HTML5 onDrop 이 억제돼 OS 드롭을 패널로 위임 →
-          //  에디터 이중 삽입 방지. 이 모드에서 비이미지 드롭은 무시.)
-          {
-            const ps = panelStateRef.current;
-            if (ps.aiVisible && ps.aiMode === 'image-gen') {
-              const imgs = paths.filter(
-                (fp) => imageExts.includes(fp.split('.').pop()?.toLowerCase() ?? ''),
-              );
+          // ── 위치 우선 라우팅: 드롭 지점이 AI 패널 영역(.ai-panel) 위면 패널, 아니면 본문. ──
+          // 좌표(#56)로 elementFromPoint hit-test. macOS Tauri drop position 은 logical(CSS)
+          // 좌표라 그대로 사용(÷dpr 금지). 좌표가 없으면 패널 가시성으로 fallback.
+          // (dragDropEnabled=true 라 webview HTML5 onDrop 은 억제돼 OS 드롭만 들어온다.)
+          const ps = panelStateRef.current;
+          const overPanel =
+            cx != null && cy != null
+              ? !!document.elementFromPoint(cx, cy)?.closest('.ai-panel')
+              : ps.aiVisible;
+          if (ps.aiVisible && overPanel) {
+            // 패널 영역에 드롭 → 현재 모드가 파일을 받는다(못 받는 텍스트 모드면 무시 — 본문엔 안 넣음).
+            if (ps.aiMode === 'image-gen') {
+              // 이미지 생성: 드롭한 이미지를 패널의 '참조 이미지'로(비이미지 무시).
+              const imgs = paths.filter((fp) => imageExts.includes(extOf(fp)));
               if (imgs.length > 0) setImageGenRefDropped(imgs);
-              return;
+            } else if (ps.aiMode === 'stt') {
+              // 음성 인식: 드롭한 오디오 전부를 파일 리스트에 추가(여러 파일 순차 변환).
+              const audios = paths.filter((fp) => audioExts.includes(extOf(fp)));
+              if (audios.length > 0) setAudioDropped(audios.map((fp) => ({ path: fp, name: nameOf(fp) })));
+            } else if (ps.aiMode === 'ocr') {
+              // OCR: 드롭한 OCR 파일 첫 개를 패널로(OcrTab 은 단일 파일).
+              const ocrFp = paths.find((fp) => ocrExts.includes(extOf(fp)));
+              if (ocrFp) setOcrDropped({ path: ocrFp, name: nameOf(ocrFp) });
             }
+            return; // 패널 영역 드롭은 항상 패널에서 종결(본문으로 새지 않음).
           }
 
           // 여러 파일 동시 드롭: 마크다운은 새 창, 이미지는 전부 삽입(#56), 나머지 무시.
           if (paths.length > 1) {
             for (const fp of paths) {
-              const e = fp.split('.').pop()?.toLowerCase() ?? '';
+              const e = extOf(fp);
               if (mdExts.includes(e)) {
                 try { await invoke('open_new_window', { filePath: fp }); }
                 catch (err) { console.error('[App] 새 창 열기 실패:', err); }
@@ -503,30 +561,16 @@ function App() {
           }
 
           const path = paths[0];
-          const ext = path.split('.').pop()?.toLowerCase() ?? '';
-          const name = path.split(/[\\/]/).pop() ?? path;
-          const audioExts = ['mp3','wav','m4a','qta','aac','ogg','flac','wma','amr','opus','mp4','mov','webm','m4v'];
-          const ocrExts = ['png','jpg','jpeg','webp','heic','heif','gif','pdf'];
-          const { aiVisible, aiMode } = panelStateRef.current;
+          const ext = extOf(path);
 
-          // 1) AI 패널이 stt/ocr 모드로 열려있으면 우선 라우팅 (명시적 변환 의도 유지)
-          if (aiVisible && aiMode === 'stt' && audioExts.includes(ext)) {
-            setAudioDropped({ path, name });
-            return;
-          }
-          if (aiVisible && aiMode === 'ocr' && ocrExts.includes(ext)) {
-            setOcrDropped({ path, name });
-            return;
-          }
-
-          // 2) 사이드바 비활성 + 이미지 → 활성 에디터에 삽입(#56, 기존 자동 OCR 대체).
-          //    미저장 문서여도 OK — 저장 시 flush 가 assets/ 로 복사·치환.
+          // 이미지 → 활성 에디터에 삽입(#56, 기존 자동 OCR 대체).
+          //   미저장 문서여도 OK — 저장 시 flush 가 assets/ 로 복사·치환.
           if (imageExts.includes(ext)) {
             insertImageAbs(path);
             return;
           }
 
-          // 3) 마크다운/텍스트 → 현재 창에서 열기 (unsaved 시 확인). #14:
+          // 마크다운/텍스트 → 현재 창에서 열기 (unsaved 시 확인). #14:
           // 기존엔 무동작이었음(RunEvent::Opened 는 Finder 더블클릭용이라 드롭엔 안 불림).
           if (mdExts.includes(ext)) {
             await handleOpenInCurrentEditorRef.current?.(path);
@@ -644,6 +688,15 @@ function App() {
       await ai.runAI(runContent, runPrompt);
     }
   }, [ai, converter, fileName]);
+
+  // 문서 개선(improve) 결과는 chunk diff 대신 before/after Split 으로 검토(전체 변형이라 diff 가 노이즈).
+  const improveResult = !!ai.response && !ai.isLoading && ai.mode === 'improve';
+  const handleImproveApply = useCallback(() => {
+    if (!ai.response) return;
+    updateContent(ai.response.modifiedText);
+    ai.commitTurn('전체 적용');
+    ai.setResponse(null);
+  }, [ai, updateContent]);
 
   // 마인드맵 정리(#60) — 마인드맵 뷰 상단 버튼에서 호출. structurize 로 현재 문서를
   // 계층 아웃라인으로 재구성 → 응답 오면 위 effect 가 editor 로 전환해 InlineDiff 표시.
@@ -1167,7 +1220,6 @@ function App() {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (settingsVisible) { setSettingsVisible(false); return; }
-        if (tutorialVisible) { setTutorialVisible(false); return; }
         if (searchVisible) { toggleSearch(); return; }
         if (recentPanelVisible) { setRecentPanelVisible(false); return; }
       }
@@ -1249,7 +1301,7 @@ function App() {
   }, [
     saveFile, saveFileAs, handleOpenFile, newFile, toggleSearch,
     handleFontSizeChange, resetFontSize, recentPanelVisible,
-    searchVisible, viewMode, handleToggleAI, tutorialVisible, settingsVisible,
+    searchVisible, viewMode, handleToggleAI, settingsVisible,
   ]);
 
   // Split pane drag
@@ -1300,6 +1352,27 @@ function App() {
     }
   }, [fileName, isDirty]);
 
+  // 튜토리얼을 임시 .md 로 써서 새 창에서 일반 문서처럼 연다(모달 대신 — MarkMind 도그푸딩).
+  // 튜토리얼 창은 단일 인스턴스 — 이미 열려있으면 focus(매번 새 창 방지).
+  const tutorialLabelRef = useRef<string | null>(null);
+  const openTutorial = useCallback(async () => {
+    try {
+      const { getAllWebviewWindows } = await import('@tauri-apps/api/webviewWindow');
+      const { invoke } = await import('@tauri-apps/api/core');
+      // 이전에 연 튜토리얼 창이 아직 살아있으면 새로 만들지 않고 앞으로 가져온다.
+      if (tutorialLabelRef.current) {
+        const win = (await getAllWebviewWindows()).find((w) => w.label === tutorialLabelRef.current);
+        if (win) { await win.setFocus(); return; }
+      }
+      // content 를 메모리로 직접 넘겨 새 창에서 연다(temp 파일·읽기 권한 우회 — MCP 문서 창과 동일 경로).
+      tutorialLabelRef.current = await invoke<string>('open_content_window', {
+        content: TUTORIAL_CONTENT,
+        fileName: 'MarkMind 튜토리얼.md',
+      });
+    } catch (err) {
+      console.error('[App] 튜토리얼 열기 실패:', err);
+    }
+  }, []);
 
   // 네이티브 macOS 메뉴바에 File/View 미러링(Tauri 한정) — 툴바 dropdown 은 숨김.
   // (조기 return 보다 위에 둬 hooks 호출 순서 보장.)
@@ -1313,7 +1386,7 @@ function App() {
     onSaveFileAs: saveFileAs,
     onExportPdf: handleExportPdf,
     onShowSettings: () => setSettingsVisible(true),
-    onShowTutorial: () => setTutorialVisible(true),
+    onShowTutorial: openTutorial,
     onOpenFromDrive: () => setDriveBrowserMode('open'),
     onSaveToDrive: () => setDriveBrowserMode('save'),
     onOpenRecent: handleOpenRecentByPath,
@@ -1372,7 +1445,8 @@ function App() {
       } as React.CSSProperties}
       data-custom-bg={bgColor ? 'true' : undefined}
     >
-      {dragActive && (
+      {/* 음성/OCR/이미지 생성 패널은 OS 드롭을 직접 받으므로 그땐 오버레이를 숨긴다(패널로 위임). */}
+      {dragActive && !(ai.panelVisible && (ai.mode === 'stt' || ai.mode === 'ocr' || ai.mode === 'image-gen')) && (
         <div className="file-drop-overlay" aria-hidden>
           <div className="file-drop-overlay-inner">Drag &amp; Drop</div>
         </div>
@@ -1407,7 +1481,7 @@ function App() {
         onSaveFile={saveFile}
         onSaveFileAs={saveFileAs}
         onExportPdf={handleExportPdf}
-        onShowTutorial={() => setTutorialVisible(true)}
+        onShowTutorial={openTutorial}
         onShowSettings={() => setSettingsVisible(true)}
         onOpenFromDrive={() => setDriveBrowserMode('open')}
         onSaveToDrive={() => setDriveBrowserMode('save')}
@@ -1447,7 +1521,15 @@ function App() {
         <OutlinePanel content={content} visible={outlineVisible} onHeadingClick={handleOutlineClick} />
 
         <div className="split-pane">
-          {viewMode === 'mindmap' ? (
+          {improveResult && ai.response ? (
+            <BeforeAfterView
+              before={ai.response.originalText}
+              after={ai.response.modifiedText}
+              fontSize={fontSize}
+              onApply={handleImproveApply}
+              onCancel={() => ai.setResponse(null)}
+            />
+          ) : viewMode === 'mindmap' ? (
             <div className="pane" style={{ width: '100%', flexDirection: 'column' }}>
               {mcpBanner}
               <MindmapView
@@ -1495,6 +1577,11 @@ function App() {
                         aiSelectionRef.current = null;
                       } else {
                         updateContent(modified);
+                        // improve 전체문서 적용 → 멀티턴 턴 커밋(선택영역 편집은 단일 턴 유지).
+                        if (ai.mode === 'improve') {
+                          const n = ai.response.chunks.filter((c) => c.type !== 'unchanged').length;
+                          if (n > 0) ai.commitTurn(`${n}곳 변경 적용`);
+                        }
                       }
                     }
                     ai.setResponse(null);
@@ -1515,6 +1602,11 @@ function App() {
                         aiSelectionRef.current = null;
                       } else {
                         updateContent(finalText);
+                        // improve 부분 적용 → 수락된 변경만 턴 커밋.
+                        if (ai.mode === 'improve' && ai.response) {
+                          const n = ai.response.chunks.filter((c) => c.type !== 'unchanged' && c.accepted).length;
+                          if (n > 0) ai.commitTurn(`${n}곳 변경 적용`);
+                        }
                       }
                     }
                     ai.setResponse(null);
@@ -1607,6 +1699,8 @@ function App() {
           onInsertGeneratedImage={handleInsertGeneratedImage}
           imageGenRefDropped={imageGenRefDropped}
           onConsumeImageGenRefDropped={() => setImageGenRefDropped(null)}
+          conversationHistory={ai.conversationHistory}
+          onNewThread={ai.resetThread}
         />
 
       </div>
@@ -1630,24 +1724,6 @@ function App() {
         onClear={clearRecentFiles}
         onClose={() => setRecentPanelVisible(false)}
       />
-
-      {/* Tutorial overlay */}
-      {tutorialVisible && (
-        <div className="tutorial-overlay" onClick={() => setTutorialVisible(false)}>
-          <div className="tutorial-overlay-content" onClick={(e) => e.stopPropagation()}>
-            <div className="tutorial-overlay-header">
-              <span className="tutorial-overlay-title"><BookOpen size={16} strokeWidth={1.5} /><span>Tutorial</span></span>
-              <button className="tutorial-overlay-close" onClick={() => setTutorialVisible(false)}><IconX size={16} /></button>
-            </div>
-            <div className="tutorial-overlay-body">
-              <Preview content={TUTORIAL_CONTENT} fontSize={fontSize} />
-            </div>
-          </div>
-          <div className="reading-mode-hint">
-            Press <kbd>Esc</kbd> or click outside to close
-          </div>
-        </div>
-      )}
 
       {/* 통합 Settings 모달 — STT/OCR/AI 에이전트 API 키 */}
       <SettingsModal

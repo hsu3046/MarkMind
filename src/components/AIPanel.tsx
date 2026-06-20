@@ -9,23 +9,21 @@
  */
 
 import { useState, useRef, useEffect, ReactNode } from 'react';
-import { AIMode, TranslateLanguage } from '../types/ai';
+import { AIMode, TranslateLanguage, AITurn } from '../types/ai';
 import { Sparkles, Send, Loader2, AlertCircle, Presentation } from 'lucide-react';
 import type { NotesJobResult, TemplateInfo } from '../types/converter';
 import type { useConverter } from '../hooks/useConverter';
 import type { DroppedFile } from './convert/types';
-import { initSecureStorage, hasKey } from '../services/secureStorage';
+import { initSecureStorage } from '../services/secureStorage';
 import {
-    AI_CATALOG,
     getAIModelSelection,
-    setAIModelSelection,
-    resolveUsableSelection,
-    type AICompany,
-    type AIAuthMode,
+    getImageAIModelSelection,
+    getSelectionDisplay,
+    AI_CATALOG,
+    IMAGE_AI_CATALOG,
 } from '../services/aiModelConfig';
-import { detectSubscriptionLogins } from '../services/subscriptionService';
-import { InlineModelDropdown } from './ai/InlineModelDropdown';
 import { ModeSelector } from './ai/ModeSelector';
+import { ConversationTimeline } from './ai/ConversationTimeline';
 import { NotesOptions } from './ai/NotesOptions';
 import { NotesResultCard } from './ai/NotesResultCard';
 import { ImageGenPanel } from './ai/ImageGenPanel';
@@ -53,7 +51,7 @@ interface AIPanelProps {
     onShowSettings: () => void;
     // ── 입력 변환(stt/ocr) ──
     converter: ReturnType<typeof useConverter>;
-    audioDropped: DroppedFile | null;
+    audioDropped: DroppedFile[] | null;
     ocrDropped: DroppedFile | null;
     onConsumeAudioDropped: () => void;
     onConsumeOcrDropped: () => void;
@@ -65,6 +63,9 @@ interface AIPanelProps {
     onInsertGeneratedImage: (dataUrl: string) => void;
     imageGenRefDropped: string[] | null;
     onConsumeImageGenRefDropped: () => void;
+    // ── 문서 개선(improve) 멀티턴 ──
+    conversationHistory: AITurn[];
+    onNewThread: () => void;
 }
 
 /** stt/ocr 모드 본문 — secureStorage 초기화 가드(기존 ConvertSidebar 패턴). */
@@ -115,16 +116,11 @@ export function AIPanel({
     onInsertGeneratedImage,
     imageGenRefDropped,
     onConsumeImageGenRefDropped,
+    conversationHistory,
+    onNewThread,
 }: AIPanelProps) {
     const [prompt, setPrompt] = useState('');
     const promptRef = useRef<HTMLTextAreaElement>(null);
-
-    // 인라인 모델 드롭다운 — 텍스트 작업·슬라이드 공통(전역 텍스트 모델). 가용성=키 or 구독.
-    const [, bumpModel] = useState(0);
-    const [subStatus, setSubStatus] = useState({ claude: false, codex: false, gemini: false, grok: false });
-    useEffect(() => {
-        detectSubscriptionLogins().then(setSubStatus).catch(() => {});
-    }, []);
 
     useEffect(() => {
         if (mode === 'improve' && promptRef.current) {
@@ -141,6 +137,7 @@ export function AIPanel({
         }
         if (mode === 'improve' && !prompt.trim()) return;
         onRun(content, prompt || undefined);
+        setPrompt(''); // 실행 후 입력창 자동 리셋
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -162,39 +159,24 @@ export function AIPanel({
     const isImageGenMode = mode === 'image-gen';
     const keyGated = !isConvertMode && !isPptxMode && !isImageGenMode && !apiKeySet;
 
-    // 인라인 모델 드롭다운 JSX — 텍스트 작업(improve/grammar/translate/structurize/meeting-notes)
-    // 과 슬라이드(pptx)가 같은 전역 텍스트 모델을 쓰므로 하나를 공유한다.
-    const textIsUsable = (company: AICompany, auth: AIAuthMode): boolean =>
-        auth === 'subscription'
-            ? company === 'claude'
-                ? subStatus.claude
-                : company === 'openai'
-                  ? subStatus.codex
-                  : company === 'gemini'
-                    ? subStatus.gemini
-                    : company === 'grok'
-                      ? subStatus.grok
-                      : false
-            : hasKey(company);
-    const textSel = resolveUsableSelection(AI_CATALOG, getAIModelSelection(), textIsUsable);
-    const textModelDropdown = (
-        <InlineModelDropdown
-            label="AI 모델"
-            catalog={AI_CATALOG}
-            selection={textSel}
-            onChange={(s) => {
-                setAIModelSelection(s);
-                bumpModel((n) => n + 1);
-            }}
-            isUsable={textIsUsable}
-        />
-    );
+    // 헤더에 표시할 현재 모드의 모델 — 텍스트/이미지는 Settings 전역 선택, stt/ocr 은 변환 엔진(커스텀).
+    const headerModel =
+        mode === 'stt' || mode === 'ocr'
+            ? { logo: '/aib.svg', label: '커스텀 모델', sub: false }
+            : mode === 'image-gen'
+              ? getSelectionDisplay(IMAGE_AI_CATALOG, getImageAIModelSelection())
+              : getSelectionDisplay(AI_CATALOG, getAIModelSelection());
 
     return (
         <div className="ai-panel">
             <div className="ai-panel-header">
                 <span className="ai-panel-title">
                     <Sparkles size={14} /> AI 에이전트
+                </span>
+                <span className="ai-panel-model" title="현재 AI 모델 (Settings 에서 변경)">
+                    <img src={headerModel.logo} alt="" className="ai-panel-model-logo" />
+                    <span className="ai-panel-model-label">{headerModel.label}</span>
+                    {headerModel.sub && <span className="ai-panel-model-sub">구독</span>}
                 </span>
             </div>
 
@@ -205,7 +187,7 @@ export function AIPanel({
                     <AudioTab
                         converter={converter}
                         onOpenResult={openEditorWindow}
-                        droppedFile={audioDropped}
+                        droppedFiles={audioDropped}
                         onConsumeDropped={onConsumeAudioDropped}
                     />
                 </ConvertModeBody>
@@ -234,7 +216,6 @@ export function AIPanel({
                         </div>
                     ) : (
                         <>
-                            {textModelDropdown}
                             <div className="ai-prompt-actions">
                                 <button
                                     className="ai-btn primary"
@@ -275,7 +256,9 @@ export function AIPanel({
 
             {!isConvertMode && !isPptxMode && !isImageGenMode && !keyGated && (
                 <>
-                    {textModelDropdown}
+                    {mode === 'improve' && (
+                        <ConversationTimeline messages={conversationHistory} onNewThread={onNewThread} />
+                    )}
                     {mode === 'translate' && (
                         <div className="ai-language-select">
                             <span>번역 언어:</span>
@@ -305,7 +288,7 @@ export function AIPanel({
                                 className="ai-prompt-input"
                                 placeholder={
                                     mode === 'improve'
-                                        ? '문서 개선 지시사항을 입력하세요... (필수)'
+                                        ? '원하는 작업을 입력하세요 — 개선·추가·재구성·요약·표 만들기 등 (필수)'
                                         : '상세 지시사항 (선택)'
                                 }
                                 value={prompt}

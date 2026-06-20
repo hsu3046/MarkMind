@@ -724,6 +724,7 @@ function RichEditor({
     fontSize,
     onChange,
     banner,
+    header,
     docDir,
     onEditorReady,
 }: {
@@ -732,6 +733,7 @@ function RichEditor({
     fontSize: number;
     onChange: (markdown: string) => void;
     banner?: ReactNode;
+    header?: ReactNode;
     docDir: string | null;
     onEditorReady?: (editor: Editor | null) => void;
 }) {
@@ -970,6 +972,8 @@ function RichEditor({
                 <RichToolbar editor={editor} />
                 {banner}
             </div>
+            {/* 헤더(front-matter 메타)는 툴바 아래·본문 위 — 본문과 함께 스크롤되는 문서 시작부. */}
+            {header}
             <EditorContent editor={editor} />
         </>
     );
@@ -1039,26 +1043,27 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     // editable=true (Rich Text mode) → 항상 RichEditor + Toolbar.
     // editable=false (split mode 의 preview pane) → read-only 렌더.
     if (editable) {
+        const frontmatterHeader = fields.length > 0 ? (
+            <aside className="markdown-frontmatter">
+                <dl>
+                    {fields.map((f) => (
+                        <div key={f.key} className="markdown-frontmatter-row">
+                            <dt>{f.key}</dt>
+                            <dd>{f.value}</dd>
+                        </div>
+                    ))}
+                </dl>
+            </aside>
+        ) : undefined;
         return (
             <div className="preview-wrapper preview-rich-mode">
-                {fields.length > 0 && (
-                    <aside className="markdown-frontmatter">
-                        <dl>
-                            {fields.map((f) => (
-                                <div key={f.key} className="markdown-frontmatter-row">
-                                    <dt>{f.key}</dt>
-                                    <dd>{f.value}</dd>
-                                </div>
-                            ))}
-                        </dl>
-                    </aside>
-                )}
                 <RichEditor
                     body={body}
                     rawFrontmatter={rawFrontmatter}
                     fontSize={fontSize}
                     onChange={onChange!}
                     banner={banner}
+                    header={frontmatterHeader}
                     docDir={docDir}
                     onEditorReady={(e) => { richEditorRef.current = e; }}
                 />

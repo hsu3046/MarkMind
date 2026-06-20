@@ -77,38 +77,58 @@ CRITICAL RULES:
 - Preserve all Markdown formatting (headings, lists, links, etc.).
 - Do NOT add any text before or after the modified content.`;
 
+    // 지시(prompt)는 system 에 넣지 않는다 — user 메시지의 <instructions> 한 곳으로 통일(중복 제거).
+    // 문서는 user 메시지의 <document> 로 격리(경계 명확 + prompt-injection 완화).
     switch (request.mode) {
         case 'grammar':
-            return `${base}
-- Fix ONLY grammar errors, typos, and punctuation issues.
-- Do NOT change the meaning, style, or structure.
-- Make the minimum number of changes needed.
-${request.prompt ? `- Additional instructions: ${request.prompt}` : ''}`;
+            return `You are a careful proofreader for Markdown documents.
+Correct ONLY grammar, spelling, and punctuation in the document inside <document>. Do not
+change meaning, wording, style, or structure. Make the fewest edits possible.
+If <instructions> is present, also follow it, but still change only grammar, spelling, and punctuation.
+
+Output rules:
+- Output ONLY the corrected document, beginning with its first character. No preamble,
+  explanation, commentary, or code fences.
+- Preserve all Markdown formatting and the document's original language.
+- If <document> is empty or whitespace only, return it unchanged.
+- Do not alter content inside fenced code blocks unless explicitly asked.`;
 
         case 'translate':
-            return `${base}
-- Translate the text to ${getLanguageName(request.language || 'en')}.
-- Maintain the original tone and style.
-- Keep all Markdown formatting intact.
-${request.prompt ? `- Additional instructions: ${request.prompt}` : ''}`;
+            return `You are a professional translator for Markdown documents.
+Translate the entire document inside <document> into ${getLanguageName(request.language || 'en')}.
+Preserve tone, style, and all Markdown formatting. Translate prose only — keep code, URLs,
+and identifiers unchanged.
+If <instructions> is present, also follow it (e.g., formality level, glossary terms).
+
+Output rules:
+- Output ONLY the translated document, beginning with its first character. No preamble,
+  explanation, commentary, or code fences.
+- If <document> is empty or whitespace only, return it unchanged.`;
 
         case 'improve':
-            return `You are a senior document consultant and writing expert.
-CRITICAL RULES:
-- Return ONLY the improved text. No explanations, no code blocks, no prefixes.
-- Preserve all Markdown formatting.
-- Improve the document based on the user's specific instructions.
-${request.prompt ? `\nUser instructions: ${request.prompt}` : ''}`;
+            return `You are an expert editor for Markdown documents.
+Apply the user's request in <instructions> to the document in <document>. The request may be
+any kind of edit — improving clarity, expanding or adding sections, restructuring, summarizing,
+changing tone, converting to tables/lists, and so on. Carry it out faithfully.
+
+Output rules:
+- Output ONLY the complete edited document, beginning with its first character. No preamble,
+  explanation, commentary, or code fences.
+- Preserve Markdown formatting; leave parts unrelated to the request unchanged.
+- Keep the document's original language unless the request says otherwise.
+- If <document> is empty or whitespace only, return it unchanged.
+- Do not alter content inside fenced code blocks unless the request asks for it.`;
 
         case 'structurize':
             return `You are an expert at reorganizing documents into a clean hierarchical outline that reads well as a mind map.
 CRITICAL RULES:
 - Output ONLY Markdown. No explanations, no code fences, no prefixes.
-- Reorganize the content into a hierarchy using ONLY '#'/'##'/'###' headings and '-' bullet lists.
+- Reorganize the content inside <document> into a hierarchy using ONLY '#'/'##'/'###' headings and '-' bullet lists.
 - Use a single top-level '# ' heading as the title; group related ideas under '##'/'###' headings; use '-' bullets for leaf items.
 - Preserve the original meaning and key details. Do NOT invent new facts or drop important content.
 - Prefer short, scannable node labels over long sentences.
-${request.prompt ? `- Additional instructions: ${request.prompt}` : ''}`;
+- If <instructions> is present, also follow any extra guidance there.
+- If <document> is empty or whitespace only, return it unchanged.`;
 
         default:
             return base;
@@ -411,9 +431,20 @@ export async function callAI(
     const hasPrompt = !!request.prompt?.trim();
     const systemPrompt = getSystemPrompt(request);
 
-    let userContent = request.content;
+    // 멀티턴(improve): 직전 대화 맥락을 <conversation_history> 로 fold-in한다(provider 무관 —
+    // 단일 user 메시지 본문에 합침). 문서 전문은 <document> 로 매 턴 1회만 전달하므로,
+    // 히스토리엔 지시/적용요약만 담는다(같은 문서를 N번 중복 전송 = 토큰 폭발 방지).
+    let historyBlock = '';
+    if (request.mode === 'improve' && request.conversationHistory?.length) {
+        const lines = request.conversationHistory
+            .map((t) => (t.role === 'user' ? `[이전 요청] ${t.content}` : `[적용됨] ${t.content}`))
+            .join('\n');
+        historyBlock = `<conversation_history>\n${lines}\n</conversation_history>\n\n`;
+    }
+    // 문서는 <document> 로 격리(경계 명확 + injection 완화), 지시는 <instructions> 한 곳으로.
+    let userContent = `${historyBlock}<document>\n${request.content}\n</document>`;
     if (hasPrompt) {
-        userContent = `Instructions: ${request.prompt}\n\nDocument:\n${request.content}`;
+        userContent = `${historyBlock}<instructions>\n${request.prompt}\n</instructions>\n\n<document>\n${request.content}\n</document>`;
     }
 
     let modifiedText = '';
@@ -493,7 +524,8 @@ export async function callAI(
         .replace(/\n```\s*$/, '')
         .trim();
 
-    const chunks = generateDiff(request.content, modifiedText);
+    // improve 는 결과를 before/after 로 비교(chunk diff 미사용)라 LCS 생략(대형 문서 절약).
+    const chunks = request.mode === 'improve' ? [] : generateDiff(request.content, modifiedText);
 
     return {
         originalText: request.content,

@@ -27,6 +27,34 @@
     background: var(--bg-secondary);
 }
 
+/* 헤더 우측 — 현재 모드의 모델 표시(로고 + 이름 + 구독 배지) */
+.ai-panel-model {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+.ai-panel-model-logo {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+.ai-panel-model-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ai-panel-model-sub {
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    font-size: 10px;
+    color: var(--text-tertiary);
+}
+
 .ai-panel-title {
     display: flex;
     align-items: center;
@@ -129,6 +157,18 @@
     background: var(--accent-bg, rgba(59, 130, 246, 0.1));
     color: var(--accent, #3b82f6);
     font-weight: 500;
+}
+/* 모드 목록 접힘 — 현재 모드 한 줄(클릭 시 펼침) */
+.ai-mode-current {
+    width: 100%;
+    border: none;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.ai-modes-caret {
+    margin-left: auto;
+    color: var(--text-tertiary);
 }
 
 /* ─── Language Select ────────────────────────────── */
@@ -242,6 +282,37 @@
     padding: 10px 12px;
     font-size: 13px;
     font-weight: 600;
+}
+
+/* 음성/이미지 인식(convert) 모드를 번역 등 일반 모드와 좌우 여백·버튼 너비로 통일.
+   convert.css(전역)는 다른 사용처를 위해 그대로 두고 AIPanel 안에서만 스코프 한정한다. */
+.ai-panel .convert-tab-content {
+    /* convert.css 의 max-width:640 + margin:0 auto 는 패널이 640 보다 넓으면 콘텐츠를
+       가운데로 몰아 좌우 여백을 키운다(일반 모드 요소는 .ai-panel 직속이라 패널 폭을 따름).
+       → 해제하고 패널 폭을 꽉 채운 뒤 좌우 8px 만 둔다(번역 등 일반 모드와 동일). */
+    max-width: none;
+    margin: 0;
+    width: 100%;
+    padding: 8px;
+}
+/* 변환 버튼: inline(짧음) → full-width(번역 '실행' 버튼처럼). 보조 버튼은 내용 너비 유지. */
+.ai-panel .convert-actions .convert-btn.primary {
+    flex: 1;
+    justify-content: center;
+}
+
+/* 컨테이너 박스(파일 리스트·진행 로그·결과)의 테두리·배경·좌우 패딩 제거 → 평평하게 +
+   내용이 일반 모드 요소와 같은 좌우 여백(8px)으로 정렬. 행 배경은 항목 구분 위해 유지.
+   .audio-file-add 는 '+파일 추가' 위 점선 구분선(border-top dashed)도 함께 제거. */
+.ai-panel .audio-file-list,
+.ai-panel .convert-progress,
+.ai-panel .convert-result-card,
+.ai-panel .audio-file-add {
+    border: none;
+    border-radius: 0;
+    background: none;
+    padding-left: 0;
+    padding-right: 0;
 }
 
 /* ─── Buttons ────────────────────────────────────── */
