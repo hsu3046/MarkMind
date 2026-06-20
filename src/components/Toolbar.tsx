@@ -4,7 +4,7 @@ import {
     FilePlus, FolderOpen, Save, Download, FileDown,
     BookMarked, Clock, History,
     Search, ChevronRight, ChevronDown, Sparkles, Check, X,
-    Settings, LayoutTemplate,
+    Settings, Bot,
     FileCode, FileText,
     Network, Share2, ChartBarStacked, type LucideIcon,
 } from 'lucide-react';
@@ -516,8 +516,8 @@ export function Toolbar({
                         onClick={onOpenFramework}
                         title="프레임워크(SWOT·5Whys 등)로 마인드맵 생성"
                     >
-                        <LayoutTemplate size={14} strokeWidth={1.5} />
-                        <span>마인드맵 AI 변환</span>
+                        <Sparkles size={14} strokeWidth={1.5} />
+                        <span>마인드맵 자동 생성</span>
                     </button>
                 )}
                 {viewMode === 'flowchart' && (
@@ -526,12 +526,12 @@ export function Toolbar({
                         onClick={onGenerateFlowchart}
                         title="문서를 BPMN-lite 플로우차트로 AI 변환"
                     >
-                        <Network size={14} strokeWidth={1.5} />
+                        <Sparkles size={14} strokeWidth={1.5} />
                         <span>플로우차트 AI 변환</span>
                     </button>
                 )}
                 <button className={`toolbar-text-btn ai-agent${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI 에이전트 (⌘⇧I)">
-                    <Sparkles size={14} strokeWidth={1.5} />
+                    <Bot size={14} strokeWidth={1.5} />
                     <span>AI 에이전트</span>
                 </button>
             </div>

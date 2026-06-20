@@ -65,8 +65,8 @@ export function RecentFilesPanel({
                                 <Trash2 size={12} strokeWidth={1.5} />
                             </button>
                         )}
-                        <button className="recent-close-btn" onClick={onClose}>
-                            <X size={14} strokeWidth={1.5} />
+                        <button className="modal-close" onClick={onClose}>
+                            <X size={18} />
                         </button>
                     </div>
                 </div>

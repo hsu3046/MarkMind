@@ -34,20 +34,6 @@
     color: var(--text-primary, #222222);
 }
 
-.fw-x {
-    display: inline-flex;
-    padding: 4px;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary, #888888);
-    cursor: pointer;
-    border-radius: 6px;
-}
-
-.fw-x:hover:not(:disabled) {
-    background: var(--bg-hover, #ececec);
-}
-
 .fw-field {
     display: flex;
     flex-direction: column;
@@ -70,34 +56,12 @@
     border-color: var(--accent, #6366f1);
 }
 
-.fw-suggest-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.fw-suggest {
+/* AI 추천 카드 — 이름에 아이콘 + accent 강조 (갤러리 첫 카드, 기본 선택). */
+.fw-card-suggest .fw-card-name {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    border: 1px solid var(--border-primary, #cccccc);
-    border-radius: 6px;
-    background: var(--bg-secondary, #f5f5f5);
-    color: var(--text-primary, #222222);
-    cursor: pointer;
-    font-size: 13px;
-}
-
-.fw-suggest:disabled {
-    opacity: 0.55;
-    cursor: default;
-}
-
-.fw-suggest-reason {
-    font-size: 12px;
-    color: var(--text-secondary, #888888);
+    gap: 5px;
+    color: var(--accent, #6366f1);
 }
 
 .fw-gallery {
@@ -191,32 +155,3 @@
     font-size: 13px;
 }
 
-.fw-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-}
-
-.fw-actions button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 16px;
-    border: 1px solid var(--border-primary, #cccccc);
-    border-radius: 7px;
-    background: var(--bg-secondary, #f5f5f5);
-    color: var(--text-primary, #222222);
-    cursor: pointer;
-    font-size: 13px;
-}
-
-.fw-go {
-    border-color: var(--accent, #6366f1) !important;
-    background: var(--accent, #6366f1) !important;
-    color: #ffffff !important;
-}
-
-.fw-actions button:disabled {
-    opacity: 0.55;
-    cursor: default;
-}

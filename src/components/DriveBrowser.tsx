@@ -156,7 +156,7 @@ export function DriveBrowser({
                         <span>{mode === 'open' ? 'Open from Google Drive' : 'Save to Google Drive'}</span>
                     </div>
                     <button
-                        className="drive-browser-close"
+                        className="modal-close"
                         onClick={onClose}
                         aria-label="닫기"
                         title="닫기 (Esc)"
@@ -175,7 +175,7 @@ export function DriveBrowser({
                             disabled={busy}
                         />
                         <button
-                            className="primary"
+                            className="modal-btn modal-btn-primary"
                             onClick={handleSave}
                             disabled={busy || !saveName.trim()}
                         >

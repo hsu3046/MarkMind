@@ -57,7 +57,7 @@ export function LanFileBrowser({ visible, onClose, onSelect }: LanFileBrowserPro
                     <span className="settings-modal-title">파일 열기</span>
                     <div style={{ display: 'flex', gap: 4 }}>
                         <button
-                            className="settings-modal-close"
+                            className="modal-icon-btn"
                             onClick={load}
                             title="새로고침"
                             aria-label="새로고침"
@@ -65,7 +65,7 @@ export function LanFileBrowser({ visible, onClose, onSelect }: LanFileBrowserPro
                             <RefreshCw size={16} />
                         </button>
                         <button
-                            className="settings-modal-close"
+                            className="modal-close"
                             onClick={onClose}
                             title="닫기"
                             aria-label="닫기"
