@@ -15,6 +15,13 @@ import type { NotesJobResult, TemplateInfo } from '../types/converter';
 import type { useConverter } from '../hooks/useConverter';
 import type { DroppedFile } from './convert/types';
 import { initSecureStorage } from '../services/secureStorage';
+import {
+    getAIModelSelection,
+    getImageAIModelSelection,
+    getSelectionDisplay,
+    AI_CATALOG,
+    IMAGE_AI_CATALOG,
+} from '../services/aiModelConfig';
 import { ModeSelector } from './ai/ModeSelector';
 import { ConversationTimeline } from './ai/ConversationTimeline';
 import { NotesOptions } from './ai/NotesOptions';
@@ -152,11 +159,24 @@ export function AIPanel({
     const isImageGenMode = mode === 'image-gen';
     const keyGated = !isConvertMode && !isPptxMode && !isImageGenMode && !apiKeySet;
 
+    // 헤더에 표시할 현재 모드의 모델 — 텍스트/이미지는 Settings 전역 선택, stt/ocr 은 변환 엔진(커스텀).
+    const headerModel =
+        mode === 'stt' || mode === 'ocr'
+            ? { logo: '/aib.svg', label: '커스텀 모델', sub: false }
+            : mode === 'image-gen'
+              ? getSelectionDisplay(IMAGE_AI_CATALOG, getImageAIModelSelection())
+              : getSelectionDisplay(AI_CATALOG, getAIModelSelection());
+
     return (
         <div className="ai-panel">
             <div className="ai-panel-header">
                 <span className="ai-panel-title">
                     <Sparkles size={14} /> AI 에이전트
+                </span>
+                <span className="ai-panel-model" title="현재 AI 모델 (Settings 에서 변경)">
+                    <img src={headerModel.logo} alt="" className="ai-panel-model-logo" />
+                    <span className="ai-panel-model-label">{headerModel.label}</span>
+                    {headerModel.sub && <span className="ai-panel-model-sub">구독</span>}
                 </span>
             </div>
 

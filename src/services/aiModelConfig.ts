@@ -38,6 +38,17 @@ export interface AICompanyDef {
     models: Partial<Record<AIAuthMode, AIModelDef[]>>;
 }
 
+/** selection(회사·인증·모델) → 헤더 표시용 { 로고, 라벨, 구독여부 }.
+    catalog 는 AI_CATALOG(텍스트) 또는 IMAGE_AI_CATALOG(이미지). */
+export function getSelectionDisplay(
+    catalog: Record<string, AICompanyDef>,
+    sel: { company: string; auth: AIAuthMode; model: string },
+): { logo: string; label: string; sub: boolean } {
+    const def = catalog[sel.company];
+    const label = def?.models[sel.auth]?.find((m) => m.id === sel.model)?.label ?? sel.model;
+    return { logo: COMPANY_LOGO[sel.company] ?? '', label, sub: sel.auth === 'subscription' };
+}
+
 /**
  * 모델 카탈로그. 모델 ID 는 조정 가능(초안):
  * - Gemini: types/ai.ts AI_MODELS 와 일치

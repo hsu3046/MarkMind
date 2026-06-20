@@ -27,6 +27,34 @@
     background: var(--bg-secondary);
 }
 
+/* 헤더 우측 — 현재 모드의 모델 표시(로고 + 이름 + 구독 배지) */
+.ai-panel-model {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+.ai-panel-model-logo {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+.ai-panel-model-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ai-panel-model-sub {
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    font-size: 10px;
+    color: var(--text-tertiary);
+}
+
 .ai-panel-title {
     display: flex;
     align-items: center;
