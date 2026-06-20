@@ -33,6 +33,8 @@ interface MindmapViewProps {
     /** 프레임워크 생성 패널 열림 상태 — 메인 툴바 버튼이 트리거, App 이 소유(#60 통합). */
     frameworkOpen?: boolean;
     onCloseFramework?: () => void;
+    /** Split 비활성 패인의 미러 — 편집 액션(이동/추가/삭제/이름편집/AI확장) 비표시. 보기/팬/줌만. (이슈 #64) */
+    readOnly?: boolean;
 }
 
 function stemOf(fileName: string): string {
@@ -130,7 +132,7 @@ function ClarifyCard({
     );
 }
 
-export function MindmapView({ content, onChange, fileName, onJumpToSource, frameworkOpen, onCloseFramework }: MindmapViewProps) {
+export function MindmapView({ content, onChange, fileName, onJumpToSource, frameworkOpen, onCloseFramework, readOnly = false }: MindmapViewProps) {
     const stem = useMemo(() => stemOf(fileName), [fileName]);
     const charCount = content.trim().length;
 
@@ -291,6 +293,7 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, frame
                 ...n,
                 data: {
                     ...base,
+                    readOnly,
                     isEditing: n.id === editingId,
                     isSelected: n.id === selectedId,
                     isExpanding: n.id === expandingId,
@@ -310,7 +313,7 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, frame
                 } satisfies MindmapNodeData,
             };
         }),
-        [layout, tree, editingId, selectedId, expandingId, updateLabel, addChild, deleteNode, moveNode, onJumpToSource],
+        [layout, tree, editingId, selectedId, expandingId, updateLabel, addChild, deleteNode, moveNode, onJumpToSource, readOnly],
     );
 
     return (
@@ -323,7 +326,7 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, frame
                     selectedId={selectedId}
                     editing={editingId !== null}
                     onSelect={setSelectedId}
-                    onReorder={moveNode}
+                    onReorder={readOnly ? undefined : moveNode}
                 />
             </div>
             {expandError && (

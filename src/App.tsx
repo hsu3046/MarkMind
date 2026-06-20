@@ -11,7 +11,7 @@ import { MindmapView } from './components/MindmapView';
 import { FlowchartView } from './components/FlowchartView';
 import { SearchBar } from './components/SearchBar';
 import { GanttView } from './components/GanttView';
-import { Toolbar, EditableFileName, ViewMode } from './components/Toolbar';
+import { Toolbar, EditableFileName, PaneHeader, ViewMode, PaneView, EDITABLE_VIEWS, isPaneView } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { OutlinePanel } from './components/OutlinePanel';
 import { RecentFilesPanel } from './components/RecentFilesPanel';
@@ -29,7 +29,6 @@ import { confirmAction } from './services/dialogService';
 import { useFileSystem } from './hooks/useFileSystem';
 import { useTheme } from './hooks/useTheme';
 import { useRecentFiles } from './hooks/useRecentFiles';
-import { useScrollSync } from './hooks/useScrollSync';
 import { useAI } from './hooks/useAI';
 import { useAuth } from './hooks/useAuth';
 import { useConverter } from './hooks/useConverter';
@@ -37,7 +36,7 @@ import { isTauri } from './services/platform';
 import { useNativeMenu } from './hooks/useNativeMenu';
 import { getCallbackPath } from './services/knowaiAuth';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
-import { Link, Unlink, Sparkles, Loader2 } from 'lucide-react';
+import { Sparkles, Loader2, ArrowLeftRight } from 'lucide-react';
 import type { DroppedFile } from './components/convert/types';
 // 본문 명조(뷰어 설정) — Noto Serif KR 한글 서브셋 번들(영문은 Georgia 폴백). ~2MB.
 import '@fontsource/noto-serif-kr/korean-400.css';
@@ -101,12 +100,26 @@ function App() {
 
   const [viewMode, setViewMode] = useState<ViewMode>('editor');
   const [splitRatio, setSplitRatio] = useState(0.5);
+  // Split View(이슈 #64) — 좌/우 패인 뷰 + active 패인(편집 source). viewMode==='split' 일 때만 의미.
+  const [splitLeft, setSplitLeft] = useState<PaneView>(() => {
+    const v = localStorage.getItem('markmind-split-left');
+    return isPaneView(v) ? v : 'editor';
+  });
+  const [splitRight, setSplitRight] = useState<PaneView>(() => {
+    const v = localStorage.getItem('markmind-split-right');
+    return isPaneView(v) ? v : 'preview';
+  });
+  const [activePane, setActivePane] = useState<'left' | 'right'>('left');
+  // 현재 편집 source 가 되는 뷰 — split 이면 active 패인의 뷰, 아니면 viewMode 그대로.
+  const activeView: PaneView = viewMode === 'split' ? (activePane === 'left' ? splitLeft : splitRight) : viewMode;
 
   // Wire up the file-opened callback now that viewMode/setViewMode exist
   onFileOpenedRef.current = () => {
     setViewMode('preview');
   };
-  const { syncEnabled, toggleSync, reattach } = useScrollSync(true);
+  // split 좌/우 뷰 선택을 세션 간 영속.
+  useEffect(() => { localStorage.setItem('markmind-split-left', splitLeft); }, [splitLeft]);
+  useEffect(() => { localStorage.setItem('markmind-split-right', splitRight); }, [splitRight]);
   const [fontSize, setFontSize] = useState(() => {
     const saved = localStorage.getItem('md-editor-font-size');
     return saved ? parseInt(saved, 10) : FONT_SIZE_DEFAULT;
@@ -355,13 +368,18 @@ function App() {
 
   // AI
   const ai = useAI();
-  // AI 결과(InlineDiff)는 에디터 페인에서만 보이므로, 마인드맵 뷰에서
-  // 실행해 응답이 오면 에디터로 전환해 diff 를 보이게 한다(구조화 등).
+  // AI 결과(InlineDiff)는 에디터 페인에서만 보이므로, 마인드맵이 active 면 editor 로 전환해 diff 노출(#64).
+  // solo mindmap → editor, split 의 active mindmap 패인 → editor.
   useEffect(() => {
-    if (ai.response && !ai.isLoading && viewMode === 'mindmap') {
-      setViewMode('editor');
+    if (ai.response && !ai.isLoading && activeView === 'mindmap') {
+      if (viewMode === 'split') {
+        if (activePane === 'left') setSplitLeft('editor');
+        else setSplitRight('editor');
+      } else {
+        setViewMode('editor');
+      }
     }
-  }, [ai.response, ai.isLoading, viewMode]);
+  }, [ai.response, ai.isLoading, activeView, viewMode, activePane]);
   const [selectedText, setSelectedText] = useState('');
   const [selectionCoords, setSelectionCoords] = useState<{ top: number; left: number } | null>(null);
   const aiSelectionRef = useRef<{ fullContent: string; selectedText: string } | null>(null);
@@ -428,11 +446,12 @@ function App() {
     panelStateRef.current = { aiVisible: ai.panelVisible, aiMode: ai.mode };
   }, [ai.panelVisible, ai.mode]);
 
-  // drop 시 이미지를 활성 에디터로 라우팅하기 위해 viewMode 를 ref 로(#56)
-  const viewModeRef = useRef(viewMode);
+  // drop/paste 시 이미지를 활성 패인의 에디터로 라우팅하기 위해 activeView 를 ref 로(#56, split 임의조합 #64).
+  // split 이면 active 패인의 뷰, 아니면 viewMode — preview 면 Tiptap, 그 외(editor 등)면 CodeMirror.
+  const activeViewRef = useRef(activeView);
   useEffect(() => {
-    viewModeRef.current = viewMode;
-  }, [viewMode]);
+    activeViewRef.current = activeView;
+  }, [activeView]);
 
   // 화자 정리(rename_speakers) 후 리로드 판정에 최신 열린 파일 경로를 stale 없이 참조.
   const filePathRef = useRef(filePath);
@@ -514,7 +533,7 @@ function App() {
           // Rich Text(preview) 모드면 Tiptap, 그 외(editor/split)면 CodeMirror 로 라우팅.
           // 표시는 #55(asset://), 실제 assets/ 복사·상대경로 치환은 저장 시 flush 가 처리.
           const insertImageAbs = (absPath: string) => {
-            if (viewModeRef.current === 'preview') {
+            if (activeViewRef.current === 'preview') {
               if (cx != null && cy != null) previewRef.current?.insertImageAtCoords(absPath, cx, cy);
               else previewRef.current?.insertImageMarkdown(absPath);
             } else {
@@ -639,24 +658,25 @@ function App() {
   }, [handleOpenInCurrentEditor]);
 
   // 마인드맵 노드의 "이 섹션으로 이동" — 에디터 라인으로 스크롤.
-  // 다른 뷰면 split 으로 전환 후 에디터 마운트를 기다렸다가 스크롤.
+  // editor 패인이 없으면(다른 뷰/조합) editor 로 전환 후 마운트를 기다렸다가 스크롤(#64).
+  const hasEditorPane = viewMode === 'editor' || (viewMode === 'split' && (splitLeft === 'editor' || splitRight === 'editor'));
   const handleJumpToSource = useCallback((line: number) => {
-    if (viewMode === 'editor' || viewMode === 'split') {
+    if (hasEditorPane) {
       editorRef.current?.scrollToLine(line);
     } else {
       pendingScrollLineRef.current = line;
-      setViewMode('split');
+      setViewMode('editor');
     }
-  }, [viewMode]);
+  }, [hasEditorPane]);
 
   useEffect(() => {
-    if ((viewMode === 'editor' || viewMode === 'split') && pendingScrollLineRef.current != null) {
+    if (hasEditorPane && pendingScrollLineRef.current != null) {
       const line = pendingScrollLineRef.current;
       pendingScrollLineRef.current = null;
       const t = setTimeout(() => editorRef.current?.scrollToLine(line), 120);
       return () => clearTimeout(t);
     }
-  }, [viewMode]);
+  }, [hasEditorPane]);
 
   // AIPanel "실행" 클릭 → 모드에 따라 분기
   // - meeting-notes: converter.runNotes (새 .md 생성)
@@ -733,7 +753,7 @@ function App() {
       const bytes = new Uint8Array(raw.length);
       for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
       const path = await writeTempImage(bytes, extFromMime(mime));
-      if (viewModeRef.current === 'preview') previewRef.current?.insertImageMarkdown(path);
+      if (activeViewRef.current === 'preview') previewRef.current?.insertImageMarkdown(path);
       else editorRef.current?.insertAtCursor(`\n![](${path})\n`);
     } catch (err) {
       console.error('[App] 생성 이미지 삽입 실패:', err);
@@ -795,10 +815,10 @@ function App() {
     return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [mcpReviewOpen]);
 
-  // Outline panel: jump to heading in editor or preview depending on current mode
+  // Outline panel: jump to heading in editor or preview depending on active pane (#64)
   const handleOutlineClick = useCallback((id: string, line: number) => {
-    if (viewMode !== 'preview') {
-      // Editor / split mode: move cursor to the heading line in CodeMirror
+    if (activeView !== 'preview') {
+      // editor 패인이 active(또는 solo): heading 라인으로 CodeMirror 스크롤
       editorRef.current?.scrollToLine(line);
     } else {
       // Preview mode: scroll the rendered heading into view
@@ -820,13 +840,14 @@ function App() {
         }
       }
     }
-  }, [viewMode]);
+  }, [activeView]);
 
   const handleFloatingAction = useCallback((mode: AIMode, text: string) => {
     // Open AI panel, set mode, and run with selected text
     ai.setMode(mode);
     if (!ai.panelVisible) {
-      if (viewMode !== 'editor') {
+      // editor 패인이 없을 때만 solo editor 로 전환(split 의 active editor 면 그대로 유지, #64).
+      if (!hasEditorPane) {
         setViewMode('editor');
       }
       ai.setPanelVisible(true);
@@ -840,7 +861,7 @@ function App() {
     // Clear floating bar
     setSelectedText('');
     setSelectionCoords(null);
-  }, [ai, viewMode]);
+  }, [ai, hasEditorPane, content]);
 
   // Track opened files in recent list
   useEffect(() => {
@@ -954,11 +975,7 @@ function App() {
     setSearchCurrentIndex(-1);
     editorRef.current?.searchClear();
     window.dispatchEvent(new Event('markmind:rich-search-clear'));
-
-    if (viewMode === 'split') {
-      reattach();
-    }
-  }, [viewMode, reattach]);
+  }, [viewMode, splitLeft, splitRight]);
 
   // viewMode 전환 시 scroll 위치 보존 (Markdown ↔ Rich Text).
   // 이전 모드의 scroll 비율을 기억해 새 모드의 같은 비율 위치로 자동 이동.
@@ -1070,25 +1087,26 @@ function App() {
     else reg.delete(PREVIEW_HL);
   }, []);
 
+  // 검색 대상 엔진 = active 패인의 뷰. preview(Tiptap) 면 rich-search 이벤트, 그 외(editor) 면 CodeMirror.
   const runSearch = useCallback((query: string, replace: string) => {
-    if (viewMode === 'preview') {
+    if (activeView === 'preview') {
       window.dispatchEvent(new CustomEvent('markmind:rich-search', { detail: { query } }));
     } else {
       applySearchInfo(editorRef.current?.searchSetQuery(query, replace));
-      // split 의 오른쪽(정적 프리뷰) 하이라이트는 아래 effect 가 CSS Highlight API 로 처리.
+      // split 의 미러(정적 프리뷰) 하이라이트는 아래 effect 가 CSS Highlight API 로 처리.
     }
-  }, [viewMode, applySearchInfo]);
+  }, [activeView, applySearchInfo]);
 
   const navigateMatch = useCallback((delta: number) => {
-    if (viewMode === 'preview') {
+    if (activeView === 'preview') {
       window.dispatchEvent(new Event(delta > 0 ? 'markmind:rich-search-next' : 'markmind:rich-search-prev'));
     } else {
       applySearchInfo(delta > 0 ? editorRef.current?.searchNext() : editorRef.current?.searchPrev());
     }
-  }, [viewMode, applySearchInfo]);
+  }, [activeView, applySearchInfo]);
 
   const replaceMatch = useCallback((all: boolean) => {
-    if (viewMode === 'preview') {
+    if (activeView === 'preview') {
       const ev = all ? 'markmind:rich-search-replace-all' : 'markmind:rich-search-replace';
       window.dispatchEvent(new CustomEvent(ev, { detail: { replace: searchReplace } }));
     } else {
@@ -1097,7 +1115,7 @@ function App() {
         : editorRef.current?.searchReplaceCurrent(searchReplace));
       // split: 소스 변경 → content 갱신 → 아래 effect 가 프리뷰 하이라이트 재계산.
     }
-  }, [viewMode, applySearchInfo, searchReplace]);
+  }, [activeView, applySearchInfo, searchReplace]);
 
   const closeSearch = useCallback(() => {
     // 양 엔진 모두 해제(미마운트 쪽은 no-op) — split 의 오른쪽 하이라이트까지 확실히 정리.
@@ -1126,20 +1144,22 @@ function App() {
     if (!searchVisible) return;
     runSearch(searchQuery, searchReplace);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, searchVisible, viewMode]);
+  }, [searchQuery, searchVisible, activeView]);
 
-  // split 오른쪽(정적 프리뷰) 하이라이트 — 검색어/내용 변경·재렌더 후 CSS Highlight 재계산.
+  // split 의 미러(정적 프리뷰) 하이라이트 — active 가 preview 가 아니고 한쪽이 preview 미러일 때만.
+  // active preview 는 Tiptap(rich-search)이 처리하므로 CSS Highlight 제외(#64).
   useEffect(() => {
-    if (viewMode === 'split' && searchVisible && searchQuery) {
+    const hasMirrorPreview = viewMode === 'split' && activeView !== 'preview' && (splitLeft === 'preview' || splitRight === 'preview');
+    if (hasMirrorPreview && searchVisible && searchQuery) {
       const t = setTimeout(() => highlightPreviewDom(searchQuery), 40);
       return () => clearTimeout(t);
     }
     clearPreviewHighlight();
-  }, [viewMode, searchVisible, searchQuery, content, highlightPreviewDom, clearPreviewHighlight]);
+  }, [viewMode, activeView, splitLeft, splitRight, searchVisible, searchQuery, content, highlightPreviewDom, clearPreviewHighlight]);
 
-  // Rich Text search 결과 count + 현재 index 회신 listen
+  // Rich Text search 결과 count + 현재 index 회신 listen — active 가 preview(Tiptap)일 때만.
   useEffect(() => {
-    if (viewMode !== 'preview') return;
+    if (activeView !== 'preview') return;
     const onCount = (e: Event) => {
       const detail = (e as CustomEvent<{ count: number; index: number }>).detail;
       setSearchMatchCount(detail.count ?? 0);
@@ -1147,7 +1167,7 @@ function App() {
     };
     window.addEventListener('markmind:rich-search-count', onCount);
     return () => window.removeEventListener('markmind:rich-search-count', onCount);
-  }, [viewMode]);
+  }, [activeView]);
 
   // Open recent
   const handleOpenRecent = useCallback(
@@ -1237,7 +1257,8 @@ function App() {
             newFile();
             break;
           case 'f':
-            if (viewMode === 'editor' || viewMode === 'split' || viewMode === 'preview') {
+            // 검색은 텍스트 뷰(editor/preview)가 active 일 때만 — mindmap/flowchart/gantt 는 무의미(#64).
+            if (activeView === 'editor' || activeView === 'preview') {
               e.preventDefault();
               toggleSearch();
             }
@@ -1295,7 +1316,7 @@ function App() {
   }, [
     saveFile, saveFileAs, handleOpenFile, newFile, toggleSearch,
     handleFontSizeChange, resetFontSize, recentPanelVisible,
-    searchVisible, viewMode, handleToggleAI, settingsVisible,
+    searchVisible, activeView, handleToggleAI, settingsVisible,
   ]);
 
   // Split pane drag
@@ -1426,6 +1447,124 @@ function App() {
     </div>
   ) : null;
 
+  // ===== Split View(이슈 #64) 패인 렌더 =====
+  // 이 패인의 뷰가 지금 편집 가능한가 — active && 편집가능뷰. solo(단일 뷰)는 항상 active.
+  const paneEditable = (view: PaneView, side: 'left' | 'right' | 'solo'): boolean => {
+    if (!EDITABLE_VIEWS.has(view)) return false;
+    return side === 'solo' || activePane === side;
+  };
+
+  // editor 패인 콘텐츠 — 편집 가능 + AI diff 중이면 InlineDiffView, 아니면 Editor(미러는 read-only).
+  const renderEditorPane = (editable: boolean) => {
+    if (editable && ai.response && !ai.isLoading) {
+      return (
+        <InlineDiffView
+          chunks={ai.response.chunks}
+          onAcceptChunk={ai.acceptChunk}
+          onRejectChunk={ai.rejectChunk}
+          onAcceptAll={() => {
+            ai.acceptAll();
+            if (ai.response) {
+              const modified = ai.response.modifiedText;
+              if (aiSelectionRef.current) {
+                const { fullContent, selectedText: sel } = aiSelectionRef.current;
+                updateContent(fullContent.replace(sel, modified));
+                aiSelectionRef.current = null;
+              } else {
+                updateContent(modified);
+                // improve 전체문서 적용 → 멀티턴 턴 커밋(선택영역 편집은 단일 턴 유지).
+                if (ai.mode === 'improve') {
+                  const n = ai.response.chunks.filter((c) => c.type !== 'unchanged').length;
+                  if (n > 0) ai.commitTurn(`${n}곳 변경 적용`);
+                }
+              }
+            }
+            ai.setResponse(null);
+          }}
+          onRejectAll={() => {
+            ai.rejectAll();
+            ai.setResponse(null);
+            aiSelectionRef.current = null;
+          }}
+          undecidedCount={ai.undecidedCount}
+          allDecided={ai.allDecided}
+          onApplyResult={() => {
+            const finalText = ai.getFinalText();
+            if (finalText !== null) {
+              if (aiSelectionRef.current) {
+                const { fullContent, selectedText: sel } = aiSelectionRef.current;
+                updateContent(fullContent.replace(sel, finalText));
+                aiSelectionRef.current = null;
+              } else {
+                updateContent(finalText);
+                // improve 부분 적용 → 수락된 변경만 턴 커밋.
+                if (ai.mode === 'improve' && ai.response) {
+                  const n = ai.response.chunks.filter((c) => c.type !== 'unchanged' && c.accepted).length;
+                  if (n > 0) ai.commitTurn(`${n}곳 변경 적용`);
+                }
+              }
+            }
+            ai.setResponse(null);
+          }}
+        />
+      );
+    }
+    // ref 는 editable 무관하게 editor 뷰 패인에 연결 — jump/검색/삽입이 active 여부와 상관없이 동작.
+    // (같은 뷰가 양쪽이면 마지막 mount 가 ref 를 차지하나 content 가 동일해 무해.)
+    return (
+      <Editor
+        ref={editorRef}
+        content={content}
+        onChange={editable ? updateContent : () => {}}
+        theme={theme}
+        editable={editable}
+        onSelectionChange={editable ? handleSelectionChange : undefined}
+        onImagePaste={editable ? handleImagePaste : undefined}
+      />
+    );
+  };
+
+  // 패인 1개 렌더 — 6개 뷰 통합. mcpBanner 는 각 뷰 상단(preview 는 banner prop).
+  // 미러(editable=false)는 read-only: editor=editable.of(false), preview=onChange 미전달,
+  // mindmap=readOnly, flowchart/gantt 는 본래 read-only.
+  const renderPaneView = (view: PaneView, side: 'left' | 'right' | 'solo') => {
+    const editable = paneEditable(view, side);
+    switch (view) {
+      case 'editor':
+        return <>{mcpBanner}{renderEditorPane(editable)}</>;
+      case 'preview':
+        return (
+          <Preview
+            ref={previewRef}
+            content={content}
+            fontSize={fontSize}
+            onChange={editable ? updateContent : undefined}
+            banner={mcpBanner}
+            filePath={filePath}
+          />
+        );
+      case 'mindmap':
+        return (
+          <>
+            {mcpBanner}
+            <MindmapView
+              content={content}
+              onChange={updateContent}
+              fileName={fileName}
+              onJumpToSource={handleJumpToSource}
+              frameworkOpen={frameworkOpen}
+              onCloseFramework={() => setFrameworkOpen(false)}
+              readOnly={!editable}
+            />
+          </>
+        );
+      case 'flowchart':
+        return <>{mcpBanner}<FlowchartView content={content} fileName={fileName} onChange={updateContent} genNonce={flowchartGenNonce} /></>;
+      case 'gantt':
+        return <>{mcpBanner}<GanttView content={content} fileName={fileName} onJumpToSource={handleJumpToSource} /></>;
+    }
+  };
+
   return (
     <div
       className="app"
@@ -1525,140 +1664,68 @@ function App() {
               onApply={handleImproveApply}
               onCancel={() => ai.setResponse(null)}
             />
-          ) : viewMode === 'mindmap' ? (
-            <div className="pane" style={{ width: '100%', flexDirection: 'column' }}>
-              {mcpBanner}
-              <MindmapView
-                content={content}
-                onChange={updateContent}
-                fileName={fileName}
-                onJumpToSource={handleJumpToSource}
-                frameworkOpen={frameworkOpen}
-                onCloseFramework={() => setFrameworkOpen(false)}
-              />
-            </div>
-          ) : viewMode === 'flowchart' ? (
-            <div className="pane" style={{ width: '100%' }}>
-              {mcpBanner}
-              <FlowchartView content={content} fileName={fileName} onChange={updateContent} genNonce={flowchartGenNonce} />
-            </div>
-          ) : viewMode === 'gantt' ? (
-            <div className="pane" style={{ width: '100%' }}>
-              {mcpBanner}
-              <GanttView content={content} fileName={fileName} onJumpToSource={handleJumpToSource} />
-            </div>
-          ) : (
-          <>
-          {viewMode !== 'preview' && (
-            <div
-              className="pane pane-editor"
-              style={{
-                width: viewMode === 'split' ? `${splitRatio * 100}%` : '100%',
-              }}
-            >
-              {/* 마크다운/split 모드 — 페인 상단(메인 툴바 바로 아래)에 배너 */}
-              {mcpBanner}
-              {ai.response && !ai.isLoading ? (
-                <InlineDiffView
-                  chunks={ai.response.chunks}
-                  onAcceptChunk={ai.acceptChunk}
-                  onRejectChunk={ai.rejectChunk}
-                  onAcceptAll={() => {
-                    ai.acceptAll();
-                    if (ai.response) {
-                      const modified = ai.response.modifiedText;
-                      if (aiSelectionRef.current) {
-                        const { fullContent, selectedText: sel } = aiSelectionRef.current;
-                        updateContent(fullContent.replace(sel, modified));
-                        aiSelectionRef.current = null;
-                      } else {
-                        updateContent(modified);
-                        // improve 전체문서 적용 → 멀티턴 턴 커밋(선택영역 편집은 단일 턴 유지).
-                        if (ai.mode === 'improve') {
-                          const n = ai.response.chunks.filter((c) => c.type !== 'unchanged').length;
-                          if (n > 0) ai.commitTurn(`${n}곳 변경 적용`);
-                        }
-                      }
-                    }
-                    ai.setResponse(null);
-                  }}
-                  onRejectAll={() => {
-                    ai.rejectAll();
-                    ai.setResponse(null);
-                    aiSelectionRef.current = null;
-                  }}
-                  undecidedCount={ai.undecidedCount}
-                  allDecided={ai.allDecided}
-                  onApplyResult={() => {
-                    const finalText = ai.getFinalText();
-                    if (finalText !== null) {
-                      if (aiSelectionRef.current) {
-                        const { fullContent, selectedText: sel } = aiSelectionRef.current;
-                        updateContent(fullContent.replace(sel, finalText));
-                        aiSelectionRef.current = null;
-                      } else {
-                        updateContent(finalText);
-                        // improve 부분 적용 → 수락된 변경만 턴 커밋.
-                        if (ai.mode === 'improve' && ai.response) {
-                          const n = ai.response.chunks.filter((c) => c.type !== 'unchanged' && c.accepted).length;
-                          if (n > 0) ai.commitTurn(`${n}곳 변경 적용`);
-                        }
-                      }
-                    }
-                    ai.setResponse(null);
-                  }}
-                />
-              ) : (
-                <Editor ref={editorRef} content={content} onChange={updateContent} theme={theme} onSelectionChange={handleSelectionChange} onImagePaste={handleImagePaste} />
-              )}
-            </div>
-          )}
-
-          {viewMode === 'split' && (
-            <div className="split-handle-area">
+          ) : viewMode === 'split' ? (
+            <>
+              {/* 좌 패인 — 클릭(mousedown capture)하면 active(편집 source). */}
               <div
-                className={`split-handle${isDragging.current ? ' dragging' : ''}`}
-                onMouseDown={handleMouseDown}
-              />
-              <button
-                className={`sync-toggle${syncEnabled ? ' active' : ''}`}
-                onClick={toggleSync}
-                title={syncEnabled ? 'Scroll Sync ON' : 'Scroll Sync OFF'}
+                className={`pane pane-left${activePane === 'left' ? ' is-active' : ''}`}
+                style={{ width: `${splitRatio * 100}%` }}
+                onMouseDownCapture={() => setActivePane('left')}
               >
-                {syncEnabled ? <Link size={12} /> : <Unlink size={12} />}
-              </button>
-              <div
-                className={`split-handle${isDragging.current ? ' dragging' : ''}`}
-                onMouseDown={handleMouseDown}
-              />
-            </div>
-          )}
+                <PaneHeader
+                  view={splitLeft}
+                  isActive={activePane === 'left'}
+                  onSelect={(v) => { setSplitLeft(v); setActivePane('left'); }}
+                />
+                {renderPaneView(splitLeft, 'left')}
+              </div>
 
-          {viewMode !== 'editor' && (
-            <div
-              className="pane"
-              style={{
-                width: viewMode === 'split' ? `${(1 - splitRatio) * 100}%` : '100%',
-              }}
-            >
-              {/* split 모드에선 source 가 CodeMirror 가 담당 — Preview 는 read-only.
-                  preview-only 모드에선 onChange 연결해 WYSIWYG 편집 가능. */}
-              <Preview
-                ref={previewRef}
-                content={content}
-                fontSize={fontSize}
-                onChange={viewMode === 'preview' ? updateContent : undefined}
-                banner={mcpBanner}
-                filePath={filePath}
-              />
+              <div className="split-handle-area">
+                <div
+                  className={`split-handle${isDragging.current ? ' dragging' : ''}`}
+                  onMouseDown={handleMouseDown}
+                />
+                {/* 좌우 뷰 교체 — active 패인도 함께 따라감. */}
+                <button
+                  className="pane-swap-btn"
+                  onClick={() => {
+                    setSplitLeft(splitRight);
+                    setSplitRight(splitLeft);
+                    setActivePane((p) => (p === 'left' ? 'right' : 'left'));
+                  }}
+                  title="좌우 뷰 교체"
+                >
+                  <ArrowLeftRight size={12} />
+                </button>
+                <div
+                  className={`split-handle${isDragging.current ? ' dragging' : ''}`}
+                  onMouseDown={handleMouseDown}
+                />
+              </div>
+
+              {/* 우 패인 */}
+              <div
+                className={`pane pane-right${activePane === 'right' ? ' is-active' : ''}`}
+                style={{ width: `${(1 - splitRatio) * 100}%` }}
+                onMouseDownCapture={() => setActivePane('right')}
+              >
+                <PaneHeader
+                  view={splitRight}
+                  isActive={activePane === 'right'}
+                  onSelect={(v) => { setSplitRight(v); setActivePane('right'); }}
+                />
+                {renderPaneView(splitRight, 'right')}
+              </div>
+            </>
+          ) : (
+            <div className="pane" style={{ width: '100%' }}>
+              {renderPaneView(viewMode, 'solo')}
             </div>
-          )}
-          </>
           )}
         </div>
 
-        {/* Floating AI Bar */}
-        {(viewMode === 'editor' || viewMode === 'split') && (
+        {/* Floating AI Bar — selection 좌표가 CodeMirror 기준이라 active editor 일 때만(#64). */}
+        {activeView === 'editor' && (
           <FloatingAIBar
             selectedText={selectedText}
             coords={selectionCoords}

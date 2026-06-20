@@ -44,6 +44,8 @@ export interface MindmapNodeData {
     // injected by MindmapView
     isEditing?: boolean;
     isSelected?: boolean;
+    /** 미러(read-only) — 편집 액션 버튼 영역 비표시. (이슈 #64) */
+    readOnly?: boolean;
     /** Reorder affordances — enabled per the markdown-bridge rules (see mindmapReorder). */
     canUp?: boolean;
     canDown?: boolean;
@@ -170,8 +172,8 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
                 className="mm-handle"
             />
 
-            {/* hover toolbar */}
-            {!d.isEditing && (
+            {/* hover toolbar — 미러(readOnly)에선 편집 액션 비표시. (이슈 #64) */}
+            {!d.isEditing && !d.readOnly && (
                 <div className="mm-toolbar nodrag" onClick={(e) => e.stopPropagation()}>
                     {!isRoot && (
                         <>
