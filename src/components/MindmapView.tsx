@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Node } from '@xyflow/react';
-import { Loader2, ListTree, X, LayoutTemplate } from 'lucide-react';
+import { X } from 'lucide-react';
 import { MindmapCanvas, type MindmapNodeData } from './MindmapCanvas';
 import { FrameworkPanel } from './FrameworkPanel';
 import { calculateD3Layout } from '../lib/d3-layout';
@@ -30,10 +30,9 @@ interface MindmapViewProps {
     fileName: string;
     /** Jump to this node's section (source line) in the editor. */
     onJumpToSource?: (line: number) => void;
-    /** 마인드맵 정리(structurize) — 현재 문서를 계층 아웃라인으로 재구성(#60). */
-    onStructurize?: () => void;
-    /** 정리 진행 중(AI 로딩). */
-    structurizing?: boolean;
+    /** 프레임워크 생성 패널 열림 상태 — 메인 툴바 버튼이 트리거, App 이 소유(#60 통합). */
+    frameworkOpen?: boolean;
+    onCloseFramework?: () => void;
 }
 
 function stemOf(fileName: string): string {
@@ -131,7 +130,7 @@ function ClarifyCard({
     );
 }
 
-export function MindmapView({ content, onChange, fileName, onJumpToSource, onStructurize, structurizing }: MindmapViewProps) {
+export function MindmapView({ content, onChange, fileName, onJumpToSource, frameworkOpen, onCloseFramework }: MindmapViewProps) {
     const stem = useMemo(() => stemOf(fileName), [fileName]);
     const charCount = content.trim().length;
 
@@ -143,7 +142,6 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
     const [expandingId, setExpandingId] = useState<string | null>(null);
     const [clarify, setClarify] = useState<{ nodeId: string; question: string } | null>(null);
     const [expandError, setExpandError] = useState<string | null>(null);
-    const [frameworkOpen, setFrameworkOpen] = useState(false);
     const expandingRef = useRef(false);
 
     // refs for stable handlers + self-echo suppression
@@ -317,33 +315,6 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
 
     return (
         <div className="mindmap-view">
-            {onStructurize && (
-                <div className="mindmap-toolbar">
-                    <span className="mindmap-mode">
-                        마인드맵{' · '}
-                        <span className={charCount < MIN_CHARS ? 'mindmap-count-warn' : undefined}>
-                            {charCount.toLocaleString()}자
-                        </span>
-                    </span>
-                    <button
-                        className="mindmap-gen-btn"
-                        onClick={onStructurize}
-                        disabled={structurizing || charCount < MIN_CHARS}
-                        title={charCount < MIN_CHARS ? '정리하기엔 내용이 너무 짧습니다' : '문서를 계층 구조로 정리합니다'}
-                    >
-                        {structurizing ? <Loader2 size={14} className="spinning" /> : <ListTree size={14} />}
-                        {structurizing ? '정리 중…' : '마인드맵 정리'}
-                    </button>
-                    <button
-                        className="mindmap-fw-btn"
-                        onClick={() => setFrameworkOpen(true)}
-                        title="프레임워크(SWOT·5Whys 등)로 마인드맵 생성"
-                    >
-                        <LayoutTemplate size={14} />
-                        프레임워크
-                    </button>
-                </div>
-            )}
             <div className="mindmap-canvas-wrap">
                 <MindmapCanvas
                     nodes={nodes}
@@ -375,7 +346,7 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
                     initialTopic={(treeRef.current.label || stem).trim()}
                     docNonEmpty={charCount >= MIN_CHARS}
                     onApply={applyFramework}
-                    onClose={() => setFrameworkOpen(false)}
+                    onClose={() => onCloseFramework?.()}
                 />
             )}
         </div>

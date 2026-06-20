@@ -173,6 +173,10 @@ function App() {
   }, [luminance, setThemeTransient, resetThemeToOS]);
   const [outlineVisible, setOutlineVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  // 프레임워크 생성 패널 — 메인 툴바 "마인드맵 AI 변환" 버튼이 열고, MindmapView 가 패널을 렌더(#60 통합).
+  const [frameworkOpen, setFrameworkOpen] = useState(false);
+  // 플로우차트 AI 변환 — 메인 툴바 버튼이 nonce 를 증가시키면 FlowchartView 가 생성 트리거(#60 통합).
+  const [flowchartGenNonce, setFlowchartGenNonce] = useState(0);
   // macOS full screen 시 툴바 숨김 — Tauri 윈도우 fullscreen 상태 추적(진입/해제는 resize 동반)
   const [isFullscreen, setIsFullscreen] = useState(false);
   useEffect(() => {
@@ -697,16 +701,6 @@ function App() {
     ai.commitTurn('전체 적용');
     ai.setResponse(null);
   }, [ai, updateContent]);
-
-  // 마인드맵 정리(#60) — 마인드맵 뷰 상단 버튼에서 호출. structurize 로 현재 문서를
-  // 계층 아웃라인으로 재구성 → 응답 오면 위 effect 가 editor 로 전환해 InlineDiff 표시.
-  const handleStructurize = useCallback(() => {
-    if (!ai.apiKeySet) {
-      setSettingsVisible(true);
-      return;
-    }
-    ai.runAI(content, undefined, 'structurize');
-  }, [ai, content]);
 
   const handleSelectionChange = useCallback((text: string, coords: { top: number; left: number } | null) => {
     // FloatingAIBar(선택 시 AI 액션 팝업) 용 — selection 텍스트/좌표 추적.
@@ -1491,6 +1485,8 @@ function App() {
         onOpenRecent={handleOpenRecentByPath}
         onToggleSearch={toggleSearch}
         onToggleAI={handleToggleAI}
+        onOpenFramework={() => setFrameworkOpen(true)}
+        onGenerateFlowchart={() => setFlowchartGenNonce((n) => n + 1)}
         showRecent={isTauri()}
         aiPanelVisible={ai.panelVisible}
         nativeMenu={isTauri()}
@@ -1537,14 +1533,14 @@ function App() {
                 onChange={updateContent}
                 fileName={fileName}
                 onJumpToSource={handleJumpToSource}
-                onStructurize={handleStructurize}
-                structurizing={ai.isLoading}
+                frameworkOpen={frameworkOpen}
+                onCloseFramework={() => setFrameworkOpen(false)}
               />
             </div>
           ) : viewMode === 'flowchart' ? (
             <div className="pane" style={{ width: '100%' }}>
               {mcpBanner}
-              <FlowchartView content={content} fileName={fileName} onChange={updateContent} />
+              <FlowchartView content={content} fileName={fileName} onChange={updateContent} genNonce={flowchartGenNonce} />
             </div>
           ) : viewMode === 'gantt' ? (
             <div className="pane" style={{ width: '100%' }}>

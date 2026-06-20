@@ -4,7 +4,7 @@ import {
     FilePlus, FolderOpen, Save, Download, FileDown,
     BookMarked, Clock, History,
     Search, ChevronRight, ChevronDown, Sparkles, Check, X,
-    Settings,
+    Settings, LayoutTemplate,
     FileCode, FileText,
     Network, Share2, ChartBarStacked, type LucideIcon,
 } from 'lucide-react';
@@ -127,6 +127,10 @@ interface ToolbarProps {
     onSaveToDrive: () => void;
     onToggleSearch: () => void;
     onToggleAI: () => void;
+    /** 마인드맵 뷰 액션 — 마인드맵 AI 변환(프레임워크 생성). viewMode==='mindmap' 일 때만 노출. */
+    onOpenFramework?: () => void;
+    /** 플로우차트 뷰 액션 — 플로우차트 AI 변환. viewMode==='flowchart' 일 때만 노출. */
+    onGenerateFlowchart?: () => void;
 }
 
 export function Toolbar({
@@ -148,6 +152,8 @@ export function Toolbar({
     onSaveToDrive,
     onToggleSearch,
     onToggleAI,
+    onOpenFramework,
+    onGenerateFlowchart,
     showRecent,
     aiPanelVisible,
     nativeMenu,
@@ -443,8 +449,28 @@ export function Toolbar({
                 )}
             </div>
 
-            {/* Right: AI 에이전트 단일 진입점(#60 — 음성/이미지 인식·슬라이드 모두 패널 모드로 흡수) */}
+            {/* Right: 뷰별 AI 변환(마인드맵/플로우차트, 해당 뷰에서만) + AI 에이전트(항상, 오른쪽 끝). */}
             <div className="toolbar-group">
+                {viewMode === 'mindmap' && (
+                    <button
+                        className="toolbar-text-btn"
+                        onClick={onOpenFramework}
+                        title="프레임워크(SWOT·5Whys 등)로 마인드맵 생성"
+                    >
+                        <LayoutTemplate size={14} strokeWidth={1.5} />
+                        <span>마인드맵 AI 변환</span>
+                    </button>
+                )}
+                {viewMode === 'flowchart' && (
+                    <button
+                        className="toolbar-text-btn"
+                        onClick={onGenerateFlowchart}
+                        title="문서를 BPMN-lite 플로우차트로 AI 변환"
+                    >
+                        <Network size={14} strokeWidth={1.5} />
+                        <span>플로우차트 AI 변환</span>
+                    </button>
+                )}
                 <button className={`toolbar-text-btn ai-agent${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI 에이전트 (⌘⇧I)">
                     <Sparkles size={14} strokeWidth={1.5} />
                     <span>AI 에이전트</span>

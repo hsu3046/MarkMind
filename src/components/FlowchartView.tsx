@@ -11,7 +11,7 @@
  * (MD 단일 SSOT). 렌더는 읽기 전용(노드 드래그/편집은 후속).
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ReactFlow,
     ReactFlowProvider,
@@ -24,7 +24,7 @@ import {
     type Edge,
     type NodeProps,
 } from '@xyflow/react';
-import { Sparkles, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { documentToTree } from '../lib/markdownTree';
 import { mindmapToFlowchart } from '../lib/flowchart-converter';
 import { layoutFlowchart } from '../lib/dagre-layout';
@@ -87,13 +87,17 @@ interface FlowchartViewProps {
     content: string;
     fileName: string;
     onChange: (md: string) => void;
+    /** 메인 툴바 "플로우차트 AI 변환" 클릭 시그널 — 값이 바뀔 때마다 생성 트리거(#60 통합). */
+    genNonce?: number;
 }
 
-function FlowchartViewInner({ content, fileName, onChange }: FlowchartViewProps) {
+function FlowchartViewInner({ content, fileName, onChange, genNonce }: FlowchartViewProps) {
     const stem = useMemo(() => stemOf(fileName), [fileName]);
     const charCount = content.trim().length;
     const [generating, setGenerating] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const generatingRef = useRef(false);
+    const genNonceRef = useRef(genNonce ?? 0);
 
     const { nodes, edges, isAi } = useMemo(() => {
         const stored = parseFlowchartBlock(content);
@@ -110,63 +114,59 @@ function FlowchartViewInner({ content, fileName, onChange }: FlowchartViewProps)
     }, [content, stem]);
 
     const handleGenerate = async () => {
-        // 가드레일: LLM 본격 호출 전 길이 체크(#46)
-        if (charCount < MIN_CHARS) {
-            setError('흐름도로 만들기엔 내용이 너무 짧습니다.');
-            return;
-        }
-        if (charCount > HARD_CHARS) {
-            const ok = await confirmAction(
-                `문서가 매우 깁니다 (${charCount.toLocaleString()}자).\n\n` +
-                    'AI 변환에 드는 비용과 시간이 크게 늘고, 핵심을 제대로 추리지 못하거나 ' +
-                    '도중에 실패할 수 있어요.\n\n' +
-                    '짧은 문서로 나눠서 만드는 걸 권장합니다. 그래도 지금 진행할까요?',
-                { title: '경고', kind: 'warning' },
-            );
-            if (!ok) return;
-        } else if (charCount > WARN_CHARS) {
-            const ok = await confirmAction(
-                `문서가 깁니다 (${charCount.toLocaleString()}자).\n\n` +
-                    'AI 가 전체에서 핵심 흐름만 추려 만들기 때문에 세부 내용은 생략·단순화될 수 있어요. ' +
-                    '또 문서가 길수록 AI 사용량(토큰 비용)도 함께 늘어납니다.\n\n' +
-                    '계속할까요?',
-                { title: '주의', kind: 'info' },
-            );
-            if (!ok) return;
-        }
-        setGenerating(true);
-        setError(null);
+        if (generatingRef.current) return; // 동시/중복 트리거 차단(confirm 대기 중 포함)
+        generatingRef.current = true;
         try {
-            const fc = await generateFlowchart(content);
-            onChange(upsertFlowchartBlock(content, fc)); // MD 에 저장 → 재파싱되어 AI 흐름도로 표시
-        } catch (e) {
-            setError(e instanceof Error ? e.message : '플로우차트 생성에 실패했습니다.');
+            // 가드레일: LLM 본격 호출 전 길이 체크(#46)
+            if (charCount < MIN_CHARS) {
+                setError('흐름도로 만들기엔 내용이 너무 짧습니다.');
+                return;
+            }
+            if (charCount > HARD_CHARS) {
+                const ok = await confirmAction(
+                    `문서가 매우 깁니다 (${charCount.toLocaleString()}자).\n\n` +
+                        'AI 변환에 드는 비용과 시간이 크게 늘고, 핵심을 제대로 추리지 못하거나 ' +
+                        '도중에 실패할 수 있어요.\n\n' +
+                        '짧은 문서로 나눠서 만드는 걸 권장합니다. 그래도 지금 진행할까요?',
+                    { title: '경고', kind: 'warning' },
+                );
+                if (!ok) return;
+            } else if (charCount > WARN_CHARS) {
+                const ok = await confirmAction(
+                    `문서가 깁니다 (${charCount.toLocaleString()}자).\n\n` +
+                        'AI 가 전체에서 핵심 흐름만 추려 만들기 때문에 세부 내용은 생략·단순화될 수 있어요. ' +
+                        '또 문서가 길수록 AI 사용량(토큰 비용)도 함께 늘어납니다.\n\n' +
+                        '계속할까요?',
+                    { title: '주의', kind: 'info' },
+                );
+                if (!ok) return;
+            }
+            setGenerating(true);
+            setError(null);
+            try {
+                const fc = await generateFlowchart(content);
+                onChange(upsertFlowchartBlock(content, fc)); // MD 에 저장 → 재파싱되어 AI 흐름도로 표시
+            } catch (e) {
+                setError(e instanceof Error ? e.message : '플로우차트 생성에 실패했습니다.');
+            } finally {
+                setGenerating(false);
+            }
         } finally {
-            setGenerating(false);
+            generatingRef.current = false;
         }
     };
 
+    // 메인 툴바 "플로우차트 AI 변환" 버튼이 genNonce 를 증가 → 생성 트리거(시그널).
+    // 로딩/에러는 이 뷰가 자체 표시(오버레이) — 마인드맵 프레임워크 패널과 동형 통합.
+    useEffect(() => {
+        if (genNonce === undefined || genNonce === genNonceRef.current) return;
+        genNonceRef.current = genNonce;
+        void handleGenerate();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [genNonce]);
+
     return (
         <div className="flowchart-view">
-            <div className="flowchart-toolbar">
-                <span className="flowchart-mode">
-                    {isAi ? 'AI 생성 흐름도' : '구조 미러 (마인드맵과 동형 프리뷰)'}
-                    {' · '}
-                    <span className={charCount < MIN_CHARS ? 'flowchart-count-warn' : undefined}>
-                        {charCount.toLocaleString()}자
-                    </span>
-                </span>
-                <button
-                    className="flowchart-gen-btn"
-                    onClick={handleGenerate}
-                    disabled={generating || charCount < MIN_CHARS}
-                    title={charCount < MIN_CHARS ? '흐름도로 만들기엔 내용이 너무 짧습니다' : undefined}
-                >
-                    {generating ? <Loader2 size={14} className="spinning" /> : <Sparkles size={14} />}
-                    {generating ? '생성 중…' : isAi ? 'AI 재생성' : '플로우차트 AI 생성'}
-                </button>
-            </div>
-            {error && <div className="flowchart-error">{error}</div>}
             <div className="flowchart-canvas">
                 <ReactFlow
                     key={`${stem}-${isAi}`}
@@ -186,6 +186,13 @@ function FlowchartViewInner({ content, fileName, onChange }: FlowchartViewProps)
                     <Controls showInteractive={false} />
                 </ReactFlow>
             </div>
+            {generating && (
+                <div className="flowchart-loading">
+                    <Loader2 size={22} className="spinning" />
+                    <span>AI 흐름도 생성 중…</span>
+                </div>
+            )}
+            {error && <div className="flowchart-error">{error}</div>}
         </div>
     );
 }
