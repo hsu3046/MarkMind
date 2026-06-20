@@ -8,6 +8,7 @@
     height: 100%;
     min-width: 0;
     min-height: 0;
+    position: relative; /* AI 확장 오버레이(clarify/error)의 위치 기준 */
 }
 
 .mindmap-toolbar {
@@ -50,8 +51,128 @@
     cursor: default;
 }
 
+/* 프레임워크 생성 버튼 — 정리 버튼(margin-left:auto) 우측에 붙는다. */
+.mindmap-fw-btn {
+    margin-left: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: 1px solid var(--border-primary, #cccccc);
+    border-radius: 6px;
+    background: var(--bg-secondary, #f5f5f5);
+    color: var(--text-primary, #222222);
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.mindmap-fw-btn:hover {
+    background: var(--bg-hover, #ececec);
+}
+
 .mindmap-canvas-wrap {
     flex: 1;
     min-height: 0;
     position: relative;
+}
+
+/* ─── AI 노드 확장 (#? MindBusiness 이식) ─── */
+
+/* 에러 배너 — 하단 중앙 토스트 */
+.mm-expand-error {
+    position: absolute;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: min(520px, calc(100% - 32px));
+    padding: 8px 12px;
+    border: 1px solid #ef4444;
+    border-radius: 8px;
+    background: var(--bg-primary, #ffffff);
+    color: var(--text-primary, #222222);
+    font-size: 13px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+}
+
+.mm-expand-error button {
+    display: inline-flex;
+    padding: 2px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary, #888888);
+    cursor: pointer;
+}
+
+/* clarification 카드 — 중앙 오버레이(좌표 계산 없음, 데스크탑 WKWebView) */
+.mm-clarify-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.28);
+}
+
+.mm-clarify {
+    width: min(420px, calc(100% - 48px));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    border: 1px solid var(--border-primary, #e5e5e5);
+    border-radius: 12px;
+    background: var(--bg-primary, #ffffff);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.24);
+}
+
+.mm-clarify-q {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-primary, #222222);
+}
+
+.mm-clarify-input {
+    padding: 9px 12px;
+    border: 1px solid var(--border-primary, #cccccc);
+    border-radius: 8px;
+    background: var(--bg-secondary, #f5f5f5);
+    color: var(--text-primary, #222222);
+    font-size: 14px;
+    outline: none;
+}
+
+.mm-clarify-input:focus {
+    border-color: var(--accent, #6366f1);
+}
+
+.mm-clarify-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.mm-clarify-actions button {
+    padding: 6px 14px;
+    border: 1px solid var(--border-primary, #cccccc);
+    border-radius: 6px;
+    background: var(--bg-secondary, #f5f5f5);
+    color: var(--text-primary, #222222);
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.mm-clarify-go {
+    border-color: var(--accent, #6366f1) !important;
+    background: var(--accent, #6366f1) !important;
+    color: #ffffff !important;
+}
+
+.mm-clarify-go:disabled {
+    opacity: 0.5;
+    cursor: default;
 }

@@ -11,11 +11,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Node } from '@xyflow/react';
-import { Loader2, ListTree } from 'lucide-react';
+import { Loader2, ListTree, X, LayoutTemplate } from 'lucide-react';
 import { MindmapCanvas, type MindmapNodeData } from './MindmapCanvas';
+import { FrameworkPanel } from './FrameworkPanel';
 import { calculateD3Layout } from '../lib/d3-layout';
-import { documentToTree, treeToDocument } from '../lib/markdownTree';
+import { documentToTree, treeToDocument, treeToMarkdown } from '../lib/markdownTree';
 import { reorderNode, canReorder, type ReorderOp } from '../lib/mindmapReorder';
+import { expandNode, type ExpandContext } from '../services/aiService';
 import type { MindmapNode } from '../types/mindmap';
 import './MindmapView.css';
 
@@ -33,8 +35,6 @@ interface MindmapViewProps {
     /** 정리 진행 중(AI 로딩). */
     structurizing?: boolean;
 }
-
-const NOOP = () => {};
 
 function stemOf(fileName: string): string {
     return fileName.replace(/\.(md|markdown|mdx|txt)$/i, '').trim() || 'Untitled';
@@ -63,6 +63,74 @@ function findParentById(root: MindmapNode, id: string): { parent: MindmapNode | 
     return { parent: cur ?? null, index };
 }
 
+/** AI 확장에 필요한 맥락을 메모리 트리에서 도출(path-id 기반 조상·형제·기존자식·깊이). */
+function collectExpandContext(root: MindmapNode, id: string, language = 'Korean'): ExpandContext | null {
+    const target = findNodeById(root, id);
+    if (!target) return null;
+    const parts = id.split('/').slice(1).map(Number);
+    const ancestorLabels: string[] = [root.label];
+    let cur: MindmapNode | undefined = root;
+    for (const i of parts) {
+        cur = cur?.children[i];
+        if (!cur) break;
+        ancestorLabels.push(cur.label);
+    }
+    const { parent } = findParentById(root, id);
+    const siblingLabels = parent ? parent.children.filter((c) => c.id !== id).map((c) => c.label) : [];
+    return {
+        rootTopic: root.label,
+        ancestorLabels,
+        targetLabel: target.label,
+        targetDescription: target.description,
+        siblingLabels,
+        existingChildLabels: (target.children ?? []).map((c) => c.label),
+        depth: parts.length,
+        language,
+    };
+}
+
+/** 맥락 부족 시 AI 가 던진 질문에 한 줄 답을 받는 작은 카드(중앙 오버레이, 좌표 계산 없음). */
+function ClarifyCard({
+    question,
+    onSubmit,
+    onCancel,
+}: {
+    question: string;
+    onSubmit: (answer: string) => void;
+    onCancel: () => void;
+}) {
+    const [val, setVal] = useState('');
+    return (
+        <div className="mm-clarify-backdrop" onClick={onCancel} aria-hidden>
+            <div className="mm-clarify" role="dialog" aria-modal onClick={(e) => e.stopPropagation()}>
+                <div className="mm-clarify-q">{question}</div>
+                <input
+                    className="mm-clarify-input"
+                    autoFocus
+                    value={val}
+                    onChange={(e) => setVal(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' && val.trim()) {
+                            e.preventDefault();
+                            onSubmit(val.trim());
+                        } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            onCancel();
+                        }
+                    }}
+                    placeholder="답을 입력하고 Enter…"
+                />
+                <div className="mm-clarify-actions">
+                    <button onClick={onCancel}>취소</button>
+                    <button className="mm-clarify-go" disabled={!val.trim()} onClick={() => onSubmit(val.trim())}>
+                        확장
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export function MindmapView({ content, onChange, fileName, onJumpToSource, onStructurize, structurizing }: MindmapViewProps) {
     const stem = useMemo(() => stemOf(fileName), [fileName]);
     const charCount = content.trim().length;
@@ -72,6 +140,11 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
     const [frontmatter, setFrontmatter] = useState(initial.frontmatter);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [expandingId, setExpandingId] = useState<string | null>(null);
+    const [clarify, setClarify] = useState<{ nodeId: string; question: string } | null>(null);
+    const [expandError, setExpandError] = useState<string | null>(null);
+    const [frameworkOpen, setFrameworkOpen] = useState(false);
+    const expandingRef = useRef(false);
 
     // refs for stable handlers + self-echo suppression
     const treeRef = useRef(tree);
@@ -140,7 +213,78 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
         if (findNodeById(newTree, res.newId)) setSelectedId(res.newId);
     }, [commitTree]);
 
-    const layout = useMemo(() => calculateD3Layout(tree, NOOP), [tree]);
+    /** AI 노드 확장 — 맥락 수집 → expandNode → 자식 삽입(commitTree). clarification 시 카드 노출.
+     *  undo 는 commitTree→onChange→문서 undo 스택으로 자동. 동시 확장은 expandingRef 로 차단. */
+    const runExpand = useCallback(async (nodeId: string, clarificationAnswer?: string) => {
+        if (expandingRef.current) return;
+        const ctx = collectExpandContext(treeRef.current, nodeId);
+        if (!ctx) return;
+        if (clarificationAnswer) ctx.clarificationAnswer = clarificationAnswer;
+        expandingRef.current = true;
+        setExpandError(null);
+        setClarify(null);
+        setExpandingId(nodeId);
+        try {
+            const res = await expandNode(ctx);
+            if ('needs_clarification' in res) {
+                setClarify({ nodeId, question: res.clarifying_question });
+                return;
+            }
+            if (res.children.length === 0) {
+                setExpandError('생성된 자식 아이디어가 없습니다. 노드를 더 구체화한 뒤 다시 시도해보세요.');
+                return;
+            }
+            const clone = structuredClone(treeRef.current);
+            const parent = findNodeById(clone, nodeId);
+            if (!parent) return;
+            // 삽입 자식의 origin — 부모가 heading 자식을 가지면 heading(append 시 마지막 heading 에
+            // 오결합 방지, 불변식 B), 그 외(빈/list 부모)는 list. list 부모는 절대 heading 자식 X(불변식 A).
+            const childOrigin: 'heading' | 'list' =
+                parent.mdOrigin !== 'list' && parent.children.some((c) => c.mdOrigin === 'heading')
+                    ? 'heading'
+                    : 'list';
+            for (const c of res.children) {
+                parent.children.push({
+                    id: '',
+                    label: c.label,
+                    type: 'sub_branch',
+                    mdOrigin: childOrigin,
+                    description: c.description,
+                    children: [],
+                });
+            }
+            commitTree(clone);
+            setSelectedId(nodeId);
+        } catch (e) {
+            setExpandError(e instanceof Error ? e.message : 'AI 확장에 실패했습니다.');
+        } finally {
+            expandingRef.current = false;
+            setExpandingId(null);
+        }
+    }, [commitTree]);
+
+    const handleExpand = useCallback((node: MindmapNode) => { void runExpand(node.id); }, [runExpand]);
+
+    /** 프레임워크 생성 결과 적용 — 교체(commitTree) 또는 이어붙이기(마크다운 병합 후 재파싱).
+     *  둘 다 onChange 경유라 문서 undo 스택에 잡힘(⌘Z 되돌림). SSOT 보존. */
+    const applyFramework = useCallback((genTree: MindmapNode, mode: 'replace' | 'append') => {
+        setEditingId(null);
+        setSelectedId(null);
+        if (mode === 'append') {
+            const body = treeToMarkdown(genTree);
+            const base = content.trimEnd();
+            const merged = base ? `${base}\n\n${body}` : body;
+            lastEmittedRef.current = merged;
+            const reparsed = documentToTree(merged, stemRef.current);
+            setFrontmatter(reparsed.frontmatter);
+            setTree(reparsed.tree);
+            onChange(merged);
+        } else {
+            commitTree(genTree);
+        }
+    }, [content, onChange, commitTree]);
+
+    const layout = useMemo(() => calculateD3Layout(tree, handleExpand), [tree, handleExpand]);
 
     const nodes: Node[] = useMemo(() =>
         layout.nodes.map((n) => {
@@ -151,6 +295,7 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
                     ...base,
                     isEditing: n.id === editingId,
                     isSelected: n.id === selectedId,
+                    isExpanding: n.id === expandingId,
                     canUp: canReorder(tree, n.id, 'up'),
                     canDown: canReorder(tree, n.id, 'down'),
                     canIndent: canReorder(tree, n.id, 'indent'),
@@ -167,7 +312,7 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
                 } satisfies MindmapNodeData,
             };
         }),
-        [layout, tree, editingId, selectedId, updateLabel, addChild, deleteNode, moveNode, onJumpToSource],
+        [layout, tree, editingId, selectedId, expandingId, updateLabel, addChild, deleteNode, moveNode, onJumpToSource],
     );
 
     return (
@@ -189,6 +334,14 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
                         {structurizing ? <Loader2 size={14} className="spinning" /> : <ListTree size={14} />}
                         {structurizing ? '정리 중…' : '마인드맵 정리'}
                     </button>
+                    <button
+                        className="mindmap-fw-btn"
+                        onClick={() => setFrameworkOpen(true)}
+                        title="프레임워크(SWOT·5Whys 등)로 마인드맵 생성"
+                    >
+                        <LayoutTemplate size={14} />
+                        프레임워크
+                    </button>
                 </div>
             )}
             <div className="mindmap-canvas-wrap">
@@ -202,6 +355,29 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, onStr
                     onReorder={moveNode}
                 />
             </div>
+            {expandError && (
+                <div className="mm-expand-error" role="alert">
+                    <span>{expandError}</span>
+                    <button onClick={() => setExpandError(null)} title="닫기">
+                        <X size={13} />
+                    </button>
+                </div>
+            )}
+            {clarify && (
+                <ClarifyCard
+                    question={clarify.question}
+                    onSubmit={(answer) => { void runExpand(clarify.nodeId, answer); }}
+                    onCancel={() => setClarify(null)}
+                />
+            )}
+            {frameworkOpen && (
+                <FrameworkPanel
+                    initialTopic={(treeRef.current.label || stem).trim()}
+                    docNonEmpty={charCount >= MIN_CHARS}
+                    onApply={applyFramework}
+                    onClose={() => setFrameworkOpen(false)}
+                />
+            )}
         </div>
     );
 }

@@ -1,5 +1,39 @@
 import { describe, it, expect } from 'vitest';
-import { generateDiff, applyDiff } from './aiService';
+import { generateDiff, applyDiff, extractJsonObject } from './aiService';
+
+// callAIJson 의 방어적 파서 — Gemini 외 프로바이더는 JSON 을 문자열로 주고 산문/펜스를 덧붙이기도
+// 한다. 첫 균형 중괄호 객체만 정확히 잘라내는지 검증(메모리: 멀티 프로바이더 JSON 견고성).
+describe('extractJsonObject — 방어적 JSON 추출', () => {
+    it('순수 JSON 은 그대로', () => {
+        const s = '{"children":[{"label":"A"}]}';
+        expect(JSON.parse(extractJsonObject(s))).toEqual({ children: [{ label: 'A' }] });
+    });
+
+    it('```json 펜스를 벗긴다', () => {
+        const s = '```json\n{"a":1}\n```';
+        expect(JSON.parse(extractJsonObject(s))).toEqual({ a: 1 });
+    });
+
+    it('앞에 산문이 붙어도 첫 객체를 추출', () => {
+        const s = 'Here is the result:\n{"a":1,"b":2}\nDone.';
+        expect(JSON.parse(extractJsonObject(s))).toEqual({ a: 1, b: 2 });
+    });
+
+    it('중첩 객체의 균형 중괄호를 보존', () => {
+        const s = 'x {"a":{"b":{"c":1}},"d":2} y';
+        expect(JSON.parse(extractJsonObject(s))).toEqual({ a: { b: { c: 1 } }, d: 2 });
+    });
+
+    it('문자열 안의 중괄호는 깊이 계산에서 제외', () => {
+        const s = '{"label":"a } b { c","n":1}';
+        expect(JSON.parse(extractJsonObject(s))).toEqual({ label: 'a } b { c', n: 1 });
+    });
+
+    it('이스케이프된 따옴표를 올바르게 처리', () => {
+        const s = '{"q":"say \\"hi\\" }"}';
+        expect(JSON.parse(extractJsonObject(s))).toEqual({ q: 'say "hi" }' });
+    });
+});
 
 // #36 — generateDiff 의 paragraph/word LCS 는 O(m·n) DP 라 대형 입력에서 메인 스레드를
 // 막는다. 일정 규모(LCS_CELL_LIMIT = 200만 셀) 초과 시 "전체 교체"로 폴백하는 가드를 검증.

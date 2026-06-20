@@ -23,7 +23,7 @@ import {
     type Edge,
     type NodeProps,
 } from '@xyflow/react';
-import { Plus, Pencil, Trash2, SquareArrowOutUpRight, ChevronUp, ChevronDown, IndentIncrease, IndentDecrease } from 'lucide-react';
+import { Plus, Pencil, Trash2, SquareArrowOutUpRight, ChevronUp, ChevronDown, IndentIncrease, IndentDecrease, Sparkles, Loader2 } from 'lucide-react';
 import type { MindmapNode } from '../types/mindmap';
 import type { ReorderOp } from '../lib/mindmapReorder';
 import { PALETTE } from '../lib/d3-layout';
@@ -56,6 +56,10 @@ export interface MindmapNodeData {
     onCancelEdit?: () => void;
     onAddChild?: () => void;
     onDelete?: () => void;
+    /** AI 확장 — d3-layout 에서 주입(canExpand=level<4), onExpand→MindmapView.handleExpand. */
+    canExpand?: boolean;
+    isExpanding?: boolean;
+    onExpand?: () => void;
     [key: string]: unknown;
 }
 
@@ -192,6 +196,15 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
                     <button title="자식 추가" onClick={(e) => { e.stopPropagation(); d.onAddChild?.(); }}>
                         <Plus size={12} />
                     </button>
+                    {d.canExpand && (
+                        <button
+                            title="AI로 확장"
+                            disabled={d.isExpanding}
+                            onClick={(e) => { e.stopPropagation(); d.onExpand?.(); }}
+                        >
+                            {d.isExpanding ? <Loader2 size={12} className="spinning" /> : <Sparkles size={12} />}
+                        </button>
+                    )}
                     {!isRoot && (
                         <button title="삭제" onClick={(e) => { e.stopPropagation(); d.onDelete?.(); }}>
                             <Trash2 size={12} />

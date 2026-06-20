@@ -1,0 +1,222 @@
+/* 프레임워크 생성 패널 — 중앙 모달(MindmapView 안 absolute 오버레이). */
+
+.fw-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.32);
+}
+
+.fw-panel {
+    width: min(640px, 100%);
+    max-height: 100%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 20px;
+    border: 1px solid var(--border-primary, #e5e5e5);
+    border-radius: 14px;
+    background: var(--bg-primary, #ffffff);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+}
+
+.fw-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary, #222222);
+}
+
+.fw-x {
+    display: inline-flex;
+    padding: 4px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary, #888888);
+    cursor: pointer;
+    border-radius: 6px;
+}
+
+.fw-x:hover:not(:disabled) {
+    background: var(--bg-hover, #ececec);
+}
+
+.fw-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary, #888888);
+}
+
+.fw-field input {
+    padding: 9px 12px;
+    border: 1px solid var(--border-primary, #cccccc);
+    border-radius: 8px;
+    background: var(--bg-secondary, #f5f5f5);
+    color: var(--text-primary, #222222);
+    font-size: 14px;
+    outline: none;
+}
+
+.fw-field input:focus {
+    border-color: var(--accent, #6366f1);
+}
+
+.fw-suggest-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.fw-suggest {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--border-primary, #cccccc);
+    border-radius: 6px;
+    background: var(--bg-secondary, #f5f5f5);
+    color: var(--text-primary, #222222);
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.fw-suggest:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.fw-suggest-reason {
+    font-size: 12px;
+    color: var(--text-secondary, #888888);
+}
+
+.fw-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 8px;
+}
+
+.fw-card {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-primary, #e5e5e5);
+    border-radius: 9px;
+    background: var(--bg-secondary, #f5f5f5);
+    color: var(--text-primary, #222222);
+    cursor: pointer;
+    text-align: left;
+}
+
+.fw-card:hover {
+    border-color: var(--accent, #6366f1);
+}
+
+.fw-card-sel {
+    border-color: var(--accent, #6366f1);
+    box-shadow: inset 0 0 0 1px var(--accent, #6366f1);
+}
+
+.fw-card-name {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.fw-card-desc {
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-secondary, #888888);
+}
+
+.fw-biz-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    align-self: flex-start;
+    padding: 4px 2px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary, #888888);
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.fw-slots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.fw-slot-chip {
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent, #6366f1) 14%, var(--bg-primary, #ffffff));
+    color: var(--text-primary, #222222);
+    font-size: 11px;
+}
+
+.fw-mode {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 4px 0;
+    font-size: 13px;
+    color: var(--text-primary, #222222);
+}
+
+.fw-mode label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.fw-error {
+    padding: 8px 12px;
+    border: 1px solid #ef4444;
+    border-radius: 8px;
+    background: color-mix(in srgb, #ef4444 8%, var(--bg-primary, #ffffff));
+    color: var(--text-primary, #222222);
+    font-size: 13px;
+}
+
+.fw-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.fw-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    border: 1px solid var(--border-primary, #cccccc);
+    border-radius: 7px;
+    background: var(--bg-secondary, #f5f5f5);
+    color: var(--text-primary, #222222);
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.fw-go {
+    border-color: var(--accent, #6366f1) !important;
+    background: var(--accent, #6366f1) !important;
+    color: #ffffff !important;
+}
+
+.fw-actions button:disabled {
+    opacity: 0.55;
+    cursor: default;
+}

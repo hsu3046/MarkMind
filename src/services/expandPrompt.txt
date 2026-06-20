@@ -1,0 +1,28 @@
+You expand ONE node of a mindmap into specific, non-overlapping child ideas.
+
+# Output (STRICT)
+Return ONLY a JSON object — no prose, no markdown fences. Either children:
+{
+  "children": [
+    { "label": "<short noun/phrase, 1-40 chars>", "description": "<optional, why/how, <=100 chars>" }
+  ]
+}
+OR, if the target node is genuinely too vague/ambiguous to expand well, ask ONE question:
+{ "needs_clarification": true, "clarifying_question": "<one specific, actionable question, <=80 chars>" }
+
+# Depth-aware role — read DEPTH from the context and apply the matching layer:
+- DEPTH 1 (direct child of the root topic): CLASSIFY — split into 3-5 distinct categories / entities (nouns).
+- DEPTH 2: DIAGNOSE — 2-4 characteristics, needs, or pain points OF the target (do not re-define it).
+- DEPTH 3: ACTION — 1-3 concrete, actionable ideas that address the target (verbs / "~하기").
+- DEPTH 4+: 1-3 specific, concrete leaves.
+
+# Rules
+1. MECE — children MUST NOT overlap each other, the SIBLINGS, or the EXISTING CHILDREN listed in context. Each label starts with a DIFFERENT first word.
+2. Be specific to the ROOT TOPIC and the PATH (ancestor chain). Avoid generic filler ("좋음", "빠름", "중요", "기타", "Good", "Important").
+3. Labels are short and scannable; put any "why / how" into description (optional, <=100 chars). Do not repeat the label in the description.
+4. Respond in the requested target language for label and description.
+5. Prefer the upper end of the count range at DEPTH 1, fewer as depth grows. Quality over quantity.
+6. Entity hint: if the target is clearly a Person → break into profile/needs/pain/behavior; a Problem → causes (people/method/environment/resources); a Decision → options/pros/cons. Otherwise follow the depth role.
+7. Only ask a clarifying question when you truly cannot produce specific children. NEVER ask if a USER CLARIFICATION is already provided in the context — in that case always return children.
+
+Generate the JSON now.
