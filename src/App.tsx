@@ -192,6 +192,8 @@ function App() {
   const [flowchartPanelOpen, setFlowchartPanelOpen] = useState(false);
   // 간트 차트 생성 — 메인 툴바 버튼이 GanttPanel 모달을 연다(플로우차트와 동형).
   const [ganttPanelOpen, setGanttPanelOpen] = useState(false);
+  // 시각 뷰 PDF 생성 진행 — 저장 다이얼로그 후 캡처/PDF 가 무거워 진행 오버레이를 띄운다.
+  const [pdfExporting, setPdfExporting] = useState(false);
   // macOS full screen 시 툴바 숨김 — Tauri 윈도우 fullscreen 상태 추적(진입/해제는 resize 동반)
   const [isFullscreen, setIsFullscreen] = useState(false);
   useEffect(() => {
@@ -241,6 +243,36 @@ function App() {
   //   4) viewMode 복원
   const prevViewModeRef = useRef<ViewMode | null>(null);
   const handleExportPdf = useCallback(async () => {
+    const defaultName = (fileName || 'Untitled').replace(/\.md$/i, '') + '.pdf';
+
+    // 시각 뷰(간트/마인드맵/플로우차트) — 캡처 경로. 다이얼로그 → 진행표시 → 생성 → 저장.
+    if (viewMode === 'gantt' || viewMode === 'mindmap' || viewMode === 'flowchart') {
+      const { hasVisualContent, buildVisualViewPdf, writePdfBlob } = await import('./lib/pdf/exportVisualPdf');
+      const { save, message } = await import('@tauri-apps/plugin-dialog');
+      if (!hasVisualContent(viewMode)) {
+        await message('표시할 내용이 없습니다. 먼저 내용을 만든 뒤 다시 시도해주세요.', { title: 'PDF 내보내기', kind: 'info' });
+        return;
+      }
+      const path = await save({
+        defaultPath: defaultName,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        title: 'PDF로 내보내기',
+      });
+      if (!path) return;
+      // 다이얼로그 확정 후부터 진행 오버레이 — 캡처/PDF 가 끝나야 Finder 에 파일이 보이므로.
+      setPdfExporting(true);
+      try {
+        const blob = await buildVisualViewPdf(viewMode);
+        if (blob) await writePdfBlob(blob, path);
+      } catch (err) {
+        console.error('[export_pdf visual] failed:', err);
+      } finally {
+        setPdfExporting(false);
+      }
+      return;
+    }
+
+    // 텍스트 뷰(editor/split → preview 전환) — 기존 NSPrint 경로.
     if (viewMode === 'editor' || viewMode === 'split') {
       prevViewModeRef.current = viewMode;
       setViewMode('preview');
@@ -250,7 +282,6 @@ function App() {
       await new Promise<void>((r) => setTimeout(r, 80));
     }
 
-    const defaultName = (fileName || 'Untitled').replace(/\.md$/i, '') + '.pdf';
     try {
       const [{ save }, { invoke }] = await Promise.all([
         import('@tauri-apps/plugin-dialog'),
@@ -1779,6 +1810,15 @@ function App() {
           <div className="pptx-busy-card">
             <Loader2 size={20} className="spinning" />
             <span>{pptxBusy}</span>
+          </div>
+        </div>
+      )}
+
+      {pdfExporting && (
+        <div className="pptx-busy-overlay" role="status" aria-live="polite">
+          <div className="pptx-busy-card">
+            <Loader2 size={20} className="spinning" />
+            <span>PDF 생성 중…</span>
           </div>
         </div>
       )}

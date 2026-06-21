@@ -46,6 +46,8 @@
     "d3-hierarchy": "^3.1.2",
     "dagre": "^0.8.5",
     "highlight.js": "^11.11.1",
+    "html-to-image": "^1.11.13",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.576.0",
     "pptxgenjs": "^4.0.1",
     "react": "^19.1.0",
