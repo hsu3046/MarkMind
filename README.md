@@ -63,8 +63,9 @@ One side panel with eight modes — speech recognition, image OCR, meeting notes
 ### Visualization
 
 - **Mindmap (⌘4)** — Render the document's heading/bullet hierarchy as an interactive node graph; edit nodes to update the document.
-- **Flowchart (⌘5)** — AI reinterprets the document as a flow diagram.
-- **Gantt (⌘6)** — Visualize the schedule/phases described in the document as a Gantt chart.
+- **Flowchart (⌘5)** — AI generates a BPMN-lite flow diagram from the document or a topic (an empty-state guide is shown before generation).
+- **Gantt (⌘6)** — AI breaks the document or a topic into a scheduled Gantt chart.
+- **AI generation (auto-generate modal)** — Flowchart/Gantt/Mindmap each open a generate modal: pick the **source** (*auto-analyze* the current document, or *direct input* of a topic — the current document is still passed as background context) and the **write mode** (*append to* or *replace* the document).
 
 ### Editor Experience
 
