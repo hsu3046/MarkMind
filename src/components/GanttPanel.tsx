@@ -74,7 +74,7 @@ export function GanttPanel({ content, onApply, onClose }: GanttPanelProps) {
         setLoading(true);
         setError(null);
         try {
-            const md = await generateGantt(sourceText, { startDate, detail }, 'Korean', controller.signal);
+            const md = await generateGantt({ source, content, topic: topic.trim() }, { startDate, detail }, 'Korean', controller.signal);
             onApply(md, mode);
             onClose();
         } catch (e) {
@@ -97,10 +97,10 @@ export function GanttPanel({ content, onApply, onClose }: GanttPanelProps) {
                 {/* 소스 — 문서가 있을 때만 선택지(없으면 주제 입력 고정) */}
                 {docNonEmpty && (
                     <div className="fc-opt-group">
-                        <span className="fc-opt-label">소스</span>
+                        <span className="fc-opt-label">생성 계획</span>
                         <div className="fc-opt-row">
-                            <label><input type="radio" name="gt-source" checked={source === 'doc'} onChange={() => setSource('doc')} /> 현재 문서 기반</label>
-                            <label><input type="radio" name="gt-source" checked={source === 'topic'} onChange={() => setSource('topic')} /> 주제 직접 입력</label>
+                            <label><input type="radio" name="gt-source" checked={source === 'doc'} onChange={() => setSource('doc')} /> 자동 분석</label>
+                            <label><input type="radio" name="gt-source" checked={source === 'topic'} onChange={() => setSource('topic')} /> 직접 입력</label>
                         </div>
                     </div>
                 )}
@@ -132,15 +132,12 @@ export function GanttPanel({ content, onApply, onClose }: GanttPanelProps) {
 
                 {/* 쓰기 모드 — 문서에 내용이 있을 때만 */}
                 {docNonEmpty && (
-                    <div className="fw-mode">
-                        <label>
-                            <input type="radio" name="gt-mode" checked={mode === 'append'} onChange={() => setMode('append')} />
-                            현재 문서에 이어붙이기
-                        </label>
-                        <label>
-                            <input type="radio" name="gt-mode" checked={mode === 'replace'} onChange={() => setMode('replace')} />
-                            현재 문서 교체
-                        </label>
+                    <div className="fc-opt-group">
+                        <span className="fc-opt-label">생성 방법</span>
+                        <div className="fc-opt-row">
+                            <label><input type="radio" name="gt-mode" checked={mode === 'append'} onChange={() => setMode('append')} /> 현재 문서에 추가</label>
+                            <label><input type="radio" name="gt-mode" checked={mode === 'replace'} onChange={() => setMode('replace')} /> 전체 교체</label>
+                        </div>
                     </div>
                 )}
 

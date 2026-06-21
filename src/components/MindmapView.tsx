@@ -347,6 +347,7 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, frame
             {frameworkOpen && (
                 <FrameworkPanel
                     initialTopic={(treeRef.current.label || stem).trim()}
+                    content={content}
                     docNonEmpty={charCount >= MIN_CHARS}
                     onApply={applyFramework}
                     onClose={() => onCloseFramework?.()}

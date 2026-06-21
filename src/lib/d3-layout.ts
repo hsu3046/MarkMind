@@ -157,7 +157,7 @@ function layoutSide(
         // node.y = left edge of this node's depth slot; node.x = slot centre (breadth)
         const posX = side === 'right' ? CENTER_X + n.y : CENTER_X - n.y - card.w;
         const posY = CENTER_Y + n.x - card.h / 2;
-        out.push(createReactFlowNode(n.data.node, posX, posY, n.depth, side, n.data.colorIndex, onExpand));
+        out.push(createReactFlowNode(n.data.node, posX, posY, n.depth, side, n.data.colorIndex, onExpand, card.w));
     });
 }
 
@@ -170,7 +170,7 @@ export function calculateD3Layout(
 
     const rootCard = estimateCard(rootNode, true);
     nodes.push(
-        createReactFlowNode(rootNode, CENTER_X - rootCard.w / 2, CENTER_Y - rootCard.h / 2, 0, 'center', 0, onExpand),
+        createReactFlowNode(rootNode, CENTER_X - rootCard.w / 2, CENTER_Y - rootCard.h / 2, 0, 'center', 0, onExpand, rootCard.w),
     );
 
     if (!rootNode.children || rootNode.children.length === 0) {
@@ -209,6 +209,7 @@ function createReactFlowNode(
     side: 'left' | 'right' | 'center',
     colorIndex: number,
     onExpand: (node: MindmapNode) => void,
+    cardW: number,
 ): Node {
     return {
         id: node.id,
@@ -220,6 +221,9 @@ function createReactFlowNode(
             level,
             side,
             colorIndex,
+            // 박스 width 를 레이아웃이 쓴 추정값으로 못 박는다 — 실제 렌더 width 가 estimate 와
+            // 정확히 일치해야 left side(우변=inner 정렬)의 어긋남이 사라진다(추정 오차 무력화).
+            cardW,
             hasChildren: (node.children?.length ?? 0) > 0,
             childrenCount: node.children?.length ?? 0,
             canExpand: level < 4,
