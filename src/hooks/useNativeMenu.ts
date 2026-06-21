@@ -36,6 +36,8 @@ export interface UseNativeMenuOptions {
     onSaveToDrive: () => void;
     onOpenRecent: (path: string) => void;
     onViewModeChange: (mode: ViewMode) => void;
+    onUndo: () => void;
+    onRedo: () => void;
 }
 
 /** View menu order = shortcut order (⌘1‥⌘6). */
@@ -130,8 +132,9 @@ export function useNativeMenu(opts: UseNativeMenuOptions) {
             const editMenu = await Submenu.new({
                 text: 'Edit',
                 items: [
-                    await PredefinedMenuItem.new({ item: 'Undo' }),
-                    await PredefinedMenuItem.new({ item: 'Redo' }),
+                    // 전역 content 스택(#74)에 연결 — webview native undo 대신 일원화.
+                    await MenuItem.new({ id: 'undo', text: 'Undo', accelerator: 'CmdOrCtrl+Z', action: () => h().onUndo() }),
+                    await MenuItem.new({ id: 'redo', text: 'Redo', accelerator: 'CmdOrCtrl+Shift+Z', action: () => h().onRedo() }),
                     await sep(),
                     await PredefinedMenuItem.new({ item: 'Cut' }),
                     await PredefinedMenuItem.new({ item: 'Copy' }),

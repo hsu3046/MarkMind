@@ -16,6 +16,7 @@ import { TableHeader } from '@tiptap/extension-table-header';
 import { Markdown } from 'tiptap-markdown';
 import { SearchAndReplace } from '@sereneinserenade/tiptap-search-and-replace';
 import { Typography } from '@tiptap/extension-typography';
+import { TextSelection } from '@tiptap/pm/state';
 import { InlineCheckbox } from '../extensions/InlineCheckbox';
 import { MarkdownTable } from '../extensions/MarkdownTable';
 import { createImageInline } from '../extensions/ImageInline';
@@ -27,7 +28,7 @@ import {
     Heading1, Heading2, Heading3, Heading4, Heading5, Heading6,
     List, ListOrdered, ListChecks,
     Quote, Code2, Link as LinkIcon, Table as TableIcon,
-    Undo2, Redo2, Minus,
+    Minus,
     IndentIncrease, IndentDecrease, Eye, EyeOff,
 } from 'lucide-react';
 
@@ -566,19 +567,7 @@ function RichToolbar({ editor }: { editor: Editor }) {
 
     return (
         <div className="rich-toolbar">
-            <ToolBtn
-                onClick={() => editor.chain().focus().undo().run()}
-                disabled={!editor.can().undo()}
-                icon={<Undo2 size={14} />}
-                title="Undo (⌘Z)"
-            />
-            <ToolBtn
-                onClick={() => editor.chain().focus().redo().run()}
-                disabled={!editor.can().redo()}
-                icon={<Redo2 size={14} />}
-                title="Redo (⌘⇧Z)"
-            />
-            <span className="rich-tool-divider" />
+            {/* undo/redo 는 App 전역 스택(⌘Z/⌘⇧Z·Edit 메뉴)으로 일원화 — 툴바 버튼 제거(#74). */}
             <ToolBtn
                 onClick={() => applyHeadingTo(editor, 1)}
                 active={editor.isActive('heading', { level: 1 })}
@@ -765,6 +754,8 @@ function RichEditor({
             StarterKit.configure({
                 heading: { levels: [1, 2, 3, 4, 5, 6] },
                 codeBlock: { HTMLAttributes: { class: 'hljs' } },
+                // undo/redo 끄기 — App 전역 content 스택으로 일원화(#74 유니버설 undo).
+                undoRedo: false,
             }),
             // autolink: false — `arena.ai` 같은 평문 URL 이 자동으로 링크되는 동작 끄기
             // (사용자가 명시적으로 toolbar Link 버튼/⌘K 로만 링크 생성)
@@ -874,13 +865,22 @@ function RichEditor({
         if (!editor) return;
         if (body === lastEmittedBodyRef.current) return;
         lastEmittedBodyRef.current = body;
-        const { from, to } = editor.state.selection;
-        editor.commands.setContent(fixEmphasis(joinBrokenTableRows(body)), { emitUpdate: false });
-        try {
-            editor.commands.setTextSelection({ from, to });
-        } catch {
-            /* 길이 변동으로 위치가 무효면 무시 */
-        }
+        // content 교체 시 커서를 변경 지점으로 — setContent 는 커서를 끝/처음으로 보낸다(tiptap
+        // #2216). 이전 from/to 를 그대로 쓰면 줄 수 변화로 ±줄 어긋남 → findDiffStart 로 두 doc 의
+        // 첫 변경 위치를 구해 거기에 둔다(마크다운 에디터의 공통 prefix 방식과 동일, #74).
+        const oldContent = editor.state.doc.content;
+        editor.chain()
+            .setContent(fixEmphasis(joinBrokenTableRows(body)), { emitUpdate: false })
+            .command(({ tr, dispatch }) => {
+                if (dispatch) {
+                    const diff = oldContent.findDiffStart(tr.doc.content);
+                    const size = tr.doc.content.size;
+                    const $pos = tr.doc.resolve(Math.max(0, Math.min(diff ?? size, size)));
+                    tr.setSelection(TextSelection.near($pos, -1));
+                }
+                return true;
+            })
+            .run();
     }, [body, editor]);
 
     // Rich Text 검색 — App-level SearchBar 가 window event 로 명령 전달.
@@ -959,7 +959,22 @@ function RichEditor({
         // fast-path: 길이 차이 ≥ 8 면 trim 비교 skip — 큰 문서 비용 절감
         const lenDiff = Math.abs(cleanedCurrent.length - body.length);
         if (lenDiff > 8 || cleanedCurrent.trim() !== body.trim()) {
-            editor.commands.setContent(fixEmphasis(joinBrokenTableRows(body)), { emitUpdate: false });
+            // content 교체 시 커서 보존 — setContent 는 커서를 끝/처음으로 보낸다(tiptap #2216).
+            // 이전 selection 을 그대로 쓰면 줄 수 변화로 ±줄 어긋남 → findDiffStart 로 두 doc 의
+            // 첫 변경 위치를 구해 거기에 커서를 둔다(마크다운 에디터의 공통 prefix 방식과 동일).
+            const oldContent = editor.state.doc.content;
+            editor.chain()
+                .setContent(fixEmphasis(joinBrokenTableRows(body)), { emitUpdate: false })
+                .command(({ tr, dispatch }) => {
+                    if (dispatch) {
+                        const diff = oldContent.findDiffStart(tr.doc.content);
+                        const size = tr.doc.content.size;
+                        const $pos = tr.doc.resolve(Math.max(0, Math.min(diff ?? size, size)));
+                        tr.setSelection(TextSelection.near($pos, -1));
+                    }
+                    return true;
+                })
+                .run();
         }
     }, [body, editor]);
 
