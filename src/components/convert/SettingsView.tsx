@@ -183,6 +183,9 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
         gemini: false,
         grok: false,
     });
+    // 구독 감지(비동기)가 끝났는지 — 끝나기 전엔 AIModelPicker 자동 보정을 막아
+    // "로딩 중"을 "미연결"로 오판해 구독 선택이 api_key 로 리셋되는 버그를 방지.
+    const [subReady, setSubReady] = useState(false);
 
     // 전역 모델 선택 — 기본 AI(텍스트) / 이미지 AI. 기본 설정 탭의 picker 와 연동.
     const [aiSel, setAiSel] = useState<AIModelSelection>(getAIModelSelection());
@@ -226,7 +229,12 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
             const mem = await loadUserMemory();
             setUserMemory(mem);
             setMemoryOrig(mem);
+        })();
+        // 구독 감지는 독립 IIFE — 위 체인(드라이브·메모리 로딩)의 지연/실패와 무관하게 빨리
+        // 확정시키고, 확정(subReady) 후에야 AIModelPicker 자동 보정을 허용(구독 선택 리셋 방지).
+        (async () => {
             setSubStatus(await detectSubscriptionLogins());
+            setSubReady(true);
         })();
     }, []);
 
@@ -909,6 +917,7 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                                       ? subStatus.grok
                                       : false
                         }
+                        ready={subReady}
                     />
 
                     <hr className="settings-divider" />
@@ -926,6 +935,7 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                         subscriptionAvailable={(c) =>
                             c === 'openai' ? subStatus.codex : c === 'grok' ? subStatus.grok : false
                         }
+                        ready={subReady}
                     />
 
                     <hr className="settings-divider" />
