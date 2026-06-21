@@ -13,6 +13,7 @@ import { useMemo } from 'react';
 import { ChartBarStacked } from 'lucide-react';
 import { parseGantt } from '../lib/gantt-parser';
 import type { GanttTask } from '../types/gantt';
+import { GanttPanel } from './GanttPanel';
 import './GanttView.css';
 
 // ── layout constants ─────────────────────────────────────────────────────────
@@ -45,10 +46,30 @@ interface GanttViewProps {
     content: string;
     fileName: string;
     onJumpToSource: (line: number) => void;
+    /** 마크다운 SSOT 쓰기 — AI 자동 생성 결과 반영(없으면 read-only). */
+    onChange?: (md: string) => void;
+    /** 모달(GanttPanel) 열림 — 메인 툴바 "자동 생성" 클릭을 App 이 토글. */
+    ganttPanelOpen?: boolean;
+    onCloseGanttPanel?: () => void;
 }
 
-export function GanttView({ content, fileName, onJumpToSource }: GanttViewProps) {
+export function GanttView({ content, fileName, onJumpToSource, onChange, ganttPanelOpen, onCloseGanttPanel }: GanttViewProps) {
     const data = useMemo(() => parseGantt(content, fileName), [content, fileName]);
+
+    // 자동 생성 모달 — 빈 상태/렌더 상태 양쪽에서 동일하게 떠야 하므로 변수로 만들어 둔다.
+    const panel = ganttPanelOpen && onChange ? (
+        <GanttPanel
+            content={content}
+            onApply={(md, applyMode) => {
+                // 교체=그대로, 이어붙이기=기존 본문 끝에 빈 줄 두고 추가(마크다운 SSOT).
+                const next = applyMode === 'replace'
+                    ? md
+                    : (content.trim() ? `${content.replace(/\s+$/, '')}\n\n${md}` : md);
+                onChange(next);
+            }}
+            onClose={() => onCloseGanttPanel?.()}
+        />
+    ) : null;
 
     const model = useMemo(() => {
         const { tasks, rangeStart, rangeEnd } = data;
@@ -97,6 +118,7 @@ export function GanttView({ content, fileName, onJumpToSource }: GanttViewProps)
                         종료일이 없으면 마일스톤으로 표시됩니다.
                     </p>
                 </div>
+                {panel}
             </div>
         );
     }
@@ -260,6 +282,7 @@ export function GanttView({ content, fileName, onJumpToSource }: GanttViewProps)
                     )}
                 </svg>
             </div>
+            {panel}
         </div>
     );
 }

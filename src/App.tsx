@@ -190,6 +190,8 @@ function App() {
   const [frameworkOpen, setFrameworkOpen] = useState(false);
   // 플로우차트 생성 — 메인 툴바 버튼이 FlowchartPanel 모달을 연다(마인드맵 frameworkOpen 과 동형).
   const [flowchartPanelOpen, setFlowchartPanelOpen] = useState(false);
+  // 간트 차트 생성 — 메인 툴바 버튼이 GanttPanel 모달을 연다(플로우차트와 동형).
+  const [ganttPanelOpen, setGanttPanelOpen] = useState(false);
   // macOS full screen 시 툴바 숨김 — Tauri 윈도우 fullscreen 상태 추적(진입/해제는 resize 동반)
   const [isFullscreen, setIsFullscreen] = useState(false);
   useEffect(() => {
@@ -1561,7 +1563,7 @@ function App() {
       case 'flowchart':
         return <>{mcpBanner}<FlowchartView content={content} fileName={fileName} onChange={updateContent} flowchartPanelOpen={flowchartPanelOpen} onCloseFlowchartPanel={() => setFlowchartPanelOpen(false)} /></>;
       case 'gantt':
-        return <>{mcpBanner}<GanttView content={content} fileName={fileName} onJumpToSource={handleJumpToSource} /></>;
+        return <>{mcpBanner}<GanttView content={content} fileName={fileName} onJumpToSource={handleJumpToSource} onChange={updateContent} ganttPanelOpen={ganttPanelOpen} onCloseGanttPanel={() => setGanttPanelOpen(false)} /></>;
     }
   };
 
@@ -1626,6 +1628,7 @@ function App() {
         onToggleAI={handleToggleAI}
         onOpenFramework={() => setFrameworkOpen(true)}
         onGenerateFlowchart={() => setFlowchartPanelOpen(true)}
+        onGenerateGantt={() => setGanttPanelOpen(true)}
         showRecent={isTauri()}
         aiPanelVisible={ai.panelVisible}
         nativeMenu={isTauri()}

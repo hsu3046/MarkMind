@@ -190,6 +190,8 @@ interface ToolbarProps {
     onOpenFramework?: () => void;
     /** 플로우차트 뷰 액션 — 플로우차트 AI 변환. viewMode==='flowchart' 일 때만 노출. */
     onGenerateFlowchart?: () => void;
+    /** 간트 뷰 액션 — 간트 차트 AI 생성. viewMode==='gantt' 일 때만 노출. */
+    onGenerateGantt?: () => void;
 }
 
 export function Toolbar({
@@ -213,6 +215,7 @@ export function Toolbar({
     onToggleAI,
     onOpenFramework,
     onGenerateFlowchart,
+    onGenerateGantt,
     showRecent,
     aiPanelVisible,
     nativeMenu,
@@ -525,6 +528,16 @@ export function Toolbar({
                         className="toolbar-text-btn outlined"
                         onClick={onGenerateFlowchart}
                         title="문서를 BPMN-lite 플로우차트로 AI 변환"
+                    >
+                        <Sparkles size={14} strokeWidth={1.5} />
+                        <span>자동 생성</span>
+                    </button>
+                )}
+                {viewMode === 'gantt' && (
+                    <button
+                        className="toolbar-text-btn outlined"
+                        onClick={onGenerateGantt}
+                        title="문서·주제를 프로젝트 일정(간트 차트)으로 AI 생성"
                     >
                         <Sparkles size={14} strokeWidth={1.5} />
                         <span>자동 생성</span>
