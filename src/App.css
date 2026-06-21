@@ -434,6 +434,17 @@ body {
   padding: 0 14px;
   font-weight: 600;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  margin-left: 10px; /* 자동 생성 등 앞 버튼과 간격 (toolbar-group gap 2px 보강) */
+}
+
+/* outlined — border 있는 변형(편집 토글 등). ai-agent solid 강조와 달리 윤곽선만(비강조). */
+.toolbar-text-btn.outlined {
+  border: 1px solid var(--border-primary);
+}
+.toolbar-text-btn.outlined.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: transparent;
 }
 
 .toolbar-text-btn.ai-agent:hover {

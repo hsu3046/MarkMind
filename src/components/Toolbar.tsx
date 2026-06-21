@@ -512,22 +512,22 @@ export function Toolbar({
             <div className="toolbar-group">
                 {viewMode === 'mindmap' && (
                     <button
-                        className="toolbar-text-btn"
+                        className="toolbar-text-btn outlined"
                         onClick={onOpenFramework}
-                        title="프레임워크(SWOT·5Whys 등)로 마인드맵 생성"
+                        title="프레임워크(SWOT·5Whys 등)로 마인드맵 자동 생성"
                     >
                         <Sparkles size={14} strokeWidth={1.5} />
-                        <span>마인드맵 생성</span>
+                        <span>자동 생성</span>
                     </button>
                 )}
                 {viewMode === 'flowchart' && (
                     <button
-                        className="toolbar-text-btn"
+                        className="toolbar-text-btn outlined"
                         onClick={onGenerateFlowchart}
                         title="문서를 BPMN-lite 플로우차트로 AI 변환"
                     >
                         <Sparkles size={14} strokeWidth={1.5} />
-                        <span>플로우차트 생성</span>
+                        <span>자동 생성</span>
                     </button>
                 )}
                 <button className={`toolbar-text-btn ai-agent${aiPanelVisible ? ' active' : ''}`} onClick={onToggleAI} title="AI 에이전트 (⌘⇧I)">
