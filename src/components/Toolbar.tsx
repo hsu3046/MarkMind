@@ -31,10 +31,10 @@ export function isPaneView(v: string | null | undefined): v is PaneView {
 const VIEW_MODES: { mode: ViewMode; label: string; shortcut: string; Icon: LucideIcon }[] = [
     { mode: 'editor', label: 'Markdown', shortcut: '⌘1', Icon: FileCode },
     { mode: 'preview', label: 'Rich Text', shortcut: '⌘2', Icon: FileText },
-    { mode: 'split', label: 'Split View', shortcut: '⌘3', Icon: Columns2 },
-    { mode: 'mindmap', label: 'Mindmap', shortcut: '⌘4', Icon: Share2 },
-    { mode: 'flowchart', label: 'Flowchart', shortcut: '⌘5', Icon: Network },
-    { mode: 'gantt', label: 'Gantt', shortcut: '⌘6', Icon: ChartBarStacked },
+    { mode: 'mindmap', label: 'Mindmap', shortcut: '⌘3', Icon: Share2 },
+    { mode: 'flowchart', label: 'Flowchart', shortcut: '⌘4', Icon: Network },
+    { mode: 'gantt', label: 'Gantt', shortcut: '⌘5', Icon: ChartBarStacked },
+    { mode: 'split', label: 'Split View', shortcut: '⌘6', Icon: Columns2 },
 ];
 
 /** 최근 파일 날짜 표시 — 오늘이면 시각, 아니면 YYYY.MM.DD. */

@@ -18,6 +18,7 @@
 use base64::Engine;
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Claude 호출 인증 소스 — UI 토글값. `#[serde(default)]` 로 기존 호출은 API 키 유지.
@@ -49,6 +50,17 @@ const CLAUDE_OAUTH_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const CLAUDE_TOKEN_URL: &str = "https://console.anthropic.com/v1/oauth/token";
 /// access token 만료 임박 시 미리 refresh 하는 버퍼 (5분, ms).
 const REFRESH_SKEW_MS: u64 = 5 * 60 * 1000;
+/// 만료 정보(expires_at)가 없을 때 토큰 캐시 유효시간 — keychain 재접근(인증창) 빈도 제한용.
+const CLAUDE_CACHE_FALLBACK_MS: u64 = 50 * 60 * 1000;
+
+/// Claude access token 세션 캐시. AI 호출마다 keychain `get_password`(Claude Code 가 만든
+/// **다른 앱 항목**이라 매번 macOS ACL 인증창) 하지 않도록, 유효 토큰을 만료 전까지 메모리에
+/// 보관 → 앱 실행당 1번만 읽는다("항상 허용"까지 누르면 사실상 0번). 만료/refresh 시에만 재읽기.
+struct CachedClaudeToken {
+    access_token: String,
+    expires_at: u64, // epoch ms — REFRESH_SKEW 적용해 만료 전이면 재사용
+}
+static CLAUDE_TOKEN_CACHE: Mutex<Option<CachedClaudeToken>> = Mutex::new(None);
 
 /// keychain JSON 의 `claudeAiOauth` 객체. 알려진 필드 외(scopes/subscriptionType 등)는
 /// `extra` 로 캡처해 write-back 시 **그대로 보존**한다.
@@ -134,6 +146,16 @@ fn write_claude_creds(creds: &ClaudeCreds) -> Result<(), String> {
 ///
 /// write-back 실패(권한 프롬프트 거부 등)는 치명적이지 않다 — 이번 호출용 토큰은 그대로 반환.
 pub async fn claude_access_token() -> Result<String, String> {
+    // 1) 세션 캐시 — 만료 전이면 keychain 접근 없이 반환(매 AI 호출 인증창 회피).
+    if let Ok(cache) = CLAUDE_TOKEN_CACHE.lock() {
+        if let Some(c) = cache.as_ref() {
+            if now_ms().saturating_add(REFRESH_SKEW_MS) < c.expires_at {
+                return Ok(c.access_token.clone());
+            }
+        }
+    }
+
+    // 2) 캐시 없음/만료 — 여기서만 get_password(인증창은 세션당 1회, "항상 허용" 시 0회).
     let mut creds = read_claude_creds().ok_or_else(|| {
         "Claude Code 로그인을 찾을 수 없습니다. 터미널에서 `claude` 로 로그인하세요.".to_string()
     })?;
@@ -142,28 +164,40 @@ pub async fn claude_access_token() -> Result<String, String> {
         Some(exp) => now_ms().saturating_add(REFRESH_SKEW_MS) >= exp,
         None => false, // 만료 정보가 없으면 일단 보유 토큰으로 시도
     };
-    if !needs_refresh {
-        return Ok(creds.claude_ai_oauth.access_token.clone());
+
+    let token = if !needs_refresh {
+        creds.claude_ai_oauth.access_token.clone()
+    } else {
+        let refresh_token = creds
+            .claude_ai_oauth
+            .refresh_token
+            .clone()
+            .ok_or_else(|| "refresh token 이 없습니다. 터미널에서 `claude` 재로그인하세요.".to_string())?;
+        let refreshed = refresh_claude_token(&refresh_token).await?;
+        creds.claude_ai_oauth.access_token = refreshed.access_token.clone();
+        if refreshed.refresh_token.is_some() {
+            creds.claude_ai_oauth.refresh_token = refreshed.refresh_token;
+        }
+        if refreshed.expires_in > 0 {
+            creds.claude_ai_oauth.expires_at = Some(now_ms() + refreshed.expires_in * 1000);
+        }
+        let _ = write_claude_creds(&creds); // best-effort
+        refreshed.access_token
+    };
+
+    // 3) 세션 캐시에 저장 — 만료 정보가 없으면 fallback TTL 로(드문 경우).
+    let cache_exp = match creds.claude_ai_oauth.expires_at {
+        Some(e) if e > 0 => e,
+        _ => now_ms() + CLAUDE_CACHE_FALLBACK_MS,
+    };
+    if let Ok(mut cache) = CLAUDE_TOKEN_CACHE.lock() {
+        *cache = Some(CachedClaudeToken {
+            access_token: token.clone(),
+            expires_at: cache_exp,
+        });
     }
 
-    let refresh_token = creds
-        .claude_ai_oauth
-        .refresh_token
-        .clone()
-        .ok_or_else(|| "refresh token 이 없습니다. 터미널에서 `claude` 재로그인하세요.".to_string())?;
-
-    let refreshed = refresh_claude_token(&refresh_token).await?;
-
-    creds.claude_ai_oauth.access_token = refreshed.access_token.clone();
-    if refreshed.refresh_token.is_some() {
-        creds.claude_ai_oauth.refresh_token = refreshed.refresh_token;
-    }
-    if refreshed.expires_in > 0 {
-        creds.claude_ai_oauth.expires_at = Some(now_ms() + refreshed.expires_in * 1000);
-    }
-    let _ = write_claude_creds(&creds); // best-effort
-
-    Ok(refreshed.access_token)
+    Ok(token)
 }
 
 async fn refresh_claude_token(refresh_token: &str) -> Result<RefreshResponse, String> {

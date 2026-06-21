@@ -76,7 +76,11 @@ export function useConverter() {
         })();
         return () => {
             mounted = false;
-            if (unlistenRef.current) unlistenRef.current();
+            // unlisten 은 async(_unlisten) — 이미 해제된 listener 재해제 race 의 reject 가
+            // unhandled 가 되지 않게 catch + ref 비워 중복 호출 차단.
+            const un = unlistenRef.current;
+            unlistenRef.current = null;
+            if (un) Promise.resolve(un()).catch(() => { /* listener race */ });
         };
     }, []);
 

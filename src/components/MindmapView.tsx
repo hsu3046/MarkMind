@@ -203,6 +203,17 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, frame
         commitTree(clone);
     }, [commitTree]);
 
+    /** 형제 노드 추가(Enter) — 선택 노드 바로 다음에 삽입 후 편집. 루트는 형제가 없어 무시(#87). */
+    const addSibling = useCallback((id: string) => {
+        const clone = structuredClone(treeRef.current);
+        const { parent, index } = findParentById(clone, id);
+        if (!parent || index < 0) return;
+        parent.children.splice(index + 1, 0, { id: '', label: '새 아이디어', type: 'sub_branch', children: [] });
+        const newTree = commitTree(clone);
+        const newId = `${parent.id}/${index + 1}`;
+        if (findNodeById(newTree, newId)) setEditingId(newId);
+    }, [commitTree]);
+
     /** Outliner reorder (up/down/indent/outdent). Re-selects the moved node by
      *  its new path-based id so highlight/keyboard stay on it after re-parse. */
     const moveNode = useCallback((id: string, op: ReorderOp) => {
@@ -327,6 +338,10 @@ export function MindmapView({ content, onChange, fileName, onJumpToSource, frame
                     editing={editingId !== null}
                     onSelect={setSelectedId}
                     onReorder={readOnly ? undefined : moveNode}
+                    onAddChild={readOnly ? undefined : addChild}
+                    onAddSibling={readOnly ? undefined : addSibling}
+                    onDelete={readOnly ? undefined : deleteNode}
+                    onEdit={readOnly ? undefined : setEditingId}
                 />
             </div>
             {expandError && (

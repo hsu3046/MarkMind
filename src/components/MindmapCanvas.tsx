@@ -23,7 +23,7 @@ import {
     type Edge,
     type NodeProps,
 } from '@xyflow/react';
-import { Plus, Pencil, Trash2, SquareArrowOutUpRight, ChevronUp, ChevronDown, IndentIncrease, IndentDecrease, Sparkles, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, SquareArrowOutUpRight, ChevronUp, ChevronDown, CornerRightUp, CornerLeftDown, Sparkles, Loader2 } from 'lucide-react';
 import type { MindmapNode } from '../types/mindmap';
 import type { ReorderOp } from '../lib/mindmapReorder';
 import { PALETTE } from '../lib/d3-layout';
@@ -117,7 +117,11 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
     }, [d]);
 
     return (
-        <div className={`mm-node${isRoot ? ' mm-root' : ''}${d.isSelected ? ' mm-selected' : ''}`} style={{ width: d.cardW, borderColor: thinBorder, background, '--mm-stripe': stripe } as CSSProperties}>
+        <div
+            className={`mm-node${isRoot ? ' mm-root' : ''}${d.isSelected ? ' mm-selected' : ''}${d.isExpanding ? ' mm-busy' : ''}`}
+            style={{ width: d.cardW, borderColor: thinBorder, background, '--mm-stripe': stripe } as CSSProperties}
+            onDoubleClick={(e) => { e.stopPropagation(); if (!d.isEditing && !d.readOnly) d.onStartEdit?.(); }}
+        >
             <Handle
                 id="left"
                 type={isRoot ? 'source' : d.side === 'left' ? 'source' : 'target'}
@@ -183,11 +187,11 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
                             <button title="아래로 이동 (↓)" disabled={!d.canDown} onClick={(e) => { e.stopPropagation(); d.onMove?.('down'); }}>
                                 <ChevronDown size={12} />
                             </button>
-                            <button title="들여쓰기 (Tab)" disabled={!d.canIndent} onClick={(e) => { e.stopPropagation(); d.onMove?.('indent'); }}>
-                                <IndentIncrease size={12} />
+                            <button title="하위 레벨로" disabled={!d.canIndent} onClick={(e) => { e.stopPropagation(); d.onMove?.('indent'); }}>
+                                <CornerLeftDown size={12} />
                             </button>
-                            <button title="내어쓰기 (⇧Tab)" disabled={!d.canOutdent} onClick={(e) => { e.stopPropagation(); d.onMove?.('outdent'); }}>
-                                <IndentDecrease size={12} />
+                            <button title="상위 레벨로" disabled={!d.canOutdent} onClick={(e) => { e.stopPropagation(); d.onMove?.('outdent'); }}>
+                                <CornerRightUp size={12} />
                             </button>
                             <span className="mm-toolbar-sep" aria-hidden="true" />
                         </>
@@ -214,6 +218,12 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
                     )}
                 </div>
             )}
+            {d.isExpanding && (
+                <div className="mm-busy-overlay">
+                    <Loader2 size={18} className="spinning" />
+                    <span>노드 생성중…</span>
+                </div>
+            )}
         </div>
     );
 });
@@ -232,9 +242,14 @@ interface MindmapCanvasProps {
     editing?: boolean;
     onSelect?: (id: string | null) => void;
     onReorder?: (id: string, op: ReorderOp) => void;
+    /** 선택 노드 키보드 조작(#87) — Tab=자식 / Enter=형제 / Delete=삭제 / F2=편집. */
+    onAddChild?: (id: string) => void;
+    onAddSibling?: (id: string) => void;
+    onDelete?: (id: string) => void;
+    onEdit?: (id: string) => void;
 }
 
-function MindmapCanvasInner({ nodes, edges, fitKey, selectedId, editing, onSelect, onReorder }: MindmapCanvasProps) {
+function MindmapCanvasInner({ nodes, edges, fitKey, selectedId, editing, onSelect, onReorder, onAddChild, onAddSibling, onDelete, onEdit }: MindmapCanvasProps) {
     // Refs so the once-bound document listener always sees fresh values.
     const selRef = useRef(selectedId);
     selRef.current = selectedId;
@@ -242,10 +257,20 @@ function MindmapCanvasInner({ nodes, edges, fitKey, selectedId, editing, onSelec
     editingRef.current = editing;
     const reorderRef = useRef(onReorder);
     reorderRef.current = onReorder;
+    const addChildRef = useRef(onAddChild);
+    addChildRef.current = onAddChild;
+    const addSiblingRef = useRef(onAddSibling);
+    addSiblingRef.current = onAddSibling;
+    const deleteRef = useRef(onDelete);
+    deleteRef.current = onDelete;
+    const editRef = useRef(onEdit);
+    editRef.current = onEdit;
+    const selectRef = useRef(onSelect);
+    selectRef.current = onSelect;
 
-    // Outliner keyboard: ↑/↓ reorder siblings, Tab/⇧Tab indent/outdent the
-    // selected node. Ignored while editing, when an input is focused, or with a
-    // modifier held (those belong to the app's global shortcuts).
+    // 선택 노드 키보드(#87): Tab=자식, Enter=형제, Delete=삭제, F2=편집, Esc=해제,
+    // ↑/↓=형제 순서. 편집 중·input 포커스·modifier 시엔 양보(앱 전역 단축키).
+    // (레벨 변경 indent/outdent 의 Tab/⇧Tab 단축키는 제거 — 서브툴바 버튼으로만.)
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             const id = selRef.current;
@@ -253,13 +278,16 @@ function MindmapCanvasInner({ nodes, edges, fitKey, selectedId, editing, onSelec
             if (e.metaKey || e.ctrlKey || e.altKey) return;
             const t = e.target as HTMLElement | null;
             if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-            let op: ReorderOp | null = null;
-            if (e.key === 'ArrowUp') op = 'up';
-            else if (e.key === 'ArrowDown') op = 'down';
-            else if (e.key === 'Tab') op = e.shiftKey ? 'outdent' : 'indent';
-            if (!op) return;
-            e.preventDefault();
-            reorderRef.current?.(id, op);
+            switch (e.key) {
+                case 'Tab': e.preventDefault(); addChildRef.current?.(id); break;
+                case 'Enter': e.preventDefault(); addSiblingRef.current?.(id); break;
+                case 'Delete': e.preventDefault(); deleteRef.current?.(id); break;
+                case 'F2': e.preventDefault(); editRef.current?.(id); break;
+                case 'Escape': e.preventDefault(); selectRef.current?.(null); break;
+                case 'ArrowUp': e.preventDefault(); reorderRef.current?.(id, 'up'); break;
+                case 'ArrowDown': e.preventDefault(); reorderRef.current?.(id, 'down'); break;
+                default: break;
+            }
         };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
@@ -281,6 +309,7 @@ function MindmapCanvasInner({ nodes, edges, fitKey, selectedId, editing, onSelec
             fitViewOptions={{ padding: 0.2, maxZoom: 1.2 }}
             minZoom={0.1}
             maxZoom={2.5}
+            zoomOnDoubleClick={false}
             proOptions={{ hideAttribution: true }}
         >
             <Background gap={20} size={1} />

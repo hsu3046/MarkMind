@@ -124,6 +124,9 @@ Output rules:
 Apply the user's request in <instructions> to the document in <document>. The request may be
 any kind of edit — improving clarity, expanding or adding sections, restructuring, summarizing,
 changing tone, converting to tables/lists, and so on. Carry it out faithfully.
+If <instructions> is empty or absent (e.g. the quick "개선" action on a text selection), default
+to a LIGHT POLISH: improve clarity, flow, and naturalness while PRESERVING the original meaning,
+length, and structure — do not add, remove, reorder, or restructure content.
 
 Output rules:
 - Output ONLY the complete edited document, beginning with its first character. No preamble,

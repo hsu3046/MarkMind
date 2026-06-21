@@ -48,6 +48,10 @@ interface AIPanelProps {
     onLanguageChange: (lang: TranslateLanguage) => void;
     onNotesTemplateChange: (t: string) => void;
     onRun: (content: string, prompt?: string) => void;
+    /** "인용" — App 이 선택을 프롬프트에 마커로 주입(key 변경 시 append). */
+    injectedQuote?: { marker: string; key: number } | null;
+    /** 프롬프트 변경 알림 — App 이 살아있는 인용 마커를 하이라이트로 동기화. */
+    onPromptChange?: (prompt: string) => void;
     /** 진행 중 AI 호출 중지(JS-only). */
     onStop: () => void;
     onShowSettings: () => void;
@@ -121,6 +125,8 @@ export function AIPanel({
     onConsumeImageGenRefDropped,
     conversationHistory,
     onNewThread,
+    injectedQuote,
+    onPromptChange,
 }: AIPanelProps) {
     const [prompt, setPrompt] = useState('');
     const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -130,6 +136,19 @@ export function AIPanel({
             promptRef.current.focus();
         }
     }, [mode]);
+
+    // "인용" 주입 — App 에서 선택을 마커로 넣음. key 변경 시 프롬프트 끝에 마커 append + 포커스.
+    useEffect(() => {
+        if (!injectedQuote) return;
+        setPrompt((p) => (p.trim() ? p.replace(/\s+$/, '') + ' ' : '') + injectedQuote.marker + ' ');
+        promptRef.current?.focus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [injectedQuote?.key]);
+
+    // 프롬프트 변경 시 App 에 알림 → 살아있는 인용 마커의 하이라이트 동기화.
+    useEffect(() => {
+        onPromptChange?.(prompt);
+    }, [prompt, onPromptChange]);
 
     if (!visible) return null;
 

@@ -44,10 +44,10 @@ export interface UseNativeMenuOptions {
 const VIEW_ITEMS: { mode: ViewMode; label: string; accelerator: string }[] = [
     { mode: 'editor', label: 'Markdown', accelerator: 'CmdOrCtrl+1' },
     { mode: 'preview', label: 'Rich Text', accelerator: 'CmdOrCtrl+2' },
-    { mode: 'split', label: 'Split View', accelerator: 'CmdOrCtrl+3' },
-    { mode: 'mindmap', label: 'Mindmap', accelerator: 'CmdOrCtrl+4' },
-    { mode: 'flowchart', label: 'Flowchart', accelerator: 'CmdOrCtrl+5' },
-    { mode: 'gantt', label: 'Gantt', accelerator: 'CmdOrCtrl+6' },
+    { mode: 'mindmap', label: 'Mindmap', accelerator: 'CmdOrCtrl+3' },
+    { mode: 'flowchart', label: 'Flowchart', accelerator: 'CmdOrCtrl+4' },
+    { mode: 'gantt', label: 'Gantt', accelerator: 'CmdOrCtrl+5' },
+    { mode: 'split', label: 'Split View', accelerator: 'CmdOrCtrl+6' },
 ];
 
 /** 최근 파일 날짜 — 오늘이면 시각, 아니면 YYYY.MM.DD (툴바와 동일 포맷). */

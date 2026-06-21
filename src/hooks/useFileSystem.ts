@@ -228,9 +228,10 @@ export function useFileSystem(
 
     return () => {
       cancelled = true;
+      // unlisten async — 이미 해제된 listener 재해제 race 의 unhandled rejection 차단.
       cleanupPromise.then((unlisten) => {
-        if (unlisten) unlisten();
-      });
+        if (unlisten) Promise.resolve(unlisten()).catch(() => { /* listener race */ });
+      }).catch(() => { /* setup 실패 */ });
     };
   }, []);
 
@@ -502,8 +503,14 @@ export function useFileSystem(
         setFileState(prev => ({ ...prev, fileName: finalName, filePath: newPath }));
       } catch (err) {
         console.error('Failed to rename file:', err);
-        // Fallback: just update the display name
-        setFileState(prev => ({ ...prev, fileName: finalName }));
+        // display name 만 바꾸면 filePath 는 옛 경로라 저장 시 이름이 복원돼 "수정→저장→원복"
+        // 착시를 부른다(조용한 실패). 이름을 그대로 두고 실패를 사용자에게 알린다.
+        try {
+          const { message } = await import('@tauri-apps/plugin-dialog');
+          await message(`파일 이름을 변경할 수 없습니다.\n\n${String(err)}`, { title: 'MarkMind', kind: 'error' });
+        } catch {
+          // dialog 자체 실패 시엔 console 로그만 유지
+        }
       }
     } else {
       // Not saved yet or web mode: just update the display name

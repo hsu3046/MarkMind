@@ -35,6 +35,34 @@
     box-shadow: 0 0 0 2px var(--accent), var(--shadow-md);
 }
 
+/* AI 확장 중 — 노드 전체에 명확한 로딩 표시(서브툴바의 12px 스피너만으론 작아 안 보임).
+   accent 링 + 반투명 오버레이(스피너 + "AI 확장 중") 로 진행을 분명히 한다. */
+.mm-node.mm-busy {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 2px var(--accent-subtle), var(--shadow-sm);
+}
+.mm-busy-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    background: rgba(255, 255, 255, 0.86);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+    z-index: 3;
+}
+[data-theme="dark"] .mm-busy-overlay {
+    background: rgba(28, 28, 34, 0.84);
+}
+.mm-busy-overlay .spinning {
+    width: 18px;
+    height: 18px;
+}
+
 /* left accent stripe — clean rectangle (::before, no border miter), level-shaded */
 .mm-node::before {
     content: '';

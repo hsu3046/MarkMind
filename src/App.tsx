@@ -17,6 +17,7 @@ import { OutlinePanel } from './components/OutlinePanel';
 import { RecentFilesPanel } from './components/RecentFilesPanel';
 import { AIPanel } from './components/AIPanel';
 import { FloatingAIBar } from './components/FloatingAIBar';
+import { quoteRange } from './lib/quoteMatch';
 import { InlineDiffView } from './components/InlineDiffView';
 import { BeforeAfterView } from './components/BeforeAfterView';
 import { AuthCallback } from './components/AuthCallback';
@@ -208,12 +209,12 @@ function App() {
       const sync = async () => setIsFullscreen(await win.isFullscreen());
       await sync();
       const un = await win.onResized(sync);
-      if (disposed) un();
+      if (disposed) Promise.resolve(un()).catch(() => { /* listener race */ });
       else unlisten = un;
     })();
     return () => {
       disposed = true;
-      unlisten?.();
+      if (unlisten) Promise.resolve(unlisten()).catch(() => { /* listener race */ });
     };
   }, []);
   const [driveBrowserMode, setDriveBrowserMode] = useState<'open' | 'save' | null>(null);
@@ -418,6 +419,13 @@ function App() {
   const [selectedText, setSelectedText] = useState('');
   const [selectionCoords, setSelectionCoords] = useState<{ top: number; left: number } | null>(null);
   const aiSelectionRef = useRef<{ fullContent: string; selectedText: string } | null>(null);
+  // "인용" — 선택 시 라인 라벨(Editor) 추적 + 프롬프트 마커→인용 치환용 맵(UI=라인, 전송=인용).
+  const selectionLineLabelRef = useRef<string | undefined>(undefined);
+  const quoteMapRef = useRef<Map<string, string>>(new Map());
+  const quoteKeyRef = useRef(0);
+  const [injectedQuote, setInjectedQuote] = useState<{ marker: string; key: number } | null>(null);
+  // 인용된 텍스트(프롬프트에 마커가 살아있는 동안) — Editor/Preview 에 영구 하이라이트.
+  const [quotedTexts, setQuotedTexts] = useState<string[]>([]);
 
   // MCP propose_edit — Claude 수정 제안을 큐에 쌓아 head 부터 순차 검토(#39).
   // 무인증 localhost 라 여러 클라이언트(Claude Desktop + Cursor 등)가 같은 창에 동시
@@ -519,12 +527,12 @@ function App() {
           console.error('[App] 화자 정리 후 리로드 실패:', err);
         }
       });
-      if (disposed) { fn(); return; }
+      if (disposed) { Promise.resolve(fn()).catch(() => { /* listener race */ }); return; }
       unlisten = fn;
     })();
     return () => {
       disposed = true;
-      if (unlisten) unlisten();
+      if (unlisten) Promise.resolve(unlisten()).catch(() => { /* listener race */ });
     };
   }, [openFromRecent]);
 
@@ -635,7 +643,7 @@ function App() {
           }
         });
         // 등록 완료 전에 cleanup 됐으면(StrictMode/리렌더) 즉시 해제 — 리스너 누수/중복 방지
-        if (disposed) { fn(); return; }
+        if (disposed) { Promise.resolve(fn()).catch(() => { /* listener race */ }); return; }
         unlisten = fn;
       } catch (err) {
         console.warn('[App] drop listener 등록 실패:', err);
@@ -643,7 +651,7 @@ function App() {
     })();
     return () => {
       disposed = true;
-      if (unlisten) unlisten();
+      if (unlisten) Promise.resolve(unlisten()).catch(() => { /* listener race */ });
     };
     // mount 시 1회만 등록 — 핸들러 내부는 ref/setState 로만 접근(외부 의존 없음)
   }, []);
@@ -744,7 +752,17 @@ function App() {
         ai.setIsLoading(false);
       }
     } else {
-      await ai.runAI(runContent, runPrompt);
+      // "인용" 마커([라인 N-M]/[선택])를 실제 인용으로 펼쳐 전송(UI=라인, 전송=인용).
+      let expanded = runPrompt;
+      if (expanded && quoteMapRef.current.size > 0) {
+        quoteMapRef.current.forEach((quoteText, marker) => {
+          if (expanded!.includes(marker)) {
+            const quoted = quoteText.split('\n').map((l) => `> ${l}`).join('\n');
+            expanded = expanded!.split(marker).join(`\n\n${quoted}\n`);
+          }
+        });
+      }
+      await ai.runAI(runContent, expanded);
     }
   }, [ai, converter, fileName]);
 
@@ -757,10 +775,24 @@ function App() {
     ai.setResponse(null);
   }, [ai, updateContent]);
 
-  const handleSelectionChange = useCallback((text: string, coords: { top: number; left: number } | null) => {
-    // FloatingAIBar(선택 시 AI 액션 팝업) 용 — selection 텍스트/좌표 추적.
+  const handleSelectionChange = useCallback((text: string, coords: { top: number; left: number } | null, lineLabel?: string) => {
+    // FloatingAIBar(선택 시 AI 액션 팝업) 용 — selection 텍스트/좌표/라인 라벨 추적.
     setSelectedText(text);
     setSelectionCoords(coords);
+    // Editor 는 lineLabel 직접 전달. Rich Text 는 줄 정보가 없어, 마크다운 content 에서 선택
+    // 텍스트 위치를 찾아 줄 번호를 계산한다(서식 선택도 부분 매칭으로 근사, 못 찾으면 '선택').
+    let label = lineLabel;
+    if (!label && text) {
+      const md = latestContentRef.current;
+      // 줄바꿈 유연 매칭(quoteRange) — Rich Text 의 '\n' 과 마크다운 '\n\n' 차이를 흡수(여러 단락도).
+      const r = quoteRange(md, text);
+      if (r) {
+        const startLine = md.slice(0, r.from).split('\n').length;
+        const endLine = md.slice(0, r.to).split('\n').length;
+        label = startLine === endLine ? `Line ${startLine}` : `Line ${startLine}-${endLine}`;
+      }
+    }
+    selectionLineLabelRef.current = label;
   }, []);
 
   // 클립보드 이미지 붙여넣기(CodeMirror) → $TEMP 에 임시 저장 후 절대경로 `![]()` 삽입(#56).
@@ -898,6 +930,29 @@ function App() {
     setSelectionCoords(null);
   }, [ai, hasEditorPane, content]);
 
+  // "인용" — 선택을 프롬프트 창에 [라인 N-M]/[선택] 마커로 넣고(UI), 실제 전송 시 인용으로 펼침.
+  const handleQuote = useCallback((text: string) => {
+    const label = selectionLineLabelRef.current ?? 'Selection';
+    const marker = `[${label}]`;
+    quoteMapRef.current.set(marker, text);
+    quoteKeyRef.current += 1;
+    setInjectedQuote({ marker, key: quoteKeyRef.current });
+    ai.setMode('improve');
+    if (!ai.panelVisible) ai.setPanelVisible(true);
+    setSelectedText('');
+    setSelectionCoords(null);
+  }, [ai]);
+
+  // 프롬프트(개선 입력창) 변경 → 현재 살아있는 인용 마커의 텍스트만 하이라이트로 동기화.
+  // 마커를 지우거나 실행 후 setPrompt('') 되면 자동으로 빈 배열 → 하이라이트 사라짐.
+  const handlePromptChange = useCallback((prompt: string) => {
+    const texts: string[] = [];
+    quoteMapRef.current.forEach((text, marker) => {
+      if (prompt.includes(marker)) texts.push(text);
+    });
+    setQuotedTexts(texts);
+  }, []);
+
   // Track opened files in recent list
   useEffect(() => {
     if (filePath) {
@@ -947,13 +1002,13 @@ function App() {
         ]);
       });
 
-      if (cancelled) u();
+      if (cancelled) Promise.resolve(u()).catch(() => { /* listener race */ });
       else unlisten = u;
     })();
 
     return () => {
       cancelled = true;
-      if (unlisten) unlisten();
+      if (unlisten) Promise.resolve(unlisten()).catch(() => { /* listener race */ });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1308,19 +1363,19 @@ function App() {
             break;
           case '3':
             e.preventDefault();
-            setViewMode('split');
+            setViewMode('mindmap');
             break;
           case '4':
             e.preventDefault();
-            setViewMode('mindmap');
+            setViewMode('flowchart');
             break;
           case '5':
             e.preventDefault();
-            setViewMode('flowchart');
+            setViewMode('gantt');
             break;
           case '6':
             e.preventDefault();
-            setViewMode('gantt');
+            setViewMode('split');
             break;
           case '=':
           case '+':
@@ -1581,6 +1636,7 @@ function App() {
         editable={editable}
         onSelectionChange={editable ? handleSelectionChange : undefined}
         onImagePaste={editable ? handleImagePaste : undefined}
+        quotedTexts={quotedTexts}
       />
     );
   };
@@ -1602,6 +1658,8 @@ function App() {
             onChange={editable ? updateContent : undefined}
             banner={mcpBanner}
             filePath={filePath}
+            onSelectionChange={editable ? handleSelectionChange : undefined}
+            quotedTexts={quotedTexts}
           />
         );
       case 'mindmap':
@@ -1786,12 +1844,13 @@ function App() {
           )}
         </div>
 
-        {/* Floating AI Bar — selection 좌표가 CodeMirror 기준이라 active editor 일 때만(#64). */}
-        {activeView === 'editor' && (
+        {/* Floating AI Bar — Editor(CodeMirror) + Rich Text(Tiptap) 선택 시. 둘 다 좌표는 viewport 기준. */}
+        {(activeView === 'editor' || activeView === 'preview') && (
           <FloatingAIBar
             selectedText={selectedText}
             coords={selectionCoords}
             onAction={handleFloatingAction}
+            onQuote={handleQuote}
           />
         )}
 
@@ -1812,6 +1871,8 @@ function App() {
           openEditorWindow={handleOpenInCurrentEditor}
           onNotesTemplateChange={ai.setNotesTemplate}
           onRun={handleAIRun}
+          injectedQuote={injectedQuote}
+          onPromptChange={handlePromptChange}
           onStop={ai.stopAI}
           onShowSettings={() => setSettingsVisible(true)}
           converter={converter}
