@@ -40,6 +40,14 @@ async function tauriWriteTextFile() {
 // 스코프라 창마다 독립.
 const recentOpenByPath = new Map<string, number>();
 
+/** 두 문자열의 공통 prefix 길이 — undo/redo 후 에디터 커서를 변경 지점으로 옮기는 데 사용(#74). */
+function commonPrefixLength(a: string, b: string): number {
+    const n = Math.min(a.length, b.length);
+    let i = 0;
+    while (i < n && a.charCodeAt(i) === b.charCodeAt(i)) i++;
+    return i;
+}
+
 export function useFileSystem(
   onFileOpened?: () => void,
   /** 저장 직전 본문 변환 (Tauri 저장 경로). 예: 임시 이미지 → assets 복사 + 경로 치환(#56).
@@ -58,6 +66,51 @@ export function useFileSystem(
   const fileNameRef = useRef(fileState.fileName);
   const lanModifiedRef = useRef(fileState.lanModified);
   const transformOnSaveRef = useRef(transformOnSave);
+
+  // ─── Undo/Redo history (#74) — 유니버설(모든 뷰 공통) content 스냅샷 단일 스택.
+  // 모든 편집의 단일 관문 updateContent 에서 push, 전역 ⌘Z/⌘⇧Z(App)가 undo/redo.
+  // 타이핑은 600ms idle 경계로 한 묶음(coalescing). 파일 열기/새 파일은 clearHistory.
+  const undoStackRef = useRef<string[]>([]);
+  const redoStackRef = useRef<string[]>([]);
+  const lastPushRef = useRef(0);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  const clearHistory = useCallback(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    lastPushRef.current = 0;
+    setCanUndo(false);
+    setCanRedo(false);
+  }, []);
+
+  // undo/redo 는 복원된 content 와 변경 지점(cursorOffset)을 반환 — 호출부(App)가 에디터
+  // 커서를 그 지점으로 옮겨 "커서 점프"를 막는다. 스택이 비면 null.
+  const undo = useCallback((): { content: string; cursorOffset: number } | null => {
+    if (undoStackRef.current.length === 0) return null;
+    const current = contentRef.current;
+    redoStackRef.current.push(current);
+    const prev = undoStackRef.current.pop()!;
+    contentRef.current = prev;
+    lastPushRef.current = 0; // 되돌린 직후 편집은 새 묶음으로
+    setFileState((p) => ({ ...p, content: prev, isDirty: true }));
+    setCanUndo(undoStackRef.current.length > 0);
+    setCanRedo(true);
+    return { content: prev, cursorOffset: commonPrefixLength(current, prev) };
+  }, []);
+
+  const redo = useCallback((): { content: string; cursorOffset: number } | null => {
+    if (redoStackRef.current.length === 0) return null;
+    const current = contentRef.current;
+    undoStackRef.current.push(current);
+    const next = redoStackRef.current.pop()!;
+    contentRef.current = next;
+    lastPushRef.current = 0;
+    setFileState((p) => ({ ...p, content: next, isDirty: true }));
+    setCanUndo(true);
+    setCanRedo(redoStackRef.current.length > 0);
+    return { content: next, cursorOffset: commonPrefixLength(current, next) };
+  }, []);
 
   useEffect(() => {
     contentRef.current = fileState.content;
@@ -141,6 +194,7 @@ export function useFileSystem(
           const name = path.split('/').pop() || 'Untitled.md';
           if (!cancelled) {
             setFileState({ content, filePath: path, fileName: name, isDirty: false });
+            clearHistory(); // 새 문서 로드 — undo 가 이전 파일로 새지 않게
             onFileOpened?.();
           }
         } catch (err) {
@@ -218,6 +272,17 @@ export function useFileSystem(
   }, []);
 
   const updateContent = useCallback((newContent: string) => {
+    // Undo 스택 — 변경 직전 content 를 push. 연속 입력(타이핑)은 600ms idle 경계로 한
+    // 묶음(coalescing): idle 후 첫 변경에서만 스냅샷 → 그 묶음을 한 번에 undo.
+    const now = Date.now();
+    if (now - lastPushRef.current > 600) {
+      undoStackRef.current.push(contentRef.current);
+      if (undoStackRef.current.length > 200) undoStackRef.current.shift();
+      redoStackRef.current = [];
+      setCanUndo(true);
+      setCanRedo(false);
+    }
+    lastPushRef.current = now;
     // contentRef 동기 갱신 — editor-action(replace_selection/insert_text)이
     // updateContent 경유로 content 를 바꾼 직후 도착하는 str_replace 가 stale 한
     // 옛 content 로 계산하지 않도록(단일 content 소스 동기화). useEffect 갱신은 비동기.
@@ -240,6 +305,7 @@ export function useFileSystem(
             fileName: file.name,
             isDirty: false,
           });
+          clearHistory();
           onFileOpened?.();
         }
         return;
@@ -266,6 +332,7 @@ export function useFileSystem(
           const content = await readTextFile(path);
           const name = path.split('/').pop() || 'Untitled.md';
           setFileState({ content, filePath: path, fileName: name, isDirty: false });
+          clearHistory();
           onFileOpened?.();
         }
       }
@@ -391,6 +458,7 @@ export function useFileSystem(
     const result = await confirmUnsavedChanges();
     if (result === 'cancel') return;
     setFileState({ content: '', filePath: null, fileName: 'Untitled.md', isDirty: false });
+    clearHistory();
   }, [confirmUnsavedChanges]);
 
 
@@ -400,6 +468,7 @@ export function useFileSystem(
   const openFromRecent = useCallback(
     (path: string, content: string, name: string, lanModified?: number) => {
       setFileState({ content, filePath: path, fileName: name, isDirty: false, lanModified });
+      clearHistory();
       onFileOpened?.();
     },
     [onFileOpened],
@@ -410,6 +479,7 @@ export function useFileSystem(
   const loadFromMemory = useCallback((contentText: string, name: string) => {
     const finalName = name.endsWith('.md') || name.endsWith('.markdown') ? name : `${name}.md`;
     setFileState({ content: contentText, filePath: null, fileName: finalName, isDirty: false });
+    clearHistory();
     onFileOpened?.();
   }, [onFileOpened]);
 
@@ -451,5 +521,10 @@ export function useFileSystem(
     openFromRecent,
     loadFromMemory,
     renameFile,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    clearHistory,
   };
 }

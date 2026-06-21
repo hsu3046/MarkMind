@@ -57,6 +57,11 @@ export interface EditorHandle {
     insertAtCursor: (text: string) => void;
     /** 드롭 좌표(client px)에 해당하는 문서 위치에 텍스트 삽입(#56). 좌표 무효면 커서 위치. */
     insertAtCoords: (text: string, clientX: number, clientY: number) => void;
+    /** 외부 변경(undo/redo)된 content 를 doc 에 직접 적용 + 커서를 offset 으로(#74).
+     *  react-codemirror 의 controlled value sync 가 커서를 0 으로 리셋하는 걸 우회 —
+     *  우리가 먼저 doc 를 새 content 로 바꾸면 value prop==doc 이라 그 sync 가 skip 된다.
+     *  (uiwjs/react-codemirror #199 / #694 알려진 이슈) */
+    applyContentWithCursor: (content: string, offset: number) => void;
 }
 
 const lightTheme = EditorView.theme({
@@ -175,6 +180,8 @@ const BASIC_SETUP = {
     bracketMatching: true,
     indentOnInput: true,
     searchKeymap: false,
+    // history 끄기 — undo/redo 는 App 전역 content 스택으로 일원화(#74 유니버설 undo).
+    history: false,
 };
 
 export const Editor = forwardRef<EditorHandle, EditorProps>(
@@ -253,6 +260,17 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                 view.dispatch({
                     changes: { from: at, to: at, insert: text },
                     selection: { anchor: at + text.length },
+                });
+                view.focus();
+            },
+            applyContentWithCursor: (content: string, offset: number) => {
+                const view = cmRef.current?.view;
+                if (!view) return;
+                const pos = Math.min(Math.max(0, offset), content.length);
+                view.dispatch({
+                    changes: { from: 0, to: view.state.doc.length, insert: content },
+                    selection: { anchor: pos },
+                    effects: EditorView.scrollIntoView(pos, { y: 'center' }),
                 });
                 view.focus();
             },

@@ -86,6 +86,8 @@ function App() {
     openFromRecent,
     loadFromMemory,
     renameFile,
+    undo,
+    redo,
   } = useFileSystem(
     () => onFileOpenedRef.current?.(),
     // 저장 직전: 본문의 임시(절대경로) 이미지를 문서 assets/ 로 복사 + 상대경로 치환(#56)
@@ -1340,6 +1342,29 @@ function App() {
               handleToggleAI();
             }
             break;
+          case 'z': {
+            // 유니버설 undo/redo (#74) — 일반 폼 입력(설정/검색 input·textarea)에선 native 로
+            // 두고, 그 외(에디터·프리뷰·마인드맵·플로우차트·간트)는 전역 content 스택을 쓴다.
+            const ae = document.activeElement as HTMLElement | null;
+            if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) break;
+            e.preventDefault();
+            const r = e.shiftKey ? redo() : undo();
+            if (!r) break;
+            // content 외부 교체로 controlled 에디터가 재동기화하며 커서가 점프/포커스가 풀린다.
+            if (activeView === 'editor') {
+              // CodeMirror: undo content 를 doc 에 직접 적용(+변경 지점 커서). react-codemirror
+              // 의 value sync 가 커서를 0 으로 리셋하기 전에 doc 를 맞춰 그 sync 를 skip 시킨다.
+              editorRef.current?.applyContentWithCursor(r.content, r.cursorOffset);
+            } else if (ae && typeof ae.focus === 'function') {
+              // preview(Tiptap 내부에서 커서를 클램프 보존)·비주얼 뷰: 포커스만 복원.
+              requestAnimationFrame(() => {
+                if (document.body.contains(ae) && document.activeElement !== ae) {
+                  ae.focus({ preventScroll: true });
+                }
+              });
+            }
+            break;
+          }
         }
       }
     };
@@ -1350,6 +1375,7 @@ function App() {
     saveFile, saveFileAs, handleOpenFile, newFile, toggleSearch,
     handleFontSizeChange, resetFontSize, recentPanelVisible,
     searchVisible, activeView, handleToggleAI, settingsVisible,
+    undo, redo,
   ]);
 
   // Split pane drag
@@ -1439,6 +1465,8 @@ function App() {
     onSaveToDrive: () => setDriveBrowserMode('save'),
     onOpenRecent: handleOpenRecentByPath,
     onViewModeChange: setViewMode,
+    onUndo: undo,
+    onRedo: redo,
   });
 
   // Auth callback route — show only the callback handler
