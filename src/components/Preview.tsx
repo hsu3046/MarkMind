@@ -16,12 +16,15 @@ import { TableHeader } from '@tiptap/extension-table-header';
 import { Markdown } from 'tiptap-markdown';
 import { SearchAndReplace } from '@sereneinserenade/tiptap-search-and-replace';
 import { Typography } from '@tiptap/extension-typography';
-import { TextSelection } from '@tiptap/pm/state';
+import { TextSelection, Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import type { Node as PMNode } from '@tiptap/pm/model';
 import { InlineCheckbox } from '../extensions/InlineCheckbox';
 import { MarkdownTable } from '../extensions/MarkdownTable';
 import { createImageInline } from '../extensions/ImageInline';
 import { resolveImageSrc } from '../lib/imageSrc';
 import { removeFlowchartBlock, hasFlowchartBlock } from '../lib/flowchartBlock';
+import { quoteLines } from '../lib/quoteMatch';
 import { TableTools } from './TableTools';
 import {
     Bold, Italic, Strikethrough, Code,
@@ -42,6 +45,10 @@ interface PreviewProps {
     banner?: ReactNode;
     /** 현재 문서 경로 — 로컬 이미지 상대경로 해석용(#55). 미저장이면 null. */
     filePath?: string | null;
+    /** 선택 시 플로팅 AI 바 — 선택 텍스트(plain) + 좌표. Editor 와 동일 시그니처(교정/번역/개선/인용). */
+    onSelectionChange?: (text: string, coords: { top: number; left: number } | null, lineLabel?: string) => void;
+    /** "인용" 하이라이트 — 인용된 텍스트(Rich Text decoration 용). */
+    quotedTexts?: string[];
 }
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
@@ -707,6 +714,47 @@ function RichToolbar({ editor }: { editor: Editor }) {
 }
 
 // ─── TipTap WYSIWYG 편집기 ───
+// "인용" 하이라이트(Rich Text) — quotedTexts 의 각 줄을 doc text 노드에서 찾아 inline decoration.
+// fixEmphasis zero-width(U+200B) 보정: 정제 텍스트로 매칭하되 decoration pos 는 원본 기준(cleanToRaw).
+const quoteHLKey = new PluginKey('quoteHL');
+function cleanToRaw(raw: string, cleanOff: number): number {
+    let r = 0, c = 0;
+    while (c < cleanOff && r < raw.length) { if (raw[r] !== '​') c++; r++; }
+    return r;
+}
+function buildQuoteDecos(doc: PMNode, texts: string[]): DecorationSet {
+    const lines = quoteLines(texts);
+    if (lines.length === 0) return DecorationSet.empty;
+    const decos: Decoration[] = [];
+    doc.descendants((node, pos) => {
+        if (!node.isText || !node.text) return;
+        const raw = node.text;
+        const clean = raw.replace(/​/g, '');
+        for (const line of lines) {
+            let idx = clean.indexOf(line);
+            while (idx >= 0) {
+                decos.push(Decoration.inline(pos + cleanToRaw(raw, idx), pos + cleanToRaw(raw, idx + line.length), { class: 'rich-quote-hl' }));
+                idx = clean.indexOf(line, idx + line.length);
+            }
+        }
+    });
+    return DecorationSet.create(doc, decos);
+}
+function quoteHLPlugin() {
+    return new Plugin({
+        key: quoteHLKey,
+        state: {
+            init: () => DecorationSet.empty,
+            apply(tr, old) {
+                const meta = tr.getMeta(quoteHLKey) as string[] | undefined;
+                if (meta !== undefined) return buildQuoteDecos(tr.doc, meta);
+                return old.map(tr.mapping, tr.doc);
+            },
+        },
+        props: { decorations(state) { return quoteHLKey.getState(state) as DecorationSet | undefined; } },
+    });
+}
+
 function RichEditor({
     body,
     rawFrontmatter,
@@ -716,6 +764,8 @@ function RichEditor({
     header,
     docDir,
     onEditorReady,
+    onSelectionChange,
+    quotedTexts,
 }: {
     body: string;
     rawFrontmatter: string;
@@ -725,6 +775,8 @@ function RichEditor({
     header?: ReactNode;
     docDir: string | null;
     onEditorReady?: (editor: Editor | null) => void;
+    onSelectionChange?: (text: string, coords: { top: number; left: number } | null, lineLabel?: string) => void;
+    quotedTexts?: string[];
 }) {
     // docDir 은 파일 전환 시 바뀌므로 ref 로 최신값 보관 — Image renderHTML 클로저(#55)가
     // 항상 최신 docDir 을 읽게 한다(editor 재생성 없이).
@@ -857,6 +909,39 @@ function RichEditor({
         editorInstanceRef.current = editor;
         onEditorReady?.(editor);
     }, [editor, onEditorReady]);
+
+    // "인용" 하이라이트 plugin 등록 + quotedTexts 동기화. 모드 전환으로 RichEditor 가 리마운트되면
+    // 새 editor 에 다시 등록·dispatch 되어 하이라이트가 자동 복원된다.
+    useEffect(() => {
+        if (!editor) return;
+        editor.registerPlugin(quoteHLPlugin());
+        return () => { try { editor.unregisterPlugin(quoteHLKey); } catch { /* unmount race */ } };
+    }, [editor]);
+    useEffect(() => {
+        if (!editor) return;
+        editor.view.dispatch(editor.state.tr.setMeta(quoteHLKey, quotedTexts ?? []));
+    }, [editor, quotedTexts]);
+
+    // 선택 시 플로팅 AI 바(교정/번역/개선) — Editor(CodeMirror)와 동일하게 선택 텍스트(plain)
+    // + 좌표를 올린다. Editor 는 마크다운 텍스트, Rich Text 는 렌더된 plain 이지만 적용은
+    // App 의 fullContent.replace 로 통일(plain 도 본문에서 부분 매칭).
+    useEffect(() => {
+        if (!editor || !onSelectionChange) return;
+        const emit = () => {
+            const { from, to, empty } = editor.state.selection;
+            if (empty) { onSelectionChange('', null); return; }
+            // fixEmphasis 가 삽입한 zero-width(U+200B) 제거 — 안 그러면 원본 마크다운과 안 맞아
+            // quoteRange/하이라이트 매칭이 실패한다(선택은 [Line] 대신 [Selection] 으로 빠짐).
+            const text = editor.state.doc.textBetween(from, to, "\n", (leaf) => (leaf.type.name === "hardBreak" ? "\n" : "")).replace(/\u200b/g, "").trim();
+            if (text.length < 1) { onSelectionChange('', null); return; }
+            const c = editor.view.coordsAtPos(from);
+            onSelectionChange(text, { top: c.top, left: c.left });
+        };
+        const clear = () => onSelectionChange('', null);
+        editor.on('selectionUpdate', emit);
+        editor.on('blur', clear);
+        return () => { editor.off('selectionUpdate', emit); editor.off('blur', clear); };
+    }, [editor, onSelectionChange]);
 
     // 외부 content 변경 동기화(#56) — body 가 내가 마지막으로 내보낸 것과 다르면
     // (저장 flush 로 temp→./assets 치환 등) editor 에 반영. 정규화는 idempotent 하므로
@@ -1002,7 +1087,7 @@ export interface PreviewHandle {
 }
 
 export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
-    { content, fontSize = 14, onChange, banner, filePath },
+    { content, fontSize = 14, onChange, banner, filePath, onSelectionChange, quotedTexts },
     ref,
 ) {
     const [showFlow, setShowFlow] = useState(false);
@@ -1081,6 +1166,8 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
                     header={frontmatterHeader}
                     docDir={docDir}
                     onEditorReady={(e) => { richEditorRef.current = e; }}
+                    onSelectionChange={onSelectionChange}
+                    quotedTexts={quotedTexts}
                 />
             </div>
         );

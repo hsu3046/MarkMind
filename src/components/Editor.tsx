@@ -1,12 +1,13 @@
-import { useCallback, useMemo, useRef, useImperativeHandle, forwardRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useImperativeHandle, forwardRef } from 'react';
 import CodeMirror, { ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
-import { EditorView } from '@codemirror/view';
-import { EditorState } from '@codemirror/state';
+import { EditorView, Decoration, type DecorationSet } from '@codemirror/view';
+import { EditorState, StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
 import { search, setSearchQuery, getSearchQuery, SearchQuery, findNext, findPrevious, replaceNext, replaceAll } from '@codemirror/search';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
+import { quoteLines } from '../lib/quoteMatch';
 
 /** CodeMirror search panel 한국어 phrases */
 const KO_PHRASES = EditorState.phrases.of({
@@ -29,11 +30,13 @@ interface EditorProps {
     content: string;
     onChange: (value: string) => void;
     theme: 'light' | 'dark';
-    onSelectionChange?: (text: string, coords: { top: number; left: number } | null) => void;
+    onSelectionChange?: (text: string, coords: { top: number; left: number } | null, lineLabel?: string) => void;
     /** 클립보드 이미지 붙여넣기 시 — assets/ 에 이미지 인라인 첨부(#56). */
     onImagePaste?: (file: File) => void;
     /** false 면 read-only(키 입력·문서 변경 차단). split 비활성 패인의 미러용. 기본 true. */
     editable?: boolean;
+    /** "인용" 하이라이트 — 일치 텍스트에 배경 표시(non-destructive decoration). */
+    quotedTexts?: string[];
 }
 
 /** 검색 결과 요약 — 총 매치 수 + 현재 매치 0-based index(-1=없음). */
@@ -184,9 +187,41 @@ const BASIC_SETUP = {
     history: false,
 };
 
+// "인용" 하이라이트 — 인용 텍스트와 일치하는 영역에 배경(non-destructive decoration).
+const setQuoteHighlights = StateEffect.define<string[]>();
+const quoteMark = Decoration.mark({ class: 'cm-quote-hl' });
+const quoteHighlightField = StateField.define<DecorationSet>({
+    create: () => Decoration.none,
+    update(deco, tr) {
+        for (const e of tr.effects) {
+            if (e.is(setQuoteHighlights)) {
+                const texts = e.value.filter((t) => t.length > 0);
+                if (texts.length === 0) return Decoration.none;
+                const doc = tr.state.doc.toString();
+                const found: { from: number; to: number }[] = [];
+                // 줄 단위 indexOf — 여러 줄 전체 정규식은 특수문자·backtrack 에 약해 인용이 통째로 안 잡힘.
+                for (const line of quoteLines(texts)) {
+                    let idx = doc.indexOf(line);
+                    while (idx >= 0) { found.push({ from: idx, to: idx + line.length }); idx = doc.indexOf(line, idx + line.length); }
+                }
+                found.sort((a, b) => a.from - b.from);
+                const builder = new RangeSetBuilder<Decoration>();
+                for (const r of found) builder.add(r.from, r.to, quoteMark);
+                return builder.finish();
+            }
+        }
+        return deco.map(tr.changes);
+    },
+    provide: (f) => EditorView.decorations.from(f),
+});
+
 export const Editor = forwardRef<EditorHandle, EditorProps>(
-    function Editor({ content, onChange, theme, onSelectionChange, onImagePaste, editable = true }, ref) {
+    function Editor({ content, onChange, theme, onSelectionChange, onImagePaste, editable = true, quotedTexts }, ref) {
         const cmRef = useRef<ReactCodeMirrorRef>(null);
+        // 모드 전환으로 리마운트되면 useEffect 시점엔 view 가 아직 없어 하이라이트가 사라진다.
+        // onCreateEditor(view 준비 콜백)에서 최신 quotedTexts 로 복원하려고 ref 로 들고 있는다.
+        const quotedTextsRef = useRef(quotedTexts);
+        quotedTextsRef.current = quotedTexts;
         // onChange via ref → handleChange 가 안정 참조라 부모 리렌더 시 reconfigure 안 됨.
         const onChangeRef = useRef(onChange);
         onChangeRef.current = onChange;
@@ -290,6 +325,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                 EditorView.editable.of(editable),
                 EditorState.readOnly.of(!editable),
                 ...(theme === 'dark' ? [syntaxHighlighting(darkHighlight)] : []),
+                quoteHighlightField,
             ];
 
             // Selection change listener
@@ -302,10 +338,10 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                             if (selectedText.length > 0) {
                                 const coords = update.view.coordsAtPos(from);
                                 if (coords) {
-                                    onSelectionChange(selectedText, {
-                                        top: coords.top,
-                                        left: coords.left,
-                                    });
+                                    const sLine = update.state.doc.lineAt(from).number;
+                                    const eLine = update.state.doc.lineAt(to).number;
+                                    const lineLabel = sLine === eLine ? `Line ${sLine}` : `Line ${sLine}-${eLine}`;
+                                    onSelectionChange(selectedText, { top: coords.top, left: coords.left }, lineLabel);
                                 }
                             } else {
                                 onSelectionChange('', null);
@@ -343,6 +379,12 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
             return exts;
         }, [theme, onSelectionChange, onImagePaste, editable]);
 
+        // "인용" 하이라이트 동기화 — quotedTexts 변경 시 decoration effect dispatch.
+        useEffect(() => {
+            const view = cmRef.current?.view;
+            if (view) view.dispatch({ effects: setQuoteHighlights.of(quotedTexts ?? []) });
+        }, [quotedTexts]);
+
         return (
             <div className="editor-wrapper">
                 <CodeMirror
@@ -352,6 +394,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                     extensions={extensions}
                     theme={theme === 'dark' ? darkTheme : lightTheme}
                     basicSetup={BASIC_SETUP}
+                    onCreateEditor={(view) => view.dispatch({ effects: setQuoteHighlights.of(quotedTextsRef.current ?? []) })}
                 />
             </div>
         );

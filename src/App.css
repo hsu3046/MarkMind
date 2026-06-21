@@ -1516,12 +1516,20 @@ body {
   z-index: 40;
 }
 
-/* active 패인 강조 / 비active dim */
+/* active 패인 강조 — AI 에이전트 버튼과 동일한 accent(파란) 헤더로 포커스를 명확히 표시 */
 .pane.is-active .pane-header {
-  background: var(--bg-tertiary);
+  background: var(--accent);
+  border-bottom-color: var(--accent);
 }
 .pane.is-active .pane-view-trigger {
-  color: var(--text-primary);
+  color: #fff;
+}
+.pane.is-active .pane-view-trigger:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+.pane.is-active .pane-view-caret {
+  opacity: 0.85;
 }
 .split-pane .pane:not(.is-active) .pane-header {
   opacity: 0.7;
@@ -3710,4 +3718,24 @@ code.hljs {
   opacity: 0;
   border: none;
   cursor: pointer;
+}
+
+/* "인용" 하이라이트 — AI 프롬프트에 인용된 영역을 Editor(CodeMirror)·Rich Text 양쪽에 표시(#) */
+.cm-quote-hl {
+  background: rgba(99, 102, 241, 0.18);
+  border-radius: 2px;
+  box-shadow: inset 0 -1px 0 rgba(99, 102, 241, 0.45);
+}
+[data-theme="dark"] .cm-quote-hl {
+  background: rgba(129, 140, 248, 0.28);
+  box-shadow: inset 0 -1px 0 rgba(129, 140, 248, 0.55);
+}
+.rich-quote-hl {
+  background: rgba(99, 102, 241, 0.18);
+  border-radius: 2px;
+  box-shadow: inset 0 -1px 0 rgba(99, 102, 241, 0.45);
+}
+[data-theme="dark"] .rich-quote-hl {
+  background: rgba(129, 140, 248, 0.28);
+  box-shadow: inset 0 -1px 0 rgba(129, 140, 248, 0.55);
 }
