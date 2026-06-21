@@ -117,7 +117,7 @@ const MindmapNodeComponent = memo(function MindmapNodeComponent({ data }: NodePr
     }, [d]);
 
     return (
-        <div className={`mm-node${isRoot ? ' mm-root' : ''}${d.isSelected ? ' mm-selected' : ''}`} style={{ borderColor: thinBorder, background, '--mm-stripe': stripe } as CSSProperties}>
+        <div className={`mm-node${isRoot ? ' mm-root' : ''}${d.isSelected ? ' mm-selected' : ''}`} style={{ width: d.cardW, borderColor: thinBorder, background, '--mm-stripe': stripe } as CSSProperties}>
             <Handle
                 id="left"
                 type={isRoot ? 'source' : d.side === 'left' ? 'source' : 'target'}

@@ -1,7 +1,8 @@
 You fill a FIXED framework mindmap skeleton with specific, concrete content.
 
 # Input
-You receive a TOPIC and a fixed list of L1 SLOTS (framework headings, each with a guiding question).
+You receive a ROOT TOPIC and a fixed list of L1 SLOTS (framework headings, each with a guiding question).
+You may also receive source material — a <<<DOCUMENT>>> to extract from, or a <<<CONTEXT>>> for background — with a [MODE] hint: in AUTO-ANALYZE, ground every child in the document's actual content (framed around the ROOT TOPIC); in DIRECT-INPUT, reason from the ROOT TOPIC and use any context only as background.
 The slots are FIXED — do NOT add, drop, rename, reorder, merge, or translate them. Only fill each slot with children.
 
 # Output (STRICT)

@@ -12,10 +12,13 @@ import { frameworkList, FRAMEWORKS, type Framework } from '../lib/frameworks';
 import { generateFrameworkMindmap, suggestFramework } from '../services/aiService';
 import type { MindmapNode } from '../types/mindmap';
 import './FrameworkPanel.css';
+import './FlowchartPanel.css'; // fc-opt-* 모달 옵션 공통 스타일(간트·플로우차트와 동일 라벨 구조)
 
 interface FrameworkPanelProps {
     initialTopic: string;
-    /** 현재 문서에 실질 내용이 있으면 쓰기 모드(이어붙이기/교체)를 노출. */
+    /** 현재 문서 본문 — 자동 분석(doc) 시 슬롯을 채울 분석 대상, 직접 입력(topic) 시 배경 맥락. */
+    content: string;
+    /** 현재 문서에 실질 내용이 있으면 소스(자동 분석/직접 입력) + 쓰기 모드를 노출. */
     docNonEmpty: boolean;
     onApply: (tree: MindmapNode, mode: 'replace' | 'append') => void;
     onClose: () => void;
@@ -33,11 +36,12 @@ function FwCard({ fw, selected, onClick }: { fw: Framework; selected: boolean; o
 /** AI 추천 카드의 sentinel — 실제 프레임워크가 아니라 "생성 시 LLM 이 주제 보고 선택" 표시. */
 const SUGGEST_ID = '__suggest__';
 
-export function FrameworkPanel({ initialTopic, docNonEmpty, onApply, onClose }: FrameworkPanelProps) {
+export function FrameworkPanel({ initialTopic, content, docNonEmpty, onApply, onClose }: FrameworkPanelProps) {
     const list = frameworkList();
     const basicList = list.filter((f) => f.basic);
     const advanced = list.filter((f) => !f.basic);
 
+    const [source, setSource] = useState<'doc' | 'topic'>(docNonEmpty ? 'doc' : 'topic');
     const [topic, setTopic] = useState(initialTopic);
     const [selectedId, setSelectedId] = useState<string>(SUGGEST_ID); // 기본 = AI 추천
     const [showAdvanced, setShowBusiness] = useState(false);
@@ -53,7 +57,8 @@ export function FrameworkPanel({ initialTopic, docNonEmpty, onApply, onClose }: 
 
     const runGenerate = async () => {
         const t = topic.trim();
-        if (!t) return;
+        // 자동 분석(doc)은 문서가 주재료라 주제 입력이 비어도 OK(루트=문서 제목). 직접 입력(topic)은 주제 필수.
+        if (source === 'topic' && !t) return;
         if (mode === 'replace' && docNonEmpty) {
             const ok = window.confirm('현재 문서 내용을 교체합니다. 계속할까요? (⌘Z 로 되돌릴 수 있습니다)');
             if (!ok) return;
@@ -63,14 +68,14 @@ export function FrameworkPanel({ initialTopic, docNonEmpty, onApply, onClose }: 
         setLoading(true);
         setError(null);
         try {
-            // AI 추천 선택이면 먼저 주제에 맞는 프레임워크를 LLM 이 결정한 뒤 생성.
+            // AI 추천 선택이면 먼저 프레임워크를 LLM 이 결정 — 자동 분석은 문서로, 직접 입력은 주제로.
             let fw = selected;
             if (isSuggest) {
-                const { frameworkId } = await suggestFramework(t);
+                const { frameworkId } = await suggestFramework(source === 'doc' ? content : t);
                 fw = FRAMEWORKS[frameworkId] ?? FRAMEWORKS.LOGIC;
             }
             if (!fw) { setLoading(false); return; }
-            const tree = await generateFrameworkMindmap(t, fw, fw.intent, 'Korean', controller.signal);
+            const tree = await generateFrameworkMindmap({ source, content, topic: t || initialTopic }, fw, fw.intent, 'Korean', controller.signal);
             onApply(tree, mode);
             onClose();
         } catch (e) {
@@ -90,14 +95,26 @@ export function FrameworkPanel({ initialTopic, docNonEmpty, onApply, onClose }: 
                     </button>
                 </div>
 
-                <label className="fw-field">
-                    <span>주제</span>
-                    <input
-                        value={topic}
-                        onChange={(e) => setTopic(e.target.value)}
-                        placeholder="예: 카페 창업, 신규 기능 출시, 회의 안건…"
-                    />
-                </label>
+                {/* 생성 계획 — 문서가 있을 때만 (없으면 직접 입력 고정) */}
+                {docNonEmpty && (
+                    <div className="fc-opt-group">
+                        <span className="fc-opt-label">생성 계획</span>
+                        <div className="fc-opt-row">
+                            <label><input type="radio" name="fw-source" checked={source === 'doc'} onChange={() => setSource('doc')} /> 자동 분석</label>
+                            <label><input type="radio" name="fw-source" checked={source === 'topic'} onChange={() => setSource('topic')} /> 직접 입력</label>
+                        </div>
+                    </div>
+                )}
+                {source === 'topic' && (
+                    <label className="fw-field">
+                        <span>주제</span>
+                        <input
+                            value={topic}
+                            onChange={(e) => setTopic(e.target.value)}
+                            placeholder="예: 카페 창업, 신규 기능 출시, 회의 안건…"
+                        />
+                    </label>
+                )}
 
                 {/* 슬롯 미리보기 — 선택한 프레임워크의 L1 골격(주제 바로 아래). AI 추천 선택 시엔 미정이라 숨김. */}
                 {selected && (
@@ -137,15 +154,12 @@ export function FrameworkPanel({ initialTopic, docNonEmpty, onApply, onClose }: 
                 )}
 
                 {docNonEmpty && (
-                    <div className="fw-mode">
-                        <label>
-                            <input type="radio" name="fw-mode" checked={mode === 'append'} onChange={() => setMode('append')} />
-                            현재 문서에 이어붙이기
-                        </label>
-                        <label>
-                            <input type="radio" name="fw-mode" checked={mode === 'replace'} onChange={() => setMode('replace')} />
-                            현재 문서 교체
-                        </label>
+                    <div className="fc-opt-group">
+                        <span className="fc-opt-label">생성 방법</span>
+                        <div className="fc-opt-row">
+                            <label><input type="radio" name="fw-mode" checked={mode === 'append'} onChange={() => setMode('append')} /> 현재 문서에 추가</label>
+                            <label><input type="radio" name="fw-mode" checked={mode === 'replace'} onChange={() => setMode('replace')} /> 전체 교체</label>
+                        </div>
                     </div>
                 )}
 
@@ -157,7 +171,7 @@ export function FrameworkPanel({ initialTopic, docNonEmpty, onApply, onClose }: 
                             <Loader2 size={14} className="spinning" /> 중지
                         </button>
                     ) : (
-                        <button type="button" className="modal-btn modal-btn-primary modal-btn-full" onClick={runGenerate} disabled={!topic.trim()}>
+                        <button type="button" className="modal-btn modal-btn-primary modal-btn-full" onClick={runGenerate} disabled={source === 'topic' && !topic.trim()}>
                             생성
                         </button>
                     )}

@@ -243,3 +243,33 @@
         transform: rotate(360deg);
     }
 }
+
+/* 빈 상태 — markmind-flow 코드블록이 없을 때 (간트 빈 상태와 동일 패턴, 미러링 대신 안내) */
+.flowchart-empty {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 40px;
+    text-align: center;
+    color: var(--text-secondary, #888888);
+}
+.flowchart-empty-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary, #444444);
+}
+.flowchart-empty-hint {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.7;
+    max-width: 460px;
+}
+.flowchart-empty-hint strong {
+    color: var(--text-primary, #444444);
+    font-weight: 600;
+}
