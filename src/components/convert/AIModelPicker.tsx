@@ -30,6 +30,9 @@ interface AIModelPickerProps<C extends string> {
     apiKeyAvailable?: (company: C) => boolean;
     /** 회사별 구독(OAuth) 가용 여부. 미제공 시 구독은 항상 비활성. */
     subscriptionAvailable?: (company: C) => boolean;
+    /** 가용성(특히 비동기 구독 감지)이 확정됐는지. false 동안은 자동 보정을 보류해,
+     *  "로딩 중"을 "미연결"로 오판하고 저장된 구독 선택을 api_key 로 강등·저장하는 리셋을 막는다. */
+    ready?: boolean;
 }
 
 export function AIModelPicker<C extends string>({
@@ -39,6 +42,7 @@ export function AIModelPicker<C extends string>({
     onChange,
     apiKeyAvailable,
     subscriptionAvailable,
+    ready = true,
 }: AIModelPickerProps<C>) {
     const apply = (next: Partial<ModelPickerSelection<C>>) =>
         onChange(normalizeWithCatalog(catalog, { ...selection, ...next }));
@@ -70,10 +74,13 @@ export function AIModelPicker<C extends string>({
     // 예: 구독만 있는 Claude 가 'api_key' 로 저장돼 있으면 → 'subscription'(구독 OAuth)로 교정.
     // callAI 와 동일한 resolveUsableSelection 으로 보정(가용 회사 전무면 그대로 — 키 등록 안내).
     useEffect(() => {
+        // 가용성 미확정(구독 감지 비동기 로딩 중)이면 보정 보류 — 로딩을 "미연결"로 오판해
+        // 저장된 구독 선택을 api_key 로 강등하고 그대로 저장(localStorage)하는 리셋 버그 방지.
+        if (!ready) return;
         const next = resolveUsableSelection(catalog, selection, authUsable);
         if (next !== selection) onChange(next);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selection, apiKeyAvailable, subscriptionAvailable, catalog]);
+    }, [selection, apiKeyAvailable, subscriptionAvailable, catalog, ready]);
 
     return (
         <section className="convert-settings-section">

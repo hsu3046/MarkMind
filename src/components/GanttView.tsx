@@ -13,6 +13,7 @@ import { useMemo } from 'react';
 import { ChartBarStacked } from 'lucide-react';
 import { parseGantt } from '../lib/gantt-parser';
 import type { GanttTask } from '../types/gantt';
+import { GanttPanel } from './GanttPanel';
 import './GanttView.css';
 
 // ── layout constants ─────────────────────────────────────────────────────────
@@ -45,10 +46,30 @@ interface GanttViewProps {
     content: string;
     fileName: string;
     onJumpToSource: (line: number) => void;
+    /** 마크다운 SSOT 쓰기 — AI 자동 생성 결과 반영(없으면 read-only). */
+    onChange?: (md: string) => void;
+    /** 모달(GanttPanel) 열림 — 메인 툴바 "자동 생성" 클릭을 App 이 토글. */
+    ganttPanelOpen?: boolean;
+    onCloseGanttPanel?: () => void;
 }
 
-export function GanttView({ content, fileName, onJumpToSource }: GanttViewProps) {
+export function GanttView({ content, fileName, onJumpToSource, onChange, ganttPanelOpen, onCloseGanttPanel }: GanttViewProps) {
     const data = useMemo(() => parseGantt(content, fileName), [content, fileName]);
+
+    // 자동 생성 모달 — 빈 상태/렌더 상태 양쪽에서 동일하게 떠야 하므로 변수로 만들어 둔다.
+    const panel = ganttPanelOpen && onChange ? (
+        <GanttPanel
+            content={content}
+            onApply={(md, applyMode) => {
+                // 교체=그대로, 이어붙이기=기존 본문 끝에 빈 줄 두고 추가(마크다운 SSOT).
+                const next = applyMode === 'replace'
+                    ? md
+                    : (content.trim() ? `${content.replace(/\s+$/, '')}\n\n${md}` : md);
+                onChange(next);
+            }}
+            onClose={() => onCloseGanttPanel?.()}
+        />
+    ) : null;
 
     const model = useMemo(() => {
         const { tasks, rangeStart, rangeEnd } = data;
@@ -90,13 +111,15 @@ export function GanttView({ content, fileName, onJumpToSource }: GanttViewProps)
                 <div className="gantt-empty">
                     <ChartBarStacked size={48} strokeWidth={1.25} />
                     <p className="gantt-empty-title">표시할 일정이 없습니다</p>
-                    <p className="gantt-empty-hint">
-                        리스트나 헤딩에 <code>@start(2026-01-05)</code> 마커를 추가하면 간트 막대로 나타납니다.
-                        <br />
-                        <code>@due(…)</code> 로 종료일, <code>@progress(0~100)</code> 으로 진행률을 지정할 수 있고,
-                        종료일이 없으면 마일스톤으로 표시됩니다.
+                    <p className="gantt-empty-hint">아래처럼 마커를 추가하면 간트로 표시됩니다</p>
+                    <pre className="gantt-empty-example"><code>{`## 기획
+- [ ] 요구사항 @start(2026-01-05) @due(2026-01-12) @progress(40)
+- [ ] 출시     @start(2026-01-20)`}</code></pre>
+                    <p className="gantt-empty-markers">
+                        <code>@start</code> 시작일(필수) · <code>@due</code> 종료일(없으면 마일스톤) · <code>@progress</code> 진행률
                     </p>
                 </div>
+                {panel}
             </div>
         );
     }
@@ -260,6 +283,7 @@ export function GanttView({ content, fileName, onJumpToSource }: GanttViewProps)
                     )}
                 </svg>
             </div>
+            {panel}
         </div>
     );
 }

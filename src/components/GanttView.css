@@ -115,10 +115,32 @@
     line-height: 1.7;
     max-width: 460px;
 }
-.gantt-empty-hint code {
+.gantt-empty-hint code,
+.gantt-empty-markers code {
     padding: 1px 6px;
     border-radius: 4px;
     background: var(--bg-secondary, #f0f0f0);
     color: var(--text-primary, #444444);
     font-size: 12px;
+}
+/* 마커 사용 예시 — 실제 마크다운을 좌측 정렬 코드 블록으로 */
+.gantt-empty-example {
+    margin: 0;
+    max-width: 100%;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border-primary, #e5e5e5);
+    text-align: left;
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-primary, #444444);
+    overflow-x: auto;
+    white-space: pre;
+}
+.gantt-empty-markers {
+    margin: 0;
+    max-width: 460px;
+    font-size: 12px;
+    line-height: 1.7;
 }

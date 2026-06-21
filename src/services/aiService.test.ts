@@ -1,5 +1,34 @@
 import { describe, it, expect } from 'vitest';
-import { generateDiff, applyDiff, extractJsonObject } from './aiService';
+import { generateDiff, applyDiff, extractJsonObject, humanizeLLMError } from './aiService';
+
+// 구독/키 호출 에러(특히 Tauri invoke 의 문자열 reject)를 사용자 안내로 변환 — usage limit /
+// 인증 만료 / billing 등이 막연한 fallback 대신 구체 문구로 뜨는지 검증(에러 설명 보강).
+describe('humanizeLLMError — LLM 에러 → 사용자 안내 변환', () => {
+    it('Codex 구독 usage limit → ChatGPT 구독 한도 안내', () => {
+        expect(humanizeLLMError('HTTP 429 — {"error":{"type":"usage_limit_reached"}}'))
+            .toContain('ChatGPT 구독 사용 한도');
+    });
+    it('인증 만료(401) → 재로그인/키 확인 안내', () => {
+        expect(humanizeLLMError('HTTP 401 — Unauthorized')).toContain('인증이 만료');
+    });
+    it('billing 하드 한도 → 결제·한도 안내(429 보다 우선)', () => {
+        expect(humanizeLLMError('HTTP 429 — billing hard limit reached')).toContain('결제');
+    });
+    it('일반 rate limit(429) → 요청 한도 안내', () => {
+        expect(humanizeLLMError('HTTP 429 — rate limit exceeded')).toContain('요청 한도');
+    });
+    it('설정 유도(API 키 없음) 메시지는 그대로 노출', () => {
+        const raw = 'Gemini API 키가 설정되지 않았습니다. 설정에서 입력해주세요.';
+        expect(humanizeLLMError(new Error(raw))).toBe(raw);
+    });
+    it('알 수 없는 에러는 원문 단서를 노출(막연한 fallback 아님)', () => {
+        expect(humanizeLLMError('something weird happened xyz')).toContain('something weird happened xyz');
+    });
+    it('Error 객체와 문자열 입력 모두 동일 처리', () => {
+        expect(humanizeLLMError(new Error('HTTP 401 — bad'))).toContain('인증이 만료');
+        expect(humanizeLLMError('HTTP 401 — bad')).toContain('인증이 만료');
+    });
+});
 
 // callAIJson 의 방어적 파서 — Gemini 외 프로바이더는 JSON 을 문자열로 주고 산문/펜스를 덧붙이기도
 // 한다. 첫 균형 중괄호 객체만 정확히 잘라내는지 검증(메모리: 멀티 프로바이더 JSON 견고성).
