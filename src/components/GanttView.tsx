@@ -111,11 +111,12 @@ export function GanttView({ content, fileName, onJumpToSource, onChange, ganttPa
                 <div className="gantt-empty">
                     <ChartBarStacked size={48} strokeWidth={1.25} />
                     <p className="gantt-empty-title">표시할 일정이 없습니다</p>
-                    <p className="gantt-empty-hint">
-                        리스트나 헤딩에 <code>@start(2026-01-05)</code> 마커를 추가하면 간트 막대로 나타납니다.
-                        <br />
-                        <code>@due(…)</code> 로 종료일, <code>@progress(0~100)</code> 으로 진행률을 지정할 수 있고,
-                        종료일이 없으면 마일스톤으로 표시됩니다.
+                    <p className="gantt-empty-hint">아래처럼 마커를 추가하면 간트로 표시됩니다</p>
+                    <pre className="gantt-empty-example"><code>{`## 기획
+- [ ] 요구사항 @start(2026-01-05) @due(2026-01-12) @progress(40)
+- [ ] 출시     @start(2026-01-20)`}</code></pre>
+                    <p className="gantt-empty-markers">
+                        <code>@start</code> 시작일(필수) · <code>@due</code> 종료일(없으면 마일스톤) · <code>@progress</code> 진행률
                     </p>
                 </div>
                 {panel}
