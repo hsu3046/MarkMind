@@ -13,31 +13,6 @@
     border: none;
 }
 
-/* 편집 토글 버튼 (React Flow Panel) — AI 흐름도에서 노드 드래그/편집 on/off */
-.flow-edit-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 6px 10px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary, #334155);
-    background: var(--bg-secondary, #ffffff);
-    border: 1px solid var(--border-primary, #e2e8f0);
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-    cursor: pointer;
-    transition: filter 0.15s, background 0.15s, color 0.15s, border-color 0.15s;
-}
-.flow-edit-toggle:hover {
-    filter: brightness(0.97);
-}
-.flow-edit-toggle.is-active {
-    color: #ffffff;
-    background: #4f46e5;
-    border-color: #4f46e5;
-}
-
 /* 노드 라벨 인라인 편집 (더블클릭 → contentEditable) */
 .flow-node__edit {
     min-width: 60px;
@@ -78,38 +53,6 @@
 }
 .flow-node.is-editable:hover .flow-node__del {
     opacity: 1;
-}
-/* 노드 추가 팔레트 (편집 모드, 우상단) */
-.flow-palette {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 8px;
-    background: var(--bg-secondary, #ffffff);
-    border: 1px solid var(--border-primary, #e2e8f0);
-    border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-.flow-palette-title {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-secondary, #64748b);
-    padding: 0 2px 2px;
-}
-.flow-palette-btn {
-    padding: 5px 10px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-primary, #334155);
-    background: var(--bg-primary, #f8fafc);
-    border: 1px solid var(--border-primary, #e2e8f0);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background 0.12s, border-color 0.12s;
-}
-.flow-palette-btn:hover {
-    background: #eef2ff;
-    border-color: #4f46e5;
 }
 
 /* 편집 모드 — handle(연결점) 노출(평소 숨김). 드래그해서 노드끼리 연결. */
@@ -177,12 +120,24 @@
 .flow-node--decision {
     min-width: 200px;
     min-height: 84px;
-    background: #fde68a;
+    background: transparent;
     border: none;
     color: #713f12;
     font-weight: 500;
-    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
     padding: 22px 44px;
+    position: relative;
+}
+/* 마름모는 ::before 로 그린다 — clip-path 를 노드 박스에 직접 주면 박스 변의 React Flow
+   handle(연결점)이 함께 잘려 꼭짓점에서 반쪽만 보인다. ::before 에만 clip 을 줘서 handle 보존. */
+.flow-node--decision::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: #fde68a;
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+}
+.flow-node--decision .flow-node__label {
+    position: relative; /* 마름모(::before) 위에 라벨 */
 }
 
 /* merge — 합류(원형) */
@@ -205,6 +160,44 @@
     flex-direction: column;
     height: 100%;
     position: relative; /* 로딩/에러 오버레이의 위치 기준 */
+}
+
+/* 노드 추가 서브 툴바 — 편집 모드. absolute overlay 로 띄워 캔버스 레이아웃을 안 민다
+   (편집 진입 시 서브툴바가 캔버스를 밀어 플로우차트가 아래로 이동하던 문제 방지).
+   캔버스는 100% 높이 유지 → React Flow 노드 위치/줌/팬 불변. */
+.flowchart-subtoolbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border-secondary, #e2e8f0);
+    background: var(--bg-secondary, #f8fafc);
+}
+/* 리치 텍스트 rich-tool-btn 과 통일 — 투명 배경 + hover 약하게(아이콘+라벨 형태). */
+.flowchart-subtoolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    padding: 0 9px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+.flowchart-subtoolbar-btn:hover {
+    background: var(--bg-tertiary, rgba(0, 0, 0, 0.05));
+    color: var(--text-primary);
 }
 .flowchart-canvas {
     flex: 1;
