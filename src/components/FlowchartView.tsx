@@ -27,9 +27,7 @@ import {
     type NodeProps,
     type Connection,
 } from '@xyflow/react';
-import { Trash2, Play, Square, Split, ArrowRightLeft, Merge, CircleStop, type LucideIcon } from 'lucide-react';
-import { documentToTree } from '../lib/markdownTree';
-import { mindmapToFlowchart } from '../lib/flowchart-converter';
+import { Trash2, Play, Square, Split, ArrowRightLeft, Merge, CircleStop, Network, type LucideIcon } from 'lucide-react';
 import { layoutFlowchart } from '../lib/dagre-layout';
 import { parseFlowchartBlock, upsertFlowchartBlock, type StoredFlowchart } from '../lib/flowchartBlock';
 import type { FlowchartNode, FlowchartEdge, FlowNodeType } from '../types/flowchart';
@@ -225,11 +223,10 @@ function FlowchartViewInner({ content, fileName, onChange, flowchartPanelOpen, o
             syncFromStored(stored);
             setIsAi(true);
         } else {
-            const { tree } = documentToTree(content, stem);
-            const fc = mindmapToFlowchart(tree);
-            const rf = toReactFlow(fc.result.nodes, fc.result.edges);
-            setRfNodes(rf.nodes);
-            setRfEdges(rf.edges);
+            // markmind-flow 코드블록이 없으면 빈 상태 — 문서 트리 미러링 대신 안내를 보여준다
+            // (간트와 동일 — 형식에 맞는 데이터가 없으면 자동 생성을 유도, 플로우차트 아닌 걸 표시 X).
+            setRfNodes([]);
+            setRfEdges([]);
             setIsAi(false);
             setEditingId(null);
         }
@@ -366,6 +363,7 @@ function FlowchartViewInner({ content, fileName, onChange, flowchartPanelOpen, o
                 </div>
             )}
             <div className="flowchart-canvas">
+                {isAi ? (
                 <ReactFlow
                     key={`${stem}-${isAi}`}
                     nodes={displayNodes}
@@ -393,11 +391,20 @@ function FlowchartViewInner({ content, fileName, onChange, flowchartPanelOpen, o
                     <Background gap={20} size={1} />
                     <Controls showInteractive={false} />
                 </ReactFlow>
+                ) : (
+                    <div className="flowchart-empty">
+                        <Network size={48} strokeWidth={1.25} />
+                        <p className="flowchart-empty-title">표시할 플로우차트가 없습니다</p>
+                        <p className="flowchart-empty-hint">
+                            우측 상단 <strong>자동 생성</strong> 으로 문서·주제를 플로우차트로 만들어보세요.
+                        </p>
+                    </div>
+                )}
             </div>
             {flowchartPanelOpen && (
                 <FlowchartPanel
                     content={content}
-                    onApply={(fc) => onChange(upsertFlowchartBlock(content, fc))}
+                    onApply={(fc, mode) => onChange(upsertFlowchartBlock(mode === 'replace' ? '' : content, fc))}
                     onClose={() => onCloseFlowchartPanel?.()}
                 />
             )}

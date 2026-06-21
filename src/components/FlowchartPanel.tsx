@@ -22,7 +22,7 @@ const HARD_CHARS = 30000;
 interface FlowchartPanelProps {
     /** 현재 문서 — 소스 'doc' 일 때 사용. */
     content: string;
-    onApply: (fc: StoredFlowchart) => void;
+    onApply: (fc: StoredFlowchart, mode: 'replace' | 'append') => void;
     onClose: () => void;
 }
 
@@ -33,6 +33,7 @@ export function FlowchartPanel({ content, onApply, onClose }: FlowchartPanelProp
     const [perspective, setPerspective] = useState<'process' | 'decision' | 'data'>('process');
     const [direction, setDirection] = useState<'LR' | 'TB'>('LR');
     const [detail, setDetail] = useState<'basic' | 'detailed'>('basic');
+    const [mode, setMode] = useState<'replace' | 'append'>(docNonEmpty ? 'append' : 'replace');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const abortRef = useRef<AbortController | null>(null);
@@ -61,13 +62,21 @@ export function FlowchartPanel({ content, onApply, onClose }: FlowchartPanelProp
                 if (!ok) return;
             }
         }
+        // 교체 모드 — 기존 문서가 사라지므로 확인(⌘Z 로 복구 가능).
+        if (mode === 'replace' && docNonEmpty) {
+            const ok = await confirmAction(
+                '현재 문서 내용을 교체합니다. 계속할까요? (⌘Z 로 되돌릴 수 있습니다)',
+                { title: '확인', kind: 'warning' },
+            );
+            if (!ok) return;
+        }
         const controller = new AbortController();
         abortRef.current = controller;
         setLoading(true);
         setError(null);
         try {
-            const fc = await generateFlowchart(sourceText, { perspective, direction, detail }, 'Korean', controller.signal);
-            onApply(fc);
+            const fc = await generateFlowchart({ source, content, topic: topic.trim() }, { perspective, direction, detail }, 'Korean', controller.signal);
+            onApply(fc, mode);
             onClose();
         } catch (e) {
             if (e instanceof DOMException && e.name === 'AbortError') { setLoading(false); return; } // 중지
@@ -89,10 +98,10 @@ export function FlowchartPanel({ content, onApply, onClose }: FlowchartPanelProp
                 {/* 소스 — 문서가 있을 때만 선택지(없으면 주제 입력 고정) */}
                 {docNonEmpty && (
                     <div className="fc-opt-group">
-                        <span className="fc-opt-label">소스</span>
+                        <span className="fc-opt-label">생성 계획</span>
                         <div className="fc-opt-row">
-                            <label><input type="radio" name="fc-source" checked={source === 'doc'} onChange={() => setSource('doc')} /> 현재 문서 기반</label>
-                            <label><input type="radio" name="fc-source" checked={source === 'topic'} onChange={() => setSource('topic')} /> 주제 직접 입력</label>
+                            <label><input type="radio" name="fc-source" checked={source === 'doc'} onChange={() => setSource('doc')} /> 자동 분석</label>
+                            <label><input type="radio" name="fc-source" checked={source === 'topic'} onChange={() => setSource('topic')} /> 직접 입력</label>
                         </div>
                     </div>
                 )}
@@ -134,6 +143,17 @@ export function FlowchartPanel({ content, onApply, onClose }: FlowchartPanelProp
                         <label><input type="radio" name="fc-detail" checked={detail === 'detailed'} onChange={() => setDetail('detailed')} /> 상세</label>
                     </div>
                 </div>
+
+                {/* 쓰기 모드 — 문서에 내용이 있을 때만 (마인드맵·간트와 동일) */}
+                {docNonEmpty && (
+                    <div className="fc-opt-group">
+                        <span className="fc-opt-label">생성 방법</span>
+                        <div className="fc-opt-row">
+                            <label><input type="radio" name="fc-mode" checked={mode === 'append'} onChange={() => setMode('append')} /> 현재 문서에 추가</label>
+                            <label><input type="radio" name="fc-mode" checked={mode === 'replace'} onChange={() => setMode('replace')} /> 전체 교체</label>
+                        </div>
+                    </div>
+                )}
 
                 {error && <div className="fw-error">{error}</div>}
 
