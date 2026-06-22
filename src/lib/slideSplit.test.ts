@@ -57,3 +57,47 @@ describe('splitIntoSlides — 함정 처리', () => {
         expect(splitIntoSlides('# A\nx\n---\n# B\ny', opts())).toEqual(['# A\nx', '# B\ny']);
     });
 });
+
+describe('splitIntoSlides — 빈 슬라이드 스킵(A) + skip 마커(C)', () => {
+    it('%%skip%% 마커(라운드트립 안전) 슬라이드 제외', () => {
+        expect(
+            splitIntoSlides('A\n\n---\n\n%%skip%%\n숨길 내용\n\n---\n\nB', opts()),
+        ).toEqual(['A', 'B']);
+    });
+
+    it('구형 <!-- skip --> 마커도 하위호환 인식', () => {
+        expect(
+            splitIntoSlides('A\n\n---\n\n<!-- skip -->\n숨길 내용\n\n---\n\nB', opts()),
+        ).toEqual(['A', 'B']);
+    });
+
+    it('라운드트립으로 깨진 &lt;!-- skip --&gt; 도 인식', () => {
+        expect(
+            splitIntoSlides('A\n\n---\n\n&lt;!-- skip --&gt;\n숨길 내용\n\n---\n\nB', opts()),
+        ).toEqual(['A', 'B']);
+    });
+
+    it('코드블록만 + hideCodeBlock → 빈 슬라이드 스킵', () => {
+        const md = 'A\n\n---\n\n```\ncode\n```\n\n---\n\nB';
+        expect(splitIntoSlides(md, opts({ hideCodeBlock: true }))).toEqual(['A', 'B']);
+    });
+
+    it('hideCodeBlock 꺼짐이면 코드 슬라이드 유지', () => {
+        const md = 'A\n\n---\n\n```\ncode\n```\n\n---\n\nB';
+        expect(splitIntoSlides(md, opts())).toEqual(['A', '```\ncode\n```', 'B']);
+    });
+
+    it('헤딩+코드 슬라이드는 hideCodeBlock 후에도 유지(제목 슬라이드)', () => {
+        const md = '## 제목\n```\ncode\n```';
+        expect(splitIntoSlides(md, opts({ hideCodeBlock: true }))).toEqual([md]);
+    });
+
+    it('이미지만 + hideImage → 빈 스킵', () => {
+        const md = 'A\n\n---\n\n![alt](x.png)\n\n---\n\nB';
+        expect(splitIntoSlides(md, opts({ hideImage: true }))).toEqual(['A', 'B']);
+    });
+
+    it('전부 빈/스킵이면 빈 1장', () => {
+        expect(splitIntoSlides('```\ncode\n```', opts({ hideCodeBlock: true }))).toEqual(['']);
+    });
+});

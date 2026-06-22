@@ -18,6 +18,8 @@ export interface SlideshowSettings {
     hideImage: boolean;
     hideTable: boolean;
     hideBlockquote: boolean;
+    hideInlineCode: boolean;
+    hideStrike: boolean;
 }
 
 export const DEFAULT_SLIDESHOW_SETTINGS: SlideshowSettings = {
@@ -28,6 +30,8 @@ export const DEFAULT_SLIDESHOW_SETTINGS: SlideshowSettings = {
     hideImage: false,
     hideTable: false,
     hideBlockquote: false,
+    hideInlineCode: false,
+    hideStrike: false,
 };
 
 const STORAGE_KEY = 'markmind-slideshow-settings';
@@ -55,6 +59,13 @@ export function setSlideshowSettings(s: SlideshowSettings): void {
 const HR_RE = /^\s*([-*_])(?:\s*\1){2,}\s*$/; // ---, ***, ___ (3개 이상)
 const HEADING_RE = /^(#{1,6})\s+/;
 const FENCE_RE = /^\s*(```|~~~)/;
+const IMAGE_RE = /!\[[^\]]*\]\([^)]*\)/g; // 인라인/단독 이미지
+const INLINE_CODE_RE = /`[^`\n]+`/g; // 인라인 코드
+const STRIKE_RE = /~~[^~\n]+~~/g; // 취소선
+/** 슬라이드 수동 숨김 마커(C) — 권장 `%%skip%%`(리치텍스트 라운드트립에서 안 깨짐).
+    구형 HTML 주석 `<!-- skip -->` 은 라운드트립 시 `&lt;…&gt;` 로 깨지므로 하위호환으로
+    깨진 형태까지 인식한다(근본 보존은 #89 — raw HTML 라운드트립). */
+const SKIP_MARKER_RE = /%%\s*skip\s*%%|(?:<|&lt;)!--\s*skip\s*--(?:>|&gt;)/i;
 
 /** YAML frontmatter(`---\n…\n---`) 제거 — 슬라이드 내용이 아님. */
 function stripFrontmatter(md: string): string {
@@ -64,6 +75,52 @@ function stripFrontmatter(md: string): string {
         if (lines[i].trim() === '---') return lines.slice(i + 1).join('\n');
     }
     return md; // 닫는 --- 없음 → frontmatter 아님
+}
+
+/** 슬라이드가 `<!-- skip -->` 마커로 수동 숨김 처리됐는지(C). */
+function isSkipMarked(chunk: string): boolean {
+    return SKIP_MARKER_RE.test(chunk);
+}
+
+/**
+ * 숨길 요소(코드블록/이미지/표/인용)를 텍스트상 제거한 뒤 표시할 내용(헤딩·본문)이
+ * 남지 않으면 빈 슬라이드로 본다(A). 예: 코드블록만 있던 슬라이드 + hideCodeBlock → 빈.
+ * 헤딩만 남으면 제목 슬라이드로 보고 유지한다(빈 아님).
+ */
+function isEmptyAfterHide(chunk: string, opts: SlideshowSettings): boolean {
+    const lines = chunk.split('\n');
+    const kept: string[] = [];
+    let inFence = false;
+    let marker = '';
+    for (const line of lines) {
+        const f = line.match(FENCE_RE);
+        if (f) {
+            if (!inFence) {
+                inFence = true;
+                marker = f[1];
+            } else if (line.trimStart().startsWith(marker)) {
+                inFence = false;
+            }
+            if (!opts.hideCodeBlock) kept.push(line);
+            continue;
+        }
+        if (inFence) {
+            if (!opts.hideCodeBlock) kept.push(line);
+            continue;
+        }
+        if (opts.hideBlockquote && /^\s*>/.test(line)) continue;
+        if (opts.hideTable && /^\s*\|/.test(line)) continue;
+        let l = line;
+        if (opts.hideImage) l = l.replace(IMAGE_RE, '');
+        if (opts.hideInlineCode) l = l.replace(INLINE_CODE_RE, '');
+        if (opts.hideStrike) l = l.replace(STRIKE_RE, '');
+        kept.push(l);
+    }
+    // 공백·수평선·skip마커 외의 내용이 하나라도 남으면 빈 아님.
+    return !kept.some((l) => {
+        const t = l.trim();
+        return t !== '' && !HR_RE.test(l) && !SKIP_MARKER_RE.test(t);
+    });
 }
 
 /**
@@ -122,5 +179,8 @@ export function splitIntoSlides(markdown: string, opts: SlideshowSettings): stri
 
     if (slides.length === 0) return [''];
     // 양끝 빈 줄만 제거(코드블록 내부 들여쓰기는 보존).
-    return slides.map((s) => s.join('\n').replace(/^\n+|\n+$/g, ''));
+    const chunks = slides.map((s) => s.join('\n').replace(/^\n+|\n+$/g, ''));
+    // C: skip 마커 슬라이드 제외 / A: 숨길 요소 적용 후 빈 슬라이드 제외.
+    const visible = chunks.filter((c) => !isSkipMarked(c) && !isEmptyAfterHide(c, opts));
+    return visible.length > 0 ? visible : [''];
 }

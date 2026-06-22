@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, AArrowDown, AArrowUp } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
@@ -62,6 +62,18 @@ export function SlideshowView({
     );
     const [current, setCurrent] = useState(0);
 
+    // 폰트 배율(전체 확대/축소) — 0.6~2.0, localStorage 영속.
+    const [scale, setScale] = useState(() => {
+        const v = parseFloat(localStorage.getItem('markmind-slideshow-font-scale') || '');
+        return v >= 0.6 && v <= 2 ? v : 1;
+    });
+    useEffect(() => {
+        localStorage.setItem('markmind-slideshow-font-scale', String(scale));
+    }, [scale]);
+    const adjustScale = useCallback((d: number) => {
+        setScale((s) => Math.round(Math.max(0.6, Math.min(2, s + d)) * 10) / 10);
+    }, []);
+
     // 설정/내용 변경으로 슬라이드 수가 줄면 current 가 범위를 벗어날 수 있어 보정.
     useEffect(() => {
         setCurrent((c) => Math.min(c, Math.max(0, slides.length - 1)));
@@ -103,11 +115,21 @@ export function SlideshowView({
                     e.preventDefault();
                     onClose();
                     break;
+                case '+':
+                case '=':
+                    e.preventDefault();
+                    adjustScale(0.1);
+                    break;
+                case '-':
+                case '_':
+                    e.preventDefault();
+                    adjustScale(-0.1);
+                    break;
             }
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [go, onClose, slides.length]);
+    }, [go, onClose, slides.length, adjustScale]);
 
     // 숨길 요소 → CSS 클래스(컨테이너에 부여, display:none 으로 비표시).
     const hideClasses = [
@@ -115,6 +137,8 @@ export function SlideshowView({
         settings.hideImage && 'hide-image',
         settings.hideTable && 'hide-table',
         settings.hideBlockquote && 'hide-blockquote',
+        settings.hideInlineCode && 'hide-inline-code',
+        settings.hideStrike && 'hide-strike',
     ]
         .filter(Boolean)
         .join(' ');
@@ -126,7 +150,10 @@ export function SlideshowView({
             role="dialog"
             aria-modal="true"
             aria-label="슬라이드쇼"
-            style={bgColor ? ({ '--slideshow-bg': bgColor } as React.CSSProperties) : undefined}
+            style={{
+                '--slideshow-scale': String(scale),
+                ...(bgColor ? { '--slideshow-bg': bgColor } : {}),
+            } as React.CSSProperties}
         >
             <div className="slideshow-stage">
                 {slides.map((md, i) => (
@@ -140,6 +167,15 @@ export function SlideshowView({
                         </div>
                     </div>
                 ))}
+            </div>
+
+            <div className="slideshow-fontctl">
+                <button onClick={() => adjustScale(-0.1)} title="글자 작게 (−)" aria-label="글자 작게">
+                    <AArrowDown size={18} strokeWidth={1.75} />
+                </button>
+                <button onClick={() => adjustScale(0.1)} title="글자 크게 (+)" aria-label="글자 크게">
+                    <AArrowUp size={18} strokeWidth={1.75} />
+                </button>
             </div>
 
             <button className="slideshow-close" onClick={onClose} title="닫기 (Esc)" aria-label="닫기">

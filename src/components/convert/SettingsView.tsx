@@ -736,7 +736,6 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                                 H2
                             </button>
                         </div>
-                        <p className="convert-key-note">켜진 기준을 만나면 새 슬라이드로 나뉩니다.</p>
                     </section>
 
                     {/* 슬라이드에서 숨길 요소 — 발표 시 특정 블록 비표시(2×2 체크박스). */}
@@ -775,7 +774,27 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                                 />
                                 <span>인용블록</span>
                             </label>
+                            <label className="convert-option">
+                                <input
+                                    type="checkbox"
+                                    checked={viewer.slideshow.hideInlineCode}
+                                    onChange={(e) => viewer.onSlideshowChange({ hideInlineCode: e.target.checked })}
+                                />
+                                <span>인라인 코드</span>
+                            </label>
+                            <label className="convert-option">
+                                <input
+                                    type="checkbox"
+                                    checked={viewer.slideshow.hideStrike}
+                                    onChange={(e) => viewer.onSlideshowChange({ hideStrike: e.target.checked })}
+                                />
+                                <span>취소선</span>
+                            </label>
                         </div>
+                        <p className="convert-key-note">
+                            내용이 빈 슬라이드는 자동으로 건너뜁니다. 특정 슬라이드를 숨기려면 그 안에{' '}
+                            <code>&lt;!-- skip --&gt;</code> 를 넣으세요.
+                        </p>
                     </section>
                 </>
             )}
