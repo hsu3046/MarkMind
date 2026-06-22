@@ -7,6 +7,9 @@ import rehypeHighlight from 'rehype-highlight';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import { Extension } from '@tiptap/core';
 import { StarterKit } from '@tiptap/starter-kit';
+import { Italic as ItalicMark } from '@tiptap/extension-italic';
+import { Bold as BoldMark } from '@tiptap/extension-bold';
+import { Strike as StrikeMark } from '@tiptap/extension-strike';
 import { Link } from '@tiptap/extension-link';
 import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
@@ -94,6 +97,27 @@ const HeadingMarkShortcuts = Extension.create({
             }),
             {} as Record<string, () => boolean>,
         );
+    },
+});
+
+// tiptap-markdown 0.9.0 의 expelEnclosingWhitespace(강조 mark 앞뒤 공백을 mark 밖으로
+// 빼는 trimInline)가 blockquote 의 `> ` prefix 와 충돌해, 인용 안에서 강조(em/bold/strike)로
+// "시작"하는 줄을 깨뜨린다 (`> *X*` → `*> *X*`, round-trip 마다 누적). serialize 에서 expel
+// 만 끄면 깨짐이 사라진다(파싱은 markdown-it 담당이라 영향 없음 — happy-dom 라운드트립 검증).
+// 부작용: `*text *`(닫는 `*` 앞 공백, 원래 유효한 em 아님)이 정규화 대신 escape 되나 무해.
+const ItalicNoExpel = ItalicMark.extend({
+    addStorage() {
+        return { markdown: { serialize: { open: '*', close: '*', mixable: true, expelEnclosingWhitespace: false }, parse: {} } };
+    },
+});
+const BoldNoExpel = BoldMark.extend({
+    addStorage() {
+        return { markdown: { serialize: { open: '**', close: '**', mixable: true, expelEnclosingWhitespace: false }, parse: {} } };
+    },
+});
+const StrikeNoExpel = StrikeMark.extend({
+    addStorage() {
+        return { markdown: { serialize: { open: '~~', close: '~~', mixable: true, expelEnclosingWhitespace: false }, parse: {} } };
     },
 });
 
@@ -808,7 +832,14 @@ function RichEditor({
                 codeBlock: { HTMLAttributes: { class: 'hljs' } },
                 // undo/redo 끄기 — App 전역 content 스택으로 일원화(#74 유니버설 undo).
                 undoRedo: false,
+                // bold/italic/strike 는 expel 끈 커스텀으로 대체(아래) — blockquote 직렬화 버그 회피.
+                bold: false,
+                italic: false,
+                strike: false,
             }),
+            ItalicNoExpel,
+            BoldNoExpel,
+            StrikeNoExpel,
             // autolink: false — `arena.ai` 같은 평문 URL 이 자동으로 링크되는 동작 끄기
             // (사용자가 명시적으로 toolbar Link 버튼/⌘K 로만 링크 생성)
             Link.configure({ openOnClick: false, autolink: false }),
