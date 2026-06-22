@@ -1966,6 +1966,12 @@ body.is-resizing .split-pane {
   outline: none;
   min-height: 300px;
 }
+/* Rich Text heading 상하 여백 동일 (.markdown-body 와 통일) */
+.tiptap-rich h1, .tiptap-rich h2, .tiptap-rich h3,
+.tiptap-rich h4, .tiptap-rich h5, .tiptap-rich h6 {
+  margin-top: 0.8em;
+  margin-bottom: 0.8em;
+}
 /* Rich Text 의 heading 은 em 단위 — 본문 fontSize 변경 시 비례 확대 */
 .tiptap-rich h1 { font-size: var(--h1); letter-spacing: -0.02em; }
 .tiptap-rich h2 { font-size: var(--h2); letter-spacing: -0.01em; }
@@ -2429,8 +2435,9 @@ body.is-resizing .split-pane {
   color: var(--text-primary);
   font-weight: 700;
   line-height: 1.3;
-  margin-top: 1.6em;
-  margin-bottom: 0.6em;
+  /* heading 상하 여백 동일 — 상단이 과하게 크던 문제 해소 */
+  margin-top: 0.8em;
+  margin-bottom: 0.8em;
 }
 
 .markdown-body h1 {
