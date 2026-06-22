@@ -1,0 +1,124 @@
+/* 슬라이드쇼 뷰 — 전체화면 발표 모드. document.body 로 portal 되어 App 의
+   transform/배경 영향 없음. 전환은 cross-fade(slide 겹침 + opacity transition). */
+
+.slideshow-root {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    /* 사용자 지정 배경 → 테마 프리뷰 배경 → 흰색 폴백 */
+    background: var(--slideshow-bg, var(--preview-bg, #ffffff));
+    overflow: hidden;
+}
+
+.slideshow-stage {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+/* 각 슬라이드는 stage 전체를 겹쳐 깔고 opacity 로 cross-fade.
+   grid place-items center → 짧은 슬라이드는 중앙, 긴 슬라이드는 안 잘리고 스크롤. */
+.slideshow-slide {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 0.32s ease;
+    pointer-events: none;
+    overflow-y: auto;
+    display: grid;
+    place-items: center;
+    padding: clamp(2rem, 6vh, 5rem) clamp(1.5rem, 6vw, 6rem);
+    -webkit-overflow-scrolling: touch;
+}
+
+.slideshow-slide.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.slideshow-content {
+    width: 100%;
+    max-width: 880px;
+    /* 발표용 — 기본 본문보다 크게(뷰포트 기반). 내부 요소(h1/h2 등)는 상대 단위로 따라옴. */
+    font-size: clamp(1.05rem, 0.7rem + 1.05vw, 1.6rem);
+    line-height: var(--md-line-height, 1.7);
+}
+
+/* 숨길 요소 — display:none 으로 비표시(공간도 제거). 인라인 코드(<code> 단독)는 유지. */
+.slideshow-content.hide-code pre {
+    display: none;
+}
+.slideshow-content.hide-image img {
+    display: none;
+}
+.slideshow-content.hide-table table {
+    display: none;
+}
+.slideshow-content.hide-blockquote blockquote {
+    display: none;
+}
+
+/* ── 컨트롤 (닫기 / 좌우 네비 / 페이지 인디케이터) ── */
+.slideshow-close,
+.slideshow-nav {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 999px;
+    background: var(--bg-active, rgba(0, 0, 0, 0.06));
+    color: var(--text-primary, #1a1a1a);
+    cursor: pointer;
+    opacity: 0.5;
+    transition: opacity 0.18s ease, background 0.18s ease;
+}
+.slideshow-close:hover,
+.slideshow-nav:hover {
+    opacity: 1;
+    background: var(--bg-active, rgba(0, 0, 0, 0.12));
+}
+.slideshow-nav:disabled {
+    opacity: 0.12;
+    cursor: default;
+}
+
+.slideshow-close {
+    top: 1rem;
+    right: 1rem;
+    width: 40px;
+    height: 40px;
+}
+
+.slideshow-nav {
+    top: 50%;
+    transform: translateY(-50%);
+    width: 52px;
+    height: 52px;
+}
+.slideshow-nav.prev {
+    left: 0.75rem;
+}
+.slideshow-nav.next {
+    right: 0.75rem;
+}
+
+.slideshow-indicator {
+    position: absolute;
+    bottom: 1.1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.3rem 0.85rem;
+    border-radius: 999px;
+    background: var(--bg-hover, rgba(0, 0, 0, 0.04));
+    color: var(--text-primary, #1a1a1a);
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.55;
+    user-select: none;
+}
+
+/* 본문 명조 — App 의 data-font-family 규칙과 동일 패밀리 적용(portal 이라 직접 지정). */
+.slideshow-root[data-font-family='serif'] .slideshow-content {
+    font-family: var(--font-serif, 'Noto Serif KR', Georgia, serif);
+}

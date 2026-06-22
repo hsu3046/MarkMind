@@ -11,6 +11,8 @@ import { MindmapView } from './components/MindmapView';
 import { FlowchartView } from './components/FlowchartView';
 import { SearchBar } from './components/SearchBar';
 import { GanttView } from './components/GanttView';
+import { SlideshowView } from './components/SlideshowView';
+import { getSlideshowSettings, setSlideshowSettings as persistSlideshowSettings, type SlideshowSettings } from './lib/slideSplit';
 import { Toolbar, EditableFileName, PaneHeader, ViewMode, PaneView, EDITABLE_VIEWS, isPaneView } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { OutlinePanel } from './components/OutlinePanel';
@@ -113,8 +115,16 @@ function App() {
     return isPaneView(v) ? v : 'preview';
   });
   const [activePane, setActivePane] = useState<'left' | 'right'>('left');
-  // 현재 편집 source 가 되는 뷰 — split 이면 active 패인의 뷰, 아니면 viewMode 그대로.
-  const activeView: PaneView = viewMode === 'split' ? (activePane === 'left' ? splitLeft : splitRight) : viewMode;
+  // 현재 편집 source 가 되는 뷰 — split 이면 active 패인의 뷰, slideshow(전체화면, 비편집)는
+  // editor 로 폴백, 아니면 viewMode 그대로.
+  const activeView: PaneView =
+    viewMode === 'split'
+      ? activePane === 'left'
+        ? splitLeft
+        : splitRight
+      : viewMode === 'slideshow'
+        ? 'editor'
+        : viewMode;
 
   // Wire up the file-opened callback now that viewMode/setViewMode exist
   onFileOpenedRef.current = () => {
@@ -163,6 +173,21 @@ function App() {
   }, [readingWidth]);
   // 좌우 여백 % → CSS var. 본체에서 max-width: calc(100% − 2×var) 로 본문 폭 결정.
   const readingWidthCss = `${readingWidth}%`;
+
+  // 슬라이드쇼 설정 — 분할 기준(HR/H1/H2) + 숨길 요소. localStorage 영속.
+  const [slideshowSettings, setSlideshowSettings] = useState<SlideshowSettings>(getSlideshowSettings);
+  const handleSlideshowChange = useCallback((patch: Partial<SlideshowSettings>) => {
+    setSlideshowSettings((prev) => {
+      const next = { ...prev, ...patch };
+      persistSlideshowSettings(next);
+      return next;
+    });
+  }, []);
+  // 슬라이드쇼 진입 직전 뷰 — Esc/닫기로 복귀.
+  const lastNonSlideshowView = useRef<ViewMode>('editor');
+  useEffect(() => {
+    if (viewMode !== 'slideshow') lastNonSlideshowView.current = viewMode;
+  }, [viewMode]);
 
   // 배경색의 WCAG 상대 휘도 (0~1). 0.5 미만이면 dark 텍스트가 안 보임 → theme dark 로.
   const luminance = useMemo(() => {
@@ -1377,6 +1402,10 @@ function App() {
             e.preventDefault();
             setViewMode('split');
             break;
+          case '7':
+            e.preventDefault();
+            setViewMode('slideshow');
+            break;
           case '=':
           case '+':
             e.preventDefault();
@@ -1837,7 +1866,7 @@ function App() {
                 {renderPaneView(splitRight, 'right')}
               </div>
             </>
-          ) : (
+          ) : viewMode === 'slideshow' ? null : (
             <div className="pane" style={{ width: '100%' }}>
               {renderPaneView(viewMode, 'solo')}
             </div>
@@ -1921,6 +1950,18 @@ function App() {
         onClose={() => setRecentPanelVisible(false)}
       />
 
+      {/* 슬라이드쇼 — 전체화면 발표 모드(document.body portal). Esc 로 직전 뷰 복귀. */}
+      {viewMode === 'slideshow' && (
+        <SlideshowView
+          content={content}
+          filePath={filePath}
+          settings={slideshowSettings}
+          fontFamily={fontFamily}
+          bgColor={bgColor}
+          onClose={() => setViewMode(lastNonSlideshowView.current)}
+        />
+      )}
+
       {/* 통합 Settings 모달 — STT/OCR/AI 에이전트 API 키 */}
       <SettingsModal
         visible={settingsVisible}
@@ -1937,6 +1978,8 @@ function App() {
           onFontFamilyChange: setFontFamily,
           readingWidth,
           onReadingWidthChange: setReadingWidth,
+          slideshow: slideshowSettings,
+          onSlideshowChange: handleSlideshowChange,
         }}
       />
 

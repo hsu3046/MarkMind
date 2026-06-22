@@ -177,6 +177,13 @@
     opacity: 0.5;
 }
 
+/* 슬라이드쇼 — 숨길 요소 체크박스(2×2) */
+.slideshow-hide-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 16px;
+}
+
 .convert-options-grid {
     display: flex;
     flex-direction: column;

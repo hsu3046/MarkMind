@@ -40,6 +40,7 @@ import {
     getValidationStatus,
     clearValidationStatus,
 } from '../../services/apiValidation';
+import type { SlideshowSettings } from '../../lib/slideSplit';
 
 /** 뷰어 설정 — App 상태(폰트크기/행간/배경/본문폰트/읽기폭)를 뷰어 설정 탭이 제어. */
 export interface ViewerSettings {
@@ -54,6 +55,8 @@ export interface ViewerSettings {
     onFontFamilyChange: (v: 'sans' | 'serif') => void;
     readingWidth: number;
     onReadingWidthChange: (v: number) => void;
+    slideshow: SlideshowSettings;
+    onSlideshowChange: (patch: Partial<SlideshowSettings>) => void;
 }
 
 interface SettingsViewProps {
@@ -702,6 +705,77 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                     <section className="convert-settings-section viewer-section">
                         <label>배경색</label>
                         <BackgroundPicker value={viewer.bgColor} onChange={viewer.onBgColorChange} inline />
+                    </section>
+
+                    {/* 슬라이드쇼 분할 기준 — 켜진 마커에서 새 슬라이드(복수 선택). */}
+                    <section className="convert-settings-section viewer-section">
+                        <label>슬라이드쇼 분할 기준</label>
+                        <div className="viewer-segmented">
+                            <button
+                                type="button"
+                                className={`viewer-seg${viewer.slideshow.splitOnHr ? ' active' : ''}`}
+                                onClick={() => viewer.onSlideshowChange({ splitOnHr: !viewer.slideshow.splitOnHr })}
+                                title="수평선(---)에서 분할"
+                            >
+                                ---
+                            </button>
+                            <button
+                                type="button"
+                                className={`viewer-seg${viewer.slideshow.splitOnH1 ? ' active' : ''}`}
+                                onClick={() => viewer.onSlideshowChange({ splitOnH1: !viewer.slideshow.splitOnH1 })}
+                                title="# 제목(H1)에서 분할"
+                            >
+                                H1
+                            </button>
+                            <button
+                                type="button"
+                                className={`viewer-seg${viewer.slideshow.splitOnH2 ? ' active' : ''}`}
+                                onClick={() => viewer.onSlideshowChange({ splitOnH2: !viewer.slideshow.splitOnH2 })}
+                                title="## 제목(H2)에서 분할"
+                            >
+                                H2
+                            </button>
+                        </div>
+                        <p className="convert-key-note">켜진 기준을 만나면 새 슬라이드로 나뉩니다.</p>
+                    </section>
+
+                    {/* 슬라이드에서 숨길 요소 — 발표 시 특정 블록 비표시(2×2 체크박스). */}
+                    <section className="convert-settings-section viewer-section">
+                        <label>슬라이드에서 숨길 요소</label>
+                        <div className="slideshow-hide-grid">
+                            <label className="convert-option">
+                                <input
+                                    type="checkbox"
+                                    checked={viewer.slideshow.hideCodeBlock}
+                                    onChange={(e) => viewer.onSlideshowChange({ hideCodeBlock: e.target.checked })}
+                                />
+                                <span>코드블록</span>
+                            </label>
+                            <label className="convert-option">
+                                <input
+                                    type="checkbox"
+                                    checked={viewer.slideshow.hideImage}
+                                    onChange={(e) => viewer.onSlideshowChange({ hideImage: e.target.checked })}
+                                />
+                                <span>이미지</span>
+                            </label>
+                            <label className="convert-option">
+                                <input
+                                    type="checkbox"
+                                    checked={viewer.slideshow.hideTable}
+                                    onChange={(e) => viewer.onSlideshowChange({ hideTable: e.target.checked })}
+                                />
+                                <span>표</span>
+                            </label>
+                            <label className="convert-option">
+                                <input
+                                    type="checkbox"
+                                    checked={viewer.slideshow.hideBlockquote}
+                                    onChange={(e) => viewer.onSlideshowChange({ hideBlockquote: e.target.checked })}
+                                />
+                                <span>인용블록</span>
+                            </label>
+                        </div>
                     </section>
                 </>
             )}

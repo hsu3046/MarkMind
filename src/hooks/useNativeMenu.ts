@@ -48,6 +48,7 @@ const VIEW_ITEMS: { mode: ViewMode; label: string; accelerator: string }[] = [
     { mode: 'flowchart', label: 'Flowchart', accelerator: 'CmdOrCtrl+4' },
     { mode: 'gantt', label: 'Gantt', accelerator: 'CmdOrCtrl+5' },
     { mode: 'split', label: 'Split View', accelerator: 'CmdOrCtrl+6' },
+    { mode: 'slideshow', label: 'Slideshow', accelerator: 'CmdOrCtrl+7' },
 ];
 
 /** 최근 파일 날짜 — 오늘이면 시각, 아니면 YYYY.MM.DD (툴바와 동일 포맷). */

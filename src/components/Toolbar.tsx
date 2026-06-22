@@ -6,15 +6,15 @@ import {
     Search, ChevronRight, ChevronDown, Sparkles, Check, X,
     Settings, Bot,
     FileCode, FileText,
-    Network, Share2, ChartBarStacked, type LucideIcon,
+    Network, Share2, ChartBarStacked, Presentation, type LucideIcon,
 } from 'lucide-react';
 import * as gdriveService from '../services/gdriveService';
 import type { RecentFile } from '../hooks/useRecentFiles';
 
-export type ViewMode = 'split' | 'editor' | 'preview' | 'mindmap' | 'flowchart' | 'gantt';
+export type ViewMode = 'split' | 'editor' | 'preview' | 'mindmap' | 'flowchart' | 'gantt' | 'slideshow';
 
-/** 패인 하나에 담길 수 있는 뷰 — split 자신은 컨테이너라 패인 뷰가 될 수 없음. */
-export type PaneView = Exclude<ViewMode, 'split'>;
+/** 패인 하나에 담길 수 있는 뷰 — split(컨테이너)·slideshow(전체화면)는 패인 뷰가 될 수 없음. */
+export type PaneView = Exclude<ViewMode, 'split' | 'slideshow'>;
 
 /** 패인 뷰 전체 목록 — localStorage 복원 검증 등에 사용. */
 export const PANE_VIEWS: PaneView[] = ['editor', 'preview', 'mindmap', 'flowchart', 'gantt'];
@@ -35,6 +35,7 @@ const VIEW_MODES: { mode: ViewMode; label: string; shortcut: string; Icon: Lucid
     { mode: 'flowchart', label: 'Flowchart', shortcut: '⌘4', Icon: Network },
     { mode: 'gantt', label: 'Gantt', shortcut: '⌘5', Icon: ChartBarStacked },
     { mode: 'split', label: 'Split View', shortcut: '⌘6', Icon: Columns2 },
+    { mode: 'slideshow', label: 'Slideshow', shortcut: '⌘7', Icon: Presentation },
 ];
 
 /** 최근 파일 날짜 표시 — 오늘이면 시각, 아니면 YYYY.MM.DD. */
@@ -72,7 +73,7 @@ export function PaneHeader({ view, isActive, onSelect }: {
                     <>
                         <div className="pane-dropdown-backdrop" onClick={() => setOpen(false)} aria-hidden="true" />
                         <div className="toolbar-dropdown-menu pane-view-menu">
-                            {VIEW_MODES.filter((v) => v.mode !== 'split').map((v) => {
+                            {VIEW_MODES.filter((v) => v.mode !== 'split' && v.mode !== 'slideshow').map((v) => {
                                 const Icon = v.Icon;
                                 return (
                                     <button
