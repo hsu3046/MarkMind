@@ -6,15 +6,19 @@
  */
 
 import { ReactNode } from 'react';
-import { JobState } from '../../types/converter';
+import { JobState, ProgressStep } from '../../types/converter';
+import { AI_CATALOG, getSelectionDisplay } from '../../services/aiModelConfig';
 import {
     Upload, Clock, AudioLines, CheckCircle2, Binoculars, Notebook, Scissors,
     AlertTriangle, MessagesSquare, FastForward, Combine, Waypoints,
-    HardDriveDownload, Search, BarChart3, FileText, Save, Loader2,
+    HardDriveDownload, Search, BarChart3, FileText, Save, Loader2, Image as ImageIcon,
 } from 'lucide-react';
 
 interface ProgressPanelProps {
     state: JobState;
+    newestFirst?: boolean;
+    showStepProgress?: boolean;
+    modelDetailMode?: 'all' | 'running';
 }
 
 /** emoji → lucide icon 매핑. doc-converter step 메시지의 모든 prefix 대응. */
@@ -42,6 +46,7 @@ function iconFor(step: string): { icon: ReactNode; text: string } {
         { pattern: /^🔍\s*/, icon: <Search size={14} /> },
         { pattern: /^📊\s*/, icon: <BarChart3 size={14} /> },
         { pattern: /^📑\s*/, icon: <FileText size={14} /> },
+        { pattern: /^🖼️?\s*/, icon: <ImageIcon size={14} /> },
         { pattern: /^💾\s*/, icon: <Save size={14} /> },
         { pattern: /^📡\s*/, icon: <Upload size={14} /> },
         { pattern: /^⏳\s*/, icon: <Loader2 size={14} className="spinning" /> },
@@ -54,8 +59,33 @@ function iconFor(step: string): { icon: ReactNode; text: string } {
     return { icon: null, text: step };
 }
 
-export function ProgressPanel({ state }: ProgressPanelProps) {
+function ModelDetail({ step, mode }: { step: ProgressStep; mode: 'all' | 'running' }) {
+    if (!step.model) return step.detail ? <div className="step-detail">{step.detail}</div> : null;
+    if (mode === 'running' && !/^⏳\s*/.test(step.step)) return null;
+    const display = getSelectionDisplay(AI_CATALOG, {
+        company: step.model.company,
+        auth: step.model.auth,
+        model: step.model.model,
+    });
+    return (
+        <div className="step-detail step-model-detail" title={step.detail ?? step.model.model}>
+            {display.logo && <img src={display.logo} alt="" className="step-model-logo" />}
+            <span className="step-model-label">{display.label}</span>
+            {display.sub && <span className="step-model-sub">구독</span>}
+            {step.detail && <span className="step-model-extra">{step.detail}</span>}
+        </div>
+    );
+}
+
+export function ProgressPanel({
+    state,
+    newestFirst = true,
+    showStepProgress = true,
+    modelDetailMode = 'all',
+}: ProgressPanelProps) {
     if (state.phase === 'idle' && state.steps.length === 0) return null;
+
+    const steps = newestFirst ? state.steps.slice().reverse() : state.steps;
 
     return (
         <div className={`convert-progress phase-${state.phase}`}>
@@ -65,22 +95,19 @@ export function ProgressPanel({ state }: ProgressPanelProps) {
                 </div>
             )}
             <ol className="convert-progress-steps">
-                {/* 최신이 위로 — slice() 로 원본 보존 후 reverse */}
-                {state.steps
-                    .slice()
-                    .reverse()
+                {steps
                     .map((s, i) => {
                         const { icon, text } = iconFor(s.step);
                         return (
                             <li
-                                key={s.stepId ?? `${state.steps.length - 1 - i}`}
+                                key={s.stepId ?? `${newestFirst ? state.steps.length - 1 - i : i}`}
                                 className="convert-progress-step"
                             >
                                 <div className="step-main">
                                     {icon && <span className="step-icon">{icon}</span>}
                                     <span className="step-text">{text}</span>
                                 </div>
-                                {typeof s.progress === 'number' && (
+                                {showStepProgress && typeof s.progress === 'number' && (
                                     <div className="step-progress-bar">
                                         <div
                                             className="step-progress-fill"
@@ -88,7 +115,7 @@ export function ProgressPanel({ state }: ProgressPanelProps) {
                                         />
                                     </div>
                                 )}
-                                {s.detail && <div className="step-detail">{s.detail}</div>}
+                                <ModelDetail step={s} mode={modelDetailMode} />
                             </li>
                         );
                     })}

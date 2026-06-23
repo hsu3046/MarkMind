@@ -20,8 +20,7 @@ use rmcp::{
     handler::server::router::tool::ToolRouter,
     handler::server::wrapper::{Json, Parameters},
     model::{Icon, Implementation, ServerCapabilities, ServerInfo},
-    schemars, tool, tool_handler, tool_router,
-    ServerHandler,
+    schemars, tool, tool_handler, tool_router, ServerHandler,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
@@ -98,13 +97,17 @@ impl McpState {
     /// tool 이 15s/300s timeout 까지 매달리지 않게 한다(닫힌 창은 영영 ack 불가).
     pub fn cancel_window_pending(&self, label: &str) {
         let cancelled: Vec<oneshot::Sender<EditOutcome>> = {
-            let Ok(mut m) = self.pending.lock() else { return };
+            let Ok(mut m) = self.pending.lock() else {
+                return;
+            };
             let ids: Vec<String> = m
                 .iter()
                 .filter(|(_, (l, _))| l == label)
                 .map(|(id, _)| id.clone())
                 .collect();
-            ids.into_iter().filter_map(|id| m.remove(&id).map(|(_, tx)| tx)).collect()
+            ids.into_iter()
+                .filter_map(|id| m.remove(&id).map(|(_, tx)| tx))
+                .collect()
         };
         for tx in cancelled {
             let _ = tx.send(EditOutcome {
@@ -131,7 +134,10 @@ impl McpState {
 
     /// 채널 회수(timeout 정리 등). 있으면 제거 후 반환.
     pub fn take_pending(&self, id: &str) -> Option<oneshot::Sender<EditOutcome>> {
-        self.pending.lock().ok().and_then(|mut m| m.remove(id).map(|(_, tx)| tx))
+        self.pending
+            .lock()
+            .ok()
+            .and_then(|mut m| m.remove(id).map(|(_, tx)| tx))
     }
 
     /// 프론트 ack — 해당 요청 채널을 결과로 resolve.
@@ -225,7 +231,12 @@ struct EditResultOut {
 
 impl EditResultOut {
     fn fail(msg: impl Into<String>) -> Self {
-        Self { applied: false, window_label: None, char_count: None, message: msg.into() }
+        Self {
+            applied: false,
+            window_label: None,
+            char_count: None,
+            message: msg.into(),
+        }
     }
 }
 
@@ -429,7 +440,8 @@ impl MarkMindServer {
                         applied: true,
                         window_label: Some(label),
                         char_count: o.char_count,
-                        message: "applied to editor (unsaved — call save_document to persist)".into(),
+                        message: "applied to editor (unsaved — call save_document to persist)"
+                            .into(),
                     }
                 } else {
                     EditResultOut::fail(o.error.unwrap_or_else(|| "edit rejected".into()))
@@ -509,20 +521,29 @@ impl MarkMindServer {
     )]
     async fn get_outline(&self, Parameters(args): Parameters<GetDocArgs>) -> Json<OutlineResult> {
         let Some(label) = resolve_target(&self.state, &args.window_label, &args.file_path) else {
-            return Json(OutlineResult { window_label: None, outline: vec![] });
+            return Json(OutlineResult {
+                window_label: None,
+                outline: vec![],
+            });
         };
         let docs = self.state.docs.lock().unwrap_or_else(|e| e.into_inner());
         let outline = docs
             .get(&label)
             .map(|d| parse_outline(&d.content))
             .unwrap_or_default();
-        Json(OutlineResult { window_label: Some(label), outline })
+        Json(OutlineResult {
+            window_label: Some(label),
+            outline,
+        })
     }
 
     #[tool(
         description = "Open a NEW MarkMind editor window containing `content` (e.g. a draft you composed). `file_name` sets the title (defaults to Untitled.md). The document is unsaved with no file path until the user saves it. Returns the new window_label."
     )]
-    async fn create_document(&self, Parameters(args): Parameters<CreateDocArgs>) -> Json<EditResultOut> {
+    async fn create_document(
+        &self,
+        Parameters(args): Parameters<CreateDocArgs>,
+    ) -> Json<EditResultOut> {
         if args.content.len() > MAX_CONTENT_BYTES {
             return Json(EditResultOut::fail(format!(
                 "content 가 너무 큽니다 (상한 {}MB)",
@@ -535,10 +556,9 @@ impl MarkMindServer {
         let content = args.content;
         // create_content_window 은 build 결과를 blocking recv 로 회수하므로
         // async 실행기를 막지 않도록 spawn_blocking 으로 분리.
-        let result = tokio::task::spawn_blocking(move || {
-            crate::create_content_window(&app, content, name)
-        })
-        .await;
+        let result =
+            tokio::task::spawn_blocking(move || crate::create_content_window(&app, content, name))
+                .await;
         match result {
             Ok(Ok(label)) => Json(EditResultOut {
                 applied: true,
@@ -554,7 +574,10 @@ impl MarkMindServer {
     #[tool(
         description = "Propose replacing a document's full content with `new_content`, shown to the user as a diff preview that they must ACCEPT or REJECT (target by window_label, file_path, or current focused window). Nothing changes unless the user accepts. Use this (instead of set_document_content) when the user should review a large or risky rewrite. Waits up to 5 minutes for the user's decision."
     )]
-    async fn propose_edit(&self, Parameters(args): Parameters<ProposeEditArgs>) -> Json<EditResultOut> {
+    async fn propose_edit(
+        &self,
+        Parameters(args): Parameters<ProposeEditArgs>,
+    ) -> Json<EditResultOut> {
         if args.new_content.len() > MAX_CONTENT_BYTES {
             return Json(EditResultOut::fail(format!(
                 "new_content 가 너무 큽니다 (상한 {}MB)",
@@ -562,7 +585,9 @@ impl MarkMindServer {
             )));
         }
         let Some(label) = resolve_target(&self.state, &args.window_label, &args.file_path) else {
-            return Json(EditResultOut::fail("일치하는 열린 문서가 없습니다 (list_open_documents 로 확인)"));
+            return Json(EditResultOut::fail(
+                "일치하는 열린 문서가 없습니다 (list_open_documents 로 확인)",
+            ));
         };
         let payload = EditRequest {
             request_id: uuid::Uuid::new_v4().to_string(),
@@ -571,7 +596,10 @@ impl MarkMindServer {
             description: args.description,
         };
         // 사용자 결정 대기 — 5분 timeout.
-        Json(self.dispatch_edit(label, "mcp-propose-edit", 300, payload).await)
+        Json(
+            self.dispatch_edit(label, "mcp-propose-edit", 300, payload)
+                .await,
+        )
     }
 }
 
@@ -640,7 +668,12 @@ pub async fn start(state: Arc<McpState>, app: AppHandle, shutdown: CancellationT
         .with_cancellation_token(shutdown.clone());
 
     let service = StreamableHttpService::new(
-        move || Ok(MarkMindServer::new(factory_state.clone(), factory_app.clone())),
+        move || {
+            Ok(MarkMindServer::new(
+                factory_state.clone(),
+                factory_app.clone(),
+            ))
+        },
         Arc::new(LocalSessionManager::default()),
         config,
     );
@@ -687,7 +720,10 @@ mod outline_tests {
     #[test]
     fn skips_headings_inside_fence() {
         let md = "# Real\n```\n# fake in code\n```\n## After";
-        assert_eq!(items(md), vec![(1, "Real".into(), 1), (2, "After".into(), 5)]);
+        assert_eq!(
+            items(md),
+            vec![(1, "Real".into(), 1), (2, "After".into(), 5)]
+        );
     }
 
     #[test]
@@ -714,9 +750,15 @@ mod outline_tests {
     #[test]
     fn indented_4spaces_is_code_not_fence_or_heading() {
         // 4칸 들여쓴 ``` 는 펜스 아님(코드블록) → 토글 안 됨, 뒤 헤딩 정상 인식
-        assert_eq!(items("text\n    ```\n# heading"), vec![(1, "heading".into(), 3)]);
+        assert_eq!(
+            items("text\n    ```\n# heading"),
+            vec![(1, "heading".into(), 3)]
+        );
         // 4칸 들여쓴 # 는 헤딩 아님
-        assert_eq!(items("    # not heading\n# yes"), vec![(1, "yes".into(), 2)]);
+        assert_eq!(
+            items("    # not heading\n# yes"),
+            vec![(1, "yes".into(), 2)]
+        );
     }
 
     #[test]

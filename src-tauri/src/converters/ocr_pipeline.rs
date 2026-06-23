@@ -36,13 +36,15 @@ pub struct OcrJobResult {
 }
 
 pub async fn run(emitter: &ProgressEmitter, opts: OcrJobOptions) -> ConverterResult<OcrJobResult> {
-    let api_key = get_key(Provider::Gemini)?
-        .ok_or(ConverterError::MissingApiKey("Gemini"))?;
+    let api_key = get_key(Provider::Gemini)?.ok_or(ConverterError::MissingApiKey("Gemini"))?;
     let file_path = Path::new(&opts.file_path).to_path_buf();
-    let file_name = opts
-        .original_name
-        .clone()
-        .unwrap_or_else(|| file_path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string());
+    let file_name = opts.original_name.clone().unwrap_or_else(|| {
+        file_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string()
+    });
     let is_pdf = file_path
         .extension()
         .and_then(|s| s.to_str())
@@ -71,9 +73,24 @@ pub async fn run(emitter: &ProgressEmitter, opts: OcrJobOptions) -> ConverterRes
     emitter.emit(pass1_label.clone(), Some(MODEL_OCR_FAST.into()));
     let start1 = std::time::Instant::now();
     let raw_text = if is_pdf {
-        run_pdf_pass(&api_key, MODEL_OCR_FAST, pass1_prompt, &file_path, emitter, &mut usages).await?
+        run_pdf_pass(
+            &api_key,
+            MODEL_OCR_FAST,
+            pass1_prompt,
+            &file_path,
+            emitter,
+            &mut usages,
+        )
+        .await?
     } else {
-        run_image_pass(&api_key, MODEL_OCR_FAST, pass1_prompt, &file_path, &mut usages).await?
+        run_image_pass(
+            &api_key,
+            MODEL_OCR_FAST,
+            pass1_prompt,
+            &file_path,
+            &mut usages,
+        )
+        .await?
     };
     let last_in = usages.last().map(|u| u.input_tokens).unwrap_or(0);
     emitter.emit(
@@ -104,14 +121,32 @@ pub async fn run(emitter: &ProgressEmitter, opts: OcrJobOptions) -> ConverterRes
             )
         };
         emitter.emit(
-            format!("🧠 Pass 2/{} — 문맥 보강 + Markdown 구조화 중...", total_passes),
+            format!(
+                "🧠 Pass 2/{} — 문맥 보강 + Markdown 구조화 중...",
+                total_passes
+            ),
             Some(MODEL_OCR_ENHANCE.into()),
         );
         let start2 = std::time::Instant::now();
         let result = if is_pdf {
-            run_pdf_pass(&api_key, MODEL_OCR_ENHANCE, &pass2_prompt, &file_path, emitter, &mut usages).await?
+            run_pdf_pass(
+                &api_key,
+                MODEL_OCR_ENHANCE,
+                &pass2_prompt,
+                &file_path,
+                emitter,
+                &mut usages,
+            )
+            .await?
         } else {
-            run_image_pass(&api_key, MODEL_OCR_ENHANCE, &pass2_prompt, &file_path, &mut usages).await?
+            run_image_pass(
+                &api_key,
+                MODEL_OCR_ENHANCE,
+                &pass2_prompt,
+                &file_path,
+                &mut usages,
+            )
+            .await?
         };
         let last_in = usages.last().map(|u| u.input_tokens).unwrap_or(0);
         emitter.emit(
@@ -220,7 +255,10 @@ async fn run_pdf_pass(
             );
             let images = extract_pdf_to_images(pdf_path).await?;
             emitter.emit(
-                format!("✅ 로컬 변환 완료 ({}장). 텍스트 추출 시작...", images.len()),
+                format!(
+                    "✅ 로컬 변환 완료 ({}장). 텍스트 추출 시작...",
+                    images.len()
+                ),
                 Some(model.into()),
             );
             let mut inline_data = Vec::with_capacity(images.len());
@@ -345,7 +383,8 @@ const PASS1_PROMPT_IMAGE: &str = "이 이미지에서 손글씨 텍스트를 추
 - 한 문장/줄이 끝나면 새 줄에서 시작해주세요.
 - 텍스트만 출력하세요. 설명, 제목, 코드 블록은 포함하지 마세요.";
 
-const PASS2_PROMPT_PDF_HEADER: &str = "아래는 PDF에서 1차 OCR로 추출된 텍스트입니다.\n원본 PDF를 직접 보고 다음을 수행해주세요:";
+const PASS2_PROMPT_PDF_HEADER: &str =
+    "아래는 PDF에서 1차 OCR로 추출된 텍스트입니다.\n원본 PDF를 직접 보고 다음을 수행해주세요:";
 
 const PASS2_PROMPT_PDF_BODY: &str = "## 작업:
 1. 한글 맞춤법/문법 교정

@@ -398,6 +398,45 @@
     word-break: break-all;
     overflow-wrap: anywhere;
 }
+.step-model-detail {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+    word-break: normal;
+    overflow-wrap: normal;
+}
+.step-model-logo {
+    width: 15px;
+    height: 15px;
+    object-fit: contain;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+.step-model-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+.step-model-sub {
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: var(--accent-bg, rgba(59, 130, 246, 0.1));
+    color: var(--accent, #3b82f6);
+    font-size: 10px;
+    font-weight: 600;
+}
+.step-model-extra {
+    min-width: 0;
+    color: var(--text-tertiary, var(--text-secondary));
+    font-weight: 400;
+    overflow-wrap: anywhere;
+}
 /* step 자체에 progress bar (heartbeat row) — % 시각화 */
 .step-progress-bar {
     margin: 4px 0 0 22px;

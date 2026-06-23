@@ -55,19 +55,26 @@ pub async fn generate_text(
     model: &str,
     system: Option<&str>,
     prompt: &str,
+    max_completion_tokens: Option<u32>,
 ) -> ConverterResult<GenerateResult> {
     let mut messages = Vec::new();
     if let Some(s) = system {
         if !s.is_empty() {
-            messages.push(ChatMessage { role: "system", content: s });
+            messages.push(ChatMessage {
+                role: "system",
+                content: s,
+            });
         }
     }
-    messages.push(ChatMessage { role: "user", content: prompt });
+    messages.push(ChatMessage {
+        role: "user",
+        content: prompt,
+    });
 
     let body = ChatRequest {
         model,
         messages,
-        max_completion_tokens: Some(16000),
+        max_completion_tokens: Some(max_completion_tokens.unwrap_or(16000)),
     };
 
     let client = reqwest::Client::builder()

@@ -6,7 +6,8 @@ use super::audio_pipeline::{self, AudioJobOptions, AudioJobResult};
 use super::error::ConverterError;
 use super::notes_pipeline::{self, NotesJobOptions, NotesJobResult};
 use super::ocr_pipeline::{self, OcrJobOptions, OcrJobResult};
-use super::progress::ProgressEmitter;
+use super::progress::{ProgressEmitter, ProgressModelInfo};
+use serde::Deserialize;
 use tauri::AppHandle;
 
 /// Frontend 가 jobId 전달하면 그걸 사용 — listener 필터링으로 다른 윈도우의 동시
@@ -68,67 +69,719 @@ pub fn get_conversions_dir() -> String {
 //
 // 마크다운을 슬라이드용으로 "재구성"해 과밀 슬라이드를 막는다(규칙 기반의 약점
 // 보완). 기존 converters 의 키체인 + LLM 클라이언트를 그대로 재사용한다.
-// 반환은 프론트가 파싱하는 단순 슬라이드 JSON 문자열:
-//   { "slides": [ { "title", "layout":"title|content", "bullets":[...], "notes"? } ] }
+// 반환은 프론트가 파싱하는 슬라이드 JSON 문자열:
+//   { "master"?: { deck-wide chrome }, "slides": [ { "title", "layout", "bullets"/"blocks"/"columns", "notes"? } ] }
 
-// 출력 토큰 상한 — 큰 덱(50장+)도 잘리지 않도록 넉넉히. 생성한 만큼만 과금.
-const SLIDES_MAX_TOKENS: u32 = 32000;
+// 최종 슬라이드 JSON 출력 상한. 장수 추정으로 흔들지 않고 단순 고정값을 쓴다.
+const SLIDES_MAX_TOKENS: u32 = 16000;
+const SLIDES_MAX_COUNT: usize = 32;
+const SLIDES_PLAN_MAX_TOKENS: u32 = 12000;
+const SLIDES_TWO_PASS_SECTION_THRESHOLD: usize = 28;
+const SLIDES_TWO_PASS_SLIDE_THRESHOLD: usize = 24;
+const SLIDE_MARKDOWN_DRAFT_MAX_TOKENS: u32 = 30000;
+const SOURCE_MAP_BUDGET: usize = 18000;
+const SOURCE_MAP_MAX_SECTIONS: usize = 90;
+const SOURCE_MAP_CHUNK_CHARS: usize = 1100;
 
-const SLIDES_SYSTEM: &str = "You are a presentation designer. Convert the given Markdown document into a concise slide deck. Output STRICT minified JSON only (no prose, no code fences, no markdown) of the form: {\"slides\":[{\"title\":string,\"layout\":\"title\"|\"content\",\"bullets\":string[],\"notes\":string?}]}. Rules: the first slide is layout \"title\" (deck title + optional one-line subtitle as a single bullet); other slides are \"content\"; keep each bullet short (<= ~12 words); at most ~6 bullets per slide; split dense content across multiple slides to avoid overcrowding; omit the \"notes\" field unless it adds real speaker value (keeps output compact); preserve the document's language; do not invent facts.";
+const SLIDES_PLAN_SYSTEM: &str = concat!(
+    "You are a deck planning agent. Build a grounded presentation plan from a Markdown source map. ",
+    "Output STRICT minified JSON only (no prose, no code fences, no markdown) of the form: {\"slides\":[...]}. ",
+    "Each planned slide must include id, role, message, sourceIds, layoutHint, layoutRationale, fitNotes, speakerIntent, and sectionPath. ",
+    "Do not write final slide bullets yet. Do not copy the document outline one-to-one. ",
+    "Create a narrative that may reorder sections when it improves audience understanding, but every planned claim must be grounded in sourceIds. ",
+    "Prefer one message per slide, merge weak adjacent sections, split dense sections, and include section divider slides only when they improve flow. ",
+    "Treat layouts as schemas, not decoration: choose the layout whose rhetorical shape fits the message. ",
+    "Use title/opening, section, and ending roles deliberately; avoid a chain of generic title-plus-bullets slides. ",
+    "Plan for native editable PowerPoint output: keep each slide to about six visible content elements, leave whitespace, and keep text near 60 percent of the available visual capacity. ",
+    "Use the requested slide count as a target, not a reason to pad weak slides. Never output more than 32 slides. Never invent facts."
+);
 
-//
-// 모든 AI 작업은 전역 회사(company)→인증(auth)→모델(model) 선택(aiModelConfig)을
-// 따른다 — 슬라이드 생성도 회의록 파이프라인과 동일하게 3사·구독/API 키를 지원한다.
-#[tauri::command]
-pub async fn generate_slides_llm(
-    markdown: String,
+const SLIDES_SYSTEM: &str = concat!(
+    "You are a slide manuscript agent, not a visual renderer. Convert a grounded source map or deck plan into final slide JSON. ",
+    "Output STRICT minified JSON only (no prose, no code fences, no markdown) of the form: {\"master\":{...},\"slides\":[...]}. The top-level master object is optional. ",
+    "Allowed layout values: \"title\", \"content\", \"section\", \"two-column\", \"image-focus\", \"quote\", \"stat\", \"comparison\", \"timeline\". ",
+    "A slide may include: title:string, layout:string, importance:number(0-100), importanceReason:string, sourceIds:string[], bullets:string[], blocks:[{kind:\"text\"|\"bullet\"|\"subhead\",text:string,level?:number}], columns:[[string|{kind,text,level?}]], quote:{text,attribution?}, stat:{value,label?,context?}, image:{src?,prompt?,query?,entity?,role?,kind?,alt?,aspect?,style?,sourcePreference?,licenseStrictness?}, source:{headingLevel?:number,sectionPath?:string[]}, notes:string. ",
+    "Never output more than 32 slides. Use the slide count target as a soft target inside that hard limit. ",
+    "Optional master may include only deck-wide chrome policies for slideNumber, footer, or date, using enabled, includeOn(title/content/section), position(bottom-left/bottom-center/bottom-right), style(minimal/muted/accent/inverse), and short footer/date text. ",
+    "Follow the deck plan when provided; otherwise plan internally from the source map. Do not flatten the document into a list. Each slide must express one clear message and cite its source through source.headingLevel and source.sectionPath. ",
+    "Use slide titles rewritten for presentation impact when useful, but keep them faithful to the source. ",
+    "Use \"section\" for major dividers, \"two-column\"/\"comparison\" for parallel ideas, \"stat\" for one important number, \"quote\" for a strong cited sentence, and \"image-focus\" only when an image asset would materially help. ",
+    "For each slide, assign importance based on deck role: cover, conclusion, executive recommendation, core claim, and key evidence should be high; ordinary supporting details should be lower. ",
+    "For image needs, output image intent only; do not embed new external URLs or base64. If a source section includes an existing Markdown image path, you may copy that exact path into image.src to preserve a source image, especially when image policy is source images only. Otherwise use query/entity for stock or logo retrieval. Use prompt for generated images, and make it a real image-generation prompt, not a search query: describe subject, composition, mood, style, and constraints. role must be among cover/hero/support/logo/icon/background, aspect such as 16:9 or 4:3, sourcePreference among auto/stock/logo/generated/none, and licenseStrictness among presentation/open/internal-only. ",
+    "When the image policy asks to actively add visuals, do not reserve images only for cover or section slides. Also add ambient or supporting visual intent to spacious body slides, sparse quote/stat slides, and concept slides where an image would improve atmosphere or comprehension. ",
+    "For slides with multiple local topics, use blocks with explicit {kind:\"subhead\"} group labels followed by their related bullet/text blocks; never run separate subtopics together as one bullet list. Prefer splitting slides with more than three subhead groups. ",
+    "Layout capacity rules: title slides need title plus at most two short support lines; content slides need at most seven short bullets; two-column/comparison slides need two balanced columns; stat slides need exactly one headline number; quote slides need one concise quotation; tables and code require short summaries when they would dominate the page. ",
+    "Before finalizing each slide, perform a fit check: if text would overflow a slot, rewrite shorter or split into another slide instead of relying on tiny fonts. ",
+    "Speaker notes are optional; include them only when useful, at most 1-2 natural sentences. ",
+    "Honor design options for layout direction, image policy, image source mode, visual density, font preference, and margin preference. Use them to choose layout values and control how much text each slide carries. ",
+    "Keep bullets short, avoid copying full source paragraphs, preserve the document language unless the user requests a target language, and never invent facts. ",
+    "Do not output colors, coordinates, font sizes, font names, PptxGenJS options, OpenXML, placeholders, or raw CSS."
+);
+
+const SLIDE_MARKDOWN_DRAFT_SYSTEM: &str = concat!(
+    "You are a slide manuscript agent for a Markdown-first editor. ",
+    "Create a reviewable slide draft, not a PowerPoint file and not JSON. ",
+    "Output Markdown only, with no surrounding prose and no code fence around the whole answer. ",
+    "Use a horizontal rule line `---` between slides because the app uses it as a slide separator. ",
+    "Start each slide with a Markdown heading. Use heading depth to express source hierarchy where useful. ",
+    "Each slide should have one clear message, not a copied outline dump. ",
+    "Split dense source sections, merge weak adjacent sections, and reorder only when it improves the narrative. ",
+    "Use presentation-agent style planning: opening, section, content, evidence, comparison, key-stat, quote, and closing slides should each have a clear functional role. ",
+    "Use template-schema discipline even in Markdown: keep titles short, bullets compact, tables small, and two-column ideas balanced. ",
+    "Use native PowerPoint slot-fit discipline: if a slide would need tiny text or crowded elements, split it rather than forcing everything onto one page. ",
+    "Preserve source facts exactly. Never invent numbers, claims, citations, dates, or outcomes. ",
+    "Source IDs such as S1, S2, and S3 are internal grounding markers only. Never print them as visible source or citation text in the Markdown draft. ",
+    "Follow the draft comments option: when comments are enabled, add frequent visible blockquotes beginning with `> 코멘트:`, `> 검토 필요:`, or `> 추가 정보 필요:` for gaps, assumptions, open questions, and editorial choices; when comments are disabled, do not add reviewer comments and instead omit unsupported claims. ",
+    "Do not include colors, coordinates, font sizes, PptxGenJS options, CSS, or visual design directions."
+);
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlideGenerationOptions {
+    audience: Option<String>,
+    tone: Option<String>,
+    language: Option<String>,
+    slide_count_hint: Option<String>,
+    draft_purpose: Option<String>,
+    draft_structure: Option<String>,
+    draft_depth: Option<String>,
+    draft_revision_mode: Option<String>,
+    draft_review_mode: Option<String>,
+    design_layout: Option<String>,
+    visual_density: Option<String>,
+    image_policy: Option<String>,
+    image_source_mode: Option<String>,
+    font_preference: Option<String>,
+    font_family: Option<String>,
+    margin_preference: Option<String>,
+    extra_instructions: Option<String>,
+    design_rules: Option<String>,
+    theme_name: Option<String>,
+    #[serde(default)]
+    theme_rules: Vec<String>,
+}
+
+fn push_option_line(lines: &mut Vec<String>, label: &str, value: &Option<String>) {
+    if let Some(v) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        lines.push(format!("- {}: {}", label, v));
+    }
+}
+
+fn short_text(value: &str, max_chars: usize) -> String {
+    let trimmed = value.trim();
+    let mut out = String::new();
+    for (idx, ch) in trimmed.chars().enumerate() {
+        if idx >= max_chars {
+            out.push('…');
+            break;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+fn first_usize(value: &str) -> Option<usize> {
+    let mut buf = String::new();
+    for ch in value.chars() {
+        if ch.is_ascii_digit() {
+            buf.push(ch);
+        } else if !buf.is_empty() {
+            break;
+        }
+    }
+    buf.parse().ok()
+}
+
+fn slide_count_hint_label(value: &Option<String>) -> Option<String> {
+    let raw = value.as_deref().map(str::trim).filter(|v| !v.is_empty())?;
+    let Some(requested) = first_usize(raw) else {
+        return Some(raw.to_string());
+    };
+    let capped = requested.min(SLIDES_MAX_COUNT);
+    if requested > SLIDES_MAX_COUNT {
+        Some(format!(
+            "{} slides requested, capped at hard limit {}",
+            requested, SLIDES_MAX_COUNT
+        ))
+    } else {
+        Some(format!("{} slides target", capped))
+    }
+}
+
+fn should_use_two_pass_slide_generation(
+    options: Option<&SlideGenerationOptions>,
+    source_section_count: usize,
+) -> bool {
+    let slide_count_hint = options
+        .and_then(|o| o.slide_count_hint.as_deref())
+        .and_then(first_usize)
+        .map(|n| n.min(SLIDES_MAX_COUNT))
+        .unwrap_or(0);
+    source_section_count >= SLIDES_TWO_PASS_SECTION_THRESHOLD
+        || slide_count_hint >= SLIDES_TWO_PASS_SLIDE_THRESHOLD
+}
+
+#[derive(Debug, Clone)]
+struct MarkdownSourceSection {
+    id: String,
+    level: usize,
+    title: String,
+    section_path: Vec<String>,
+    line_start: usize,
+    line_end: usize,
+    content: String,
+}
+
+fn push_section(
+    sections: &mut Vec<MarkdownSourceSection>,
+    id_num: usize,
+    level: usize,
+    title: String,
+    section_path: Vec<String>,
+    line_start: usize,
+    line_end: usize,
+    content: Vec<String>,
+) {
+    let content = content.join("\n").trim().to_string();
+    if title.trim().is_empty() && content.is_empty() {
+        return;
+    }
+    sections.push(MarkdownSourceSection {
+        id: format!("S{}", id_num),
+        level,
+        title: title.trim().to_string(),
+        section_path,
+        line_start,
+        line_end,
+        content,
+    });
+}
+
+fn markdown_heading_level(line: &str) -> Option<(usize, String)> {
+    let left = line.trim_start();
+    let level = left.chars().take_while(|ch| *ch == '#').count();
+    if level == 0 || level > 6 || left.as_bytes().get(level) != Some(&b' ') {
+        return None;
+    }
+    let title = left[level..].trim();
+    if title.is_empty() {
+        return None;
+    }
+    Some((level, title.to_string()))
+}
+
+fn markdown_source_sections(markdown: &str) -> Vec<MarkdownSourceSection> {
+    let lines: Vec<&str> = markdown.lines().collect();
+    let mut sections = Vec::new();
+    let mut heading_stack: Vec<String> = Vec::new();
+    let mut in_frontmatter = false;
+    let mut in_fence = false;
+    let mut fence_marker = "";
+    let mut prelude: Vec<String> = Vec::new();
+    let mut current: Option<(usize, String, Vec<String>, usize, Vec<String>)> = None;
+    let mut next_id = 1;
+
+    for (idx, line) in lines.iter().enumerate() {
+        let line_no = idx + 1;
+        let trimmed = line.trim();
+        if idx == 0 && trimmed == "---" {
+            in_frontmatter = true;
+            continue;
+        }
+        if in_frontmatter {
+            if trimmed == "---" {
+                in_frontmatter = false;
+            }
+            continue;
+        }
+
+        let left = line.trim_start();
+        let fence = if left.starts_with("```") {
+            Some("```")
+        } else if left.starts_with("~~~") {
+            Some("~~~")
+        } else {
+            None
+        };
+        if let Some(marker) = fence {
+            if !in_fence {
+                in_fence = true;
+                fence_marker = marker;
+            } else if left.starts_with(fence_marker) {
+                in_fence = false;
+            }
+            if let Some((_, _, _, _, content)) = current.as_mut() {
+                content.push((*line).to_string());
+            } else {
+                prelude.push((*line).to_string());
+            }
+            continue;
+        }
+
+        if !in_fence {
+            if let Some((level, title)) = markdown_heading_level(line) {
+                if let Some((cur_level, cur_title, cur_path, cur_start, cur_content)) =
+                    current.take()
+                {
+                    push_section(
+                        &mut sections,
+                        next_id,
+                        cur_level,
+                        cur_title,
+                        cur_path,
+                        cur_start,
+                        line_no.saturating_sub(1),
+                        cur_content,
+                    );
+                    next_id += 1;
+                } else if !prelude.iter().all(|l| l.trim().is_empty()) {
+                    push_section(
+                        &mut sections,
+                        next_id,
+                        1,
+                        "Document opening".to_string(),
+                        Vec::new(),
+                        1,
+                        line_no.saturating_sub(1),
+                        std::mem::take(&mut prelude),
+                    );
+                    next_id += 1;
+                }
+
+                let section_path = heading_stack
+                    .iter()
+                    .take(level.saturating_sub(1))
+                    .filter(|s| !s.trim().is_empty())
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if heading_stack.len() < level {
+                    heading_stack.resize(level, String::new());
+                }
+                heading_stack[level - 1] = title.clone();
+                heading_stack.truncate(level);
+                current = Some((level, title, section_path, line_no, Vec::new()));
+                continue;
+            }
+        }
+
+        if let Some((_, _, _, _, content)) = current.as_mut() {
+            content.push((*line).to_string());
+        } else {
+            prelude.push((*line).to_string());
+        }
+    }
+
+    if let Some((cur_level, cur_title, cur_path, cur_start, cur_content)) = current.take() {
+        push_section(
+            &mut sections,
+            next_id,
+            cur_level,
+            cur_title,
+            cur_path,
+            cur_start,
+            lines.len().max(cur_start),
+            cur_content,
+        );
+    } else if !prelude.iter().all(|l| l.trim().is_empty()) {
+        push_section(
+            &mut sections,
+            next_id,
+            1,
+            "Document".to_string(),
+            Vec::new(),
+            1,
+            lines.len().max(1),
+            prelude,
+        );
+    }
+
+    sections
+}
+
+fn source_signals(content: &str) -> String {
+    let has_table = content
+        .lines()
+        .any(|line| line.trim_start().starts_with('|'));
+    let image_count = content.matches("![").count();
+    let has_quote = content
+        .lines()
+        .any(|line| line.trim_start().starts_with('>'));
+    let has_code = content.contains("```") || content.contains("~~~");
+    let has_stat = content.split_whitespace().any(|word| {
+        word.chars().any(|c| c.is_ascii_digit())
+            && (word.contains('%')
+                || word.contains('$')
+                || word.contains('x')
+                || word.contains('X'))
+    });
+
+    let mut signals = Vec::new();
+    if has_table {
+        signals.push("table");
+    }
+    if image_count > 0 {
+        signals.push("image");
+    }
+    if has_quote {
+        signals.push("quote");
+    }
+    if has_code {
+        signals.push("code");
+    }
+    if has_stat {
+        signals.push("stat");
+    }
+    if signals.is_empty() {
+        "text".to_string()
+    } else {
+        signals.join(",")
+    }
+}
+
+fn source_excerpt_chunks(content: &str, max_chars: usize) -> Vec<String> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let chars = trimmed.chars().collect::<Vec<_>>();
+    chars
+        .chunks(max_chars)
+        .map(|chunk| chunk.iter().collect::<String>())
+        .collect()
+}
+
+fn source_map_prompt(sections: &[MarkdownSourceSection]) -> String {
+    if sections.is_empty() {
+        return String::new();
+    }
+    let mut out = vec![
+        "<source_sections>".to_string(),
+        "Use these source IDs for planning and final slides. Every non-cover slide should cite one or more source IDs in the plan.".to_string(),
+    ];
+    let mut budget = SOURCE_MAP_BUDGET;
+    for section in sections.iter().take(SOURCE_MAP_MAX_SECTIONS) {
+        if budget == 0 {
+            break;
+        }
+        let mut excerpt = section.content.trim().to_string();
+        if excerpt.is_empty() {
+            excerpt = section.title.clone();
+        }
+        let chunks = source_excerpt_chunks(&excerpt, SOURCE_MAP_CHUNK_CHARS);
+        let chunk_count = chunks.len().max(1);
+        let path = if section.section_path.is_empty() {
+            "(root)".to_string()
+        } else {
+            section.section_path.join(" / ")
+        };
+        for (chunk_index, chunk) in chunks.into_iter().enumerate() {
+            let excerpt_label = if chunk_count > 1 {
+                format!("excerpt part {}/{}", chunk_index + 1, chunk_count)
+            } else {
+                "excerpt".to_string()
+            };
+            let entry = format!(
+                "\n[{}]\nheading: H{} {}\npath: {}\nlines: {}-{}\nsignals: {}\n{}:\n{}\n",
+                section.id,
+                section.level,
+                section.title,
+                path,
+                section.line_start,
+                section.line_end,
+                source_signals(&section.content),
+                excerpt_label,
+                chunk
+            );
+            if entry.len() > budget {
+                budget = 0;
+                break;
+            }
+            budget -= entry.len();
+            out.push(entry);
+        }
+    }
+    if sections.len() > SOURCE_MAP_MAX_SECTIONS {
+        out.push(format!(
+            "\n... {} additional source sections omitted",
+            sections.len() - SOURCE_MAP_MAX_SECTIONS
+        ));
+    }
+    out.push("</source_sections>".to_string());
+    out.join("\n")
+}
+
+fn slide_generation_source_context(markdown: &str) -> (String, Vec<MarkdownSourceSection>, String) {
+    let markdown_body = strip_slide_draft_marker(markdown);
+    let outline_block = markdown_outline_prompt(&markdown_body);
+    let source_sections = markdown_source_sections(&markdown_body);
+    let source_map = source_map_prompt(&source_sections);
+    (outline_block, source_sections, source_map)
+}
+
+fn markdown_outline_prompt(markdown: &str) -> String {
+    let mut outline = Vec::new();
+    let mut in_frontmatter = false;
+    let mut in_fence = false;
+    let mut fence_marker = "";
+
+    for (line_idx, line) in markdown.lines().enumerate() {
+        let trimmed = line.trim();
+        if line_idx == 0 && trimmed == "---" {
+            in_frontmatter = true;
+            continue;
+        }
+        if in_frontmatter {
+            if trimmed == "---" {
+                in_frontmatter = false;
+            }
+            continue;
+        }
+
+        let left = line.trim_start();
+        if left.starts_with("```") || left.starts_with("~~~") {
+            let marker = if left.starts_with("```") {
+                "```"
+            } else {
+                "~~~"
+            };
+            if !in_fence {
+                in_fence = true;
+                fence_marker = marker;
+            } else if left.starts_with(fence_marker) {
+                in_fence = false;
+            }
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+
+        let level = left.chars().take_while(|ch| *ch == '#').count();
+        if level == 0 || level > 6 || left.as_bytes().get(level) != Some(&b' ') {
+            continue;
+        }
+        let text = short_text(&left[level..], 120);
+        if !text.is_empty() {
+            outline.push(format!("- H{} line {}: {}", level, line_idx + 1, text));
+        }
+    }
+
+    if outline.is_empty() {
+        return String::new();
+    }
+
+    let mut out = vec![
+        "<markdown_outline>".to_string(),
+        "Use this heading hierarchy as the source structure. Preserve it through source.headingLevel and source.sectionPath when planning slides.".to_string(),
+    ];
+    let total = outline.len();
+    out.extend(outline.into_iter().take(120));
+    if total > 120 {
+        out.push(format!("- ... {} additional headings omitted", total - 120));
+    }
+    out.push("</markdown_outline>".to_string());
+    out.join("\n")
+}
+
+fn slide_options_prompt(options: Option<&SlideGenerationOptions>) -> String {
+    let Some(options) = options else {
+        return String::new();
+    };
+    let mut lines = vec!["<export_options>".to_string()];
+    push_option_line(&mut lines, "Audience", &options.audience);
+    push_option_line(&mut lines, "Tone", &options.tone);
+    push_option_line(&mut lines, "Target language", &options.language);
+    if let Some(slide_count) = slide_count_hint_label(&options.slide_count_hint) {
+        lines.push(format!("- Slide count target: {}", slide_count));
+    }
+    lines.push(format!(
+        "- Hard slide limit: output no more than {} slides",
+        SLIDES_MAX_COUNT
+    ));
+    push_option_line(&mut lines, "Draft purpose", &options.draft_purpose);
+    push_option_line(&mut lines, "Draft structure", &options.draft_structure);
+    push_option_line(&mut lines, "Draft detail level", &options.draft_depth);
+    push_option_line(
+        &mut lines,
+        "Draft revision mode",
+        &options.draft_revision_mode,
+    );
+    push_option_line(&mut lines, "Draft comments", &options.draft_review_mode);
+    push_option_line(&mut lines, "Layout direction", &options.design_layout);
+    push_option_line(&mut lines, "Visual density", &options.visual_density);
+    push_option_line(&mut lines, "Image policy", &options.image_policy);
+    push_option_line(&mut lines, "Image source mode", &options.image_source_mode);
+    push_option_line(&mut lines, "Font preference", &options.font_preference);
+    push_option_line(&mut lines, "Installed font family", &options.font_family);
+    push_option_line(&mut lines, "Margin preference", &options.margin_preference);
+    push_option_line(
+        &mut lines,
+        "Extra instructions",
+        &options.extra_instructions,
+    );
+    if let Some(theme) = options
+        .theme_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        lines.push(format!("- Selected theme: {}", theme));
+    }
+    if !options.theme_rules.is_empty() {
+        lines.push("- Theme rules:".to_string());
+        for rule in &options.theme_rules {
+            let rule = rule.trim();
+            if !rule.is_empty() {
+                lines.push(format!("  - {}", rule));
+            }
+        }
+    }
+    push_option_line(&mut lines, "Additional design rules", &options.design_rules);
+    lines.push("</export_options>".to_string());
+    lines.join("\n")
+}
+
+fn extract_json_object(raw: &str) -> String {
+    let Some(start) = raw.find('{') else {
+        return raw.trim().to_string();
+    };
+    let Some(end) = raw.rfind('}') else {
+        return raw.trim().to_string();
+    };
+    if end <= start {
+        return raw.trim().to_string();
+    }
+    raw[start..=end].trim().to_string()
+}
+
+fn strip_outer_markdown_fence(raw: &str) -> String {
+    let trimmed = raw.trim();
+    let first = trimmed.lines().next().unwrap_or("").trim_start();
+    let marker = if first.starts_with("```") {
+        "```"
+    } else if first.starts_with("~~~") {
+        "~~~"
+    } else {
+        return trimmed.to_string();
+    };
+    let mut lines: Vec<&str> = trimmed.lines().collect();
+    if lines.len() >= 2
+        && lines
+            .last()
+            .map(|line| line.trim_start().starts_with(marker))
+            .unwrap_or(false)
+    {
+        lines.remove(0);
+        lines.pop();
+        return lines.join("\n").trim().to_string();
+    }
+    trimmed.to_string()
+}
+
+fn strip_internal_source_labels(raw: &str) -> String {
+    static SOURCE_LINE_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static SOURCE_INLINE_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let source_line_re = SOURCE_LINE_RE.get_or_init(|| {
+        regex::Regex::new(
+            r"(?i)^\s*(?:>\s*)?(?:[-*+]\s*)?(?:\*\*)?(?:출처|source|sources|source ids?)(?:\*\*)?\s*:\s*(?:\*\*)?\[?\(?\s*S\d+(?:\s*(?:[,;/&+]|\band\b|및)\s*S\d+|\s+S\d+)*\s*\)?\]?\s*\.?\s*$",
+        )
+        .expect("source line regex")
+    });
+    let source_inline_re = SOURCE_INLINE_RE.get_or_init(|| {
+        regex::Regex::new(
+            r"(?i)\s*\((?:출처|source|sources|source ids?)\s*:\s*S\d+(?:\s*(?:[,;/&+]|\band\b|및)\s*S\d+|\s+S\d+)*\s*\)",
+        )
+        .expect("source inline regex")
+    });
+
+    raw.lines()
+        .filter(|line| !source_line_re.is_match(line))
+        .map(|line| {
+            source_inline_re
+                .replace_all(line, "")
+                .trim_end()
+                .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+fn has_slide_draft_marker(markdown: &str) -> bool {
+    markdown.lines().any(|line| {
+        let t = line.trim();
+        (t.starts_with("<!--") || t.starts_with("&lt;!--")) && t.contains("markmind:slide-draft")
+    })
+}
+
+fn strip_slide_draft_marker(markdown: &str) -> String {
+    markdown
+        .lines()
+        .filter(|line| {
+            let t = line.trim();
+            !((t.starts_with("<!--") || t.starts_with("&lt;!--"))
+                && t.contains("markmind:slide-draft"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+async fn call_slides_llm(
     company: crate::subscription_auth::AICompany,
     auth: crate::subscription_auth::ClaudeAuthMode,
-    model: Option<String>,
+    model: Option<&str>,
+    system: &str,
+    prompt: &str,
+    max_tokens: u32,
 ) -> Result<String, String> {
     use super::keychain::{get_key, Provider};
     use super::llm;
     use crate::subscription_auth::{AICompany, ClaudeAuthMode};
 
-    let prompt = format!(
-        "Convert this Markdown document into slides as specified.\n\n<markdown>\n{}\n</markdown>",
-        markdown
-    );
-
-    // 큰 덱(50장+)의 슬라이드 JSON 이 잘리면 프론트 파싱 실패 → 폴백.
-    // 출력 토큰은 생성한 만큼만 과금되므로 상한은 넉넉히(미사용 시 비용 0).
-    let text = match company {
+    match company {
         AICompany::Gemini => {
-            // Gemini 는 구독 미지원 → 항상 API 키. system 파라미터가 없어 프롬프트 앞에 결합.
-            let key = get_key(Provider::Gemini)
-                .map_err(err_to_string)?
-                .ok_or_else(|| "Gemini API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
-            let model_id = model.as_deref().unwrap_or(super::MODEL_NOTES_GEMINI);
-            let full = format!("{}\n\n{}", SLIDES_SYSTEM, prompt);
-            let cfg = llm::gemini::GenerationConfig {
-                max_output_tokens: Some(SLIDES_MAX_TOKENS),
-                temperature: Some(0.3),
-            };
-            llm::gemini::generate_text(&key, model_id, &full, Vec::new(), Some(cfg))
-                .await
-                .map_err(err_to_string)?
-                .text
+            let model_id = model.unwrap_or(match auth {
+                ClaudeAuthMode::Subscription => super::MODEL_GEMINI_AGY,
+                ClaudeAuthMode::ApiKey => super::MODEL_NOTES_GEMINI,
+            });
+            match auth {
+                ClaudeAuthMode::Subscription => {
+                    llm::gemini_agy::generate_text(model_id, Some(system), prompt).await
+                }
+                ClaudeAuthMode::ApiKey => {
+                    let key = get_key(Provider::Gemini)
+                        .map_err(err_to_string)?
+                        .ok_or_else(|| {
+                            "Gemini API 키가 없습니다. Settings 에서 등록하세요.".to_string()
+                        })?;
+                    let full = format!("{}\n\n{}", system, prompt);
+                    let cfg = llm::gemini::GenerationConfig {
+                        max_output_tokens: Some(max_tokens),
+                        temperature: Some(0.25),
+                    };
+                    Ok(
+                        llm::gemini::generate_text(&key, model_id, &full, Vec::new(), Some(cfg))
+                            .await
+                            .map_err(err_to_string)?
+                            .text,
+                    )
+                }
+            }
         }
         AICompany::Claude => {
-            let model_id = model
-                .clone()
-                .unwrap_or_else(|| super::MODEL_NOTES_CLAUDE.to_string());
+            let model_id = model.unwrap_or(super::MODEL_NOTES_CLAUDE);
             let opts = llm::anthropic::ClaudeOptions {
-                max_output_tokens: Some(SLIDES_MAX_TOKENS),
-                system: Some(SLIDES_SYSTEM.to_string()),
+                max_output_tokens: Some(max_tokens),
+                system: Some(system.to_string()),
             };
             let result = match auth {
                 ClaudeAuthMode::Subscription => {
                     let token = crate::subscription_auth::claude_access_token().await?;
                     llm::anthropic::generate_text(
                         llm::anthropic::ClaudeAuth::Subscription(&token),
-                        &model_id,
-                        &prompt,
+                        model_id,
+                        prompt,
                         Some(opts),
                     )
                     .await
@@ -142,41 +795,323 @@ pub async fn generate_slides_llm(
                         })?;
                     llm::anthropic::generate_text(
                         llm::anthropic::ClaudeAuth::ApiKey(&key),
-                        &model_id,
-                        &prompt,
+                        model_id,
+                        prompt,
                         Some(opts),
                     )
                     .await
                 }
             };
-            result.map_err(err_to_string)?.text
+            Ok(result.map_err(err_to_string)?.text)
         }
         AICompany::Openai => {
-            let model_id = model.clone().unwrap_or_else(|| super::MODEL_CODEX.to_string());
+            let model_id = model.unwrap_or(super::MODEL_CODEX);
             let result = match auth {
                 ClaudeAuthMode::Subscription => {
                     let tokens = crate::subscription_auth::read_codex_tokens()?;
                     llm::openai_codex::generate_text(
                         &tokens.access_token,
                         tokens.account_id.as_deref(),
-                        &model_id,
-                        Some(SLIDES_SYSTEM),
-                        &prompt,
+                        model_id,
+                        Some(system),
+                        prompt,
+                        Some(max_tokens),
                     )
                     .await
                 }
                 ClaudeAuthMode::ApiKey => {
                     let key = get_key(Provider::Openai)
                         .map_err(err_to_string)?
-                        .ok_or_else(|| "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
-                    llm::openai_api::generate_text(&key, &model_id, Some(SLIDES_SYSTEM), &prompt).await
+                        .ok_or_else(|| {
+                            "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string()
+                        })?;
+                    llm::openai_api::generate_text(
+                        &key,
+                        model_id,
+                        Some(system),
+                        prompt,
+                        Some(max_tokens),
+                    )
+                    .await
                 }
             };
-            result.map_err(err_to_string)?.text
+            Ok(result.map_err(err_to_string)?.text)
         }
-    };
+        AICompany::Grok => {
+            let model_id = model.unwrap_or(super::MODEL_GROK);
+            let auth_id = match auth {
+                ClaudeAuthMode::Subscription => "subscription",
+                ClaudeAuthMode::ApiKey => "api_key",
+            };
+            let key = grok_bearer(auth_id)?;
+            llm::grok::generate_text(&key, model_id, Some(system), prompt).await
+        }
+    }
+}
 
-    Ok(text)
+fn slide_default_model(
+    company: crate::subscription_auth::AICompany,
+    auth: crate::subscription_auth::ClaudeAuthMode,
+) -> &'static str {
+    use crate::subscription_auth::{AICompany, ClaudeAuthMode};
+    match (company, auth) {
+        (AICompany::Gemini, ClaudeAuthMode::Subscription) => super::MODEL_GEMINI_AGY,
+        (AICompany::Gemini, ClaudeAuthMode::ApiKey) => super::MODEL_NOTES_GEMINI,
+        (AICompany::Claude, _) => super::MODEL_NOTES_CLAUDE,
+        (AICompany::Openai, _) => super::MODEL_CODEX,
+        (AICompany::Grok, _) => super::MODEL_GROK,
+    }
+}
+
+fn slide_model_info(
+    company: crate::subscription_auth::AICompany,
+    auth: crate::subscription_auth::ClaudeAuthMode,
+    model: Option<&str>,
+) -> ProgressModelInfo {
+    use crate::subscription_auth::{AICompany, ClaudeAuthMode};
+    let company_id = match company {
+        AICompany::Gemini => "gemini",
+        AICompany::Claude => "claude",
+        AICompany::Openai => "openai",
+        AICompany::Grok => "grok",
+    };
+    let auth_id = match auth {
+        ClaudeAuthMode::ApiKey => "api_key",
+        ClaudeAuthMode::Subscription => "subscription",
+    };
+    let model_id = model
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .unwrap_or_else(|| slide_default_model(company, auth));
+    ProgressModelInfo {
+        company: company_id.to_string(),
+        auth: auth_id.to_string(),
+        model: model_id.to_string(),
+    }
+}
+
+async fn call_slides_llm_with_progress(
+    emitter: &ProgressEmitter,
+    step_id: &str,
+    waiting_step: &str,
+    done_step: &str,
+    company: crate::subscription_auth::AICompany,
+    auth: crate::subscription_auth::ClaudeAuthMode,
+    model: Option<&str>,
+    system: &str,
+    prompt: &str,
+    detail: Option<String>,
+    max_tokens: u32,
+) -> Result<String, String> {
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+    use std::time::{Duration, Instant};
+
+    let model_info = Some(slide_model_info(company, auth, model));
+    emitter.emit_update_with_model(
+        step_id,
+        waiting_step,
+        detail.clone(),
+        None,
+        model_info.clone(),
+    );
+
+    let started = Instant::now();
+    let stop = Arc::new(AtomicBool::new(false));
+    let heartbeat_stop = stop.clone();
+    let heartbeat_emitter = emitter.clone();
+    let heartbeat_step_id = step_id.to_string();
+    let heartbeat_step = waiting_step.to_string();
+    let heartbeat_model = model_info.clone();
+    let heartbeat_detail = detail.clone();
+    let heartbeat = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            if heartbeat_stop.load(Ordering::Relaxed) {
+                break;
+            }
+            let elapsed = started.elapsed().as_secs();
+            heartbeat_emitter.emit_update_with_model(
+                heartbeat_step_id.clone(),
+                format!("{heartbeat_step} {elapsed}초"),
+                heartbeat_detail.clone(),
+                None,
+                heartbeat_model.clone(),
+            );
+        }
+    });
+
+    let result = call_slides_llm(company, auth, model, system, prompt, max_tokens).await;
+    stop.store(true, Ordering::Relaxed);
+    heartbeat.abort();
+
+    if result.is_ok() {
+        emitter.emit_update_with_model(step_id, done_step, detail, Some(1.0), model_info);
+    }
+    result
+}
+
+//
+// 모든 AI 작업은 전역 회사(company)→인증(auth)→모델(model) 선택(aiModelConfig)을
+// 따른다 — 슬라이드 생성도 회의록 파이프라인과 동일하게 3사·구독/API 키를 지원한다.
+#[tauri::command]
+pub async fn generate_slides_llm(
+    app: AppHandle,
+    markdown: String,
+    company: crate::subscription_auth::AICompany,
+    auth: crate::subscription_auth::ClaudeAuthMode,
+    model: Option<String>,
+    options: Option<SlideGenerationOptions>,
+    job_id: Option<String>,
+) -> Result<String, String> {
+    let emitter = new_emitter(app, job_id);
+    let opt_block = slide_options_prompt(options.as_ref());
+    let (outline_block, source_sections, source_map) = slide_generation_source_context(&markdown);
+    emitter.emit(
+        "✅ 문서 구조 분석 완료",
+        Some(format!("소스 섹션 {}개", source_sections.len())),
+    );
+    let use_two_pass =
+        should_use_two_pass_slide_generation(options.as_ref(), source_sections.len());
+
+    let draft_prompt = if use_two_pass {
+        let plan_prompt = format!(
+            "Plan a slide deck from this Markdown-derived source map. Respect export options, source hierarchy, and source IDs.\n\n{}\n\n{}\n\n{}",
+            opt_block,
+            outline_block,
+            source_map
+        );
+        emitter.emit("✅ 슬라이드 계획 요청 완료", None);
+        let plan_raw = call_slides_llm_with_progress(
+            &emitter,
+            "pptx-plan-llm",
+            "⏳ AI가 슬라이드 구조를 계획하는 중…",
+            "✅ 슬라이드 구조 계획 완료",
+            company,
+            auth,
+            model.as_deref(),
+            SLIDES_PLAN_SYSTEM,
+            &plan_prompt,
+            None,
+            SLIDES_PLAN_MAX_TOKENS,
+        )
+        .await?;
+        let deck_plan = extract_json_object(&plan_raw);
+        emitter.emit("✅ 슬라이드 구조 계획 응답 수신", None);
+
+        format!(
+            "Generate final slides JSON from the approved deck plan. Use only grounded source content. If the plan has an unsupported or weak slide, repair it locally instead of rewriting the whole deck.\n\n{}\n\n<deck_plan>\n{}\n</deck_plan>\n\n{}",
+            opt_block,
+            deck_plan,
+            source_map
+        )
+    } else {
+        format!(
+            "Generate final slides JSON directly from this Markdown-derived source map. Plan internally, but output only the final JSON. Respect export options, source hierarchy, and source IDs.\n\n{}\n\n{}\n\n{}",
+            opt_block,
+            outline_block,
+            source_map
+        )
+    };
+    emitter.emit("✅ 슬라이드 JSON 요청 준비 완료", None);
+
+    // 슬라이드 JSON이 잘리면 프론트 파싱 실패로 이어지므로 상한은 단순 고정값을 쓴다.
+    let slides_raw = call_slides_llm_with_progress(
+        &emitter,
+        "pptx-slides-llm",
+        "⏳ AI가 최종 슬라이드를 작성하는 중…",
+        "✅ 최종 슬라이드 작성 완료",
+        company,
+        auth,
+        model.as_deref(),
+        SLIDES_SYSTEM,
+        &draft_prompt,
+        None,
+        SLIDES_MAX_TOKENS,
+    )
+    .await?;
+
+    let cleaned = extract_json_object(&slides_raw);
+    emitter.emit("✅ 슬라이드 JSON 정리 완료", None);
+    emitter.emit("✅ AI 슬라이드 생성 완료", None);
+    Ok(cleaned)
+}
+
+#[tauri::command]
+pub async fn generate_slide_markdown_draft(
+    app: AppHandle,
+    markdown: String,
+    company: crate::subscription_auth::AICompany,
+    auth: crate::subscription_auth::ClaudeAuthMode,
+    model: Option<String>,
+    options: Option<SlideGenerationOptions>,
+    job_id: Option<String>,
+) -> Result<String, String> {
+    let emitter = new_emitter(app, job_id);
+    let is_existing_draft = has_slide_draft_marker(&markdown);
+    let markdown_body = strip_slide_draft_marker(&markdown);
+    let opt_block = slide_options_prompt(options.as_ref());
+    let outline_block = markdown_outline_prompt(&markdown_body);
+    let source_sections = markdown_source_sections(&markdown_body);
+    let source_map = source_map_prompt(&source_sections);
+
+    emitter.emit(
+        "✅ 문서 구조 분석 완료",
+        Some(format!("소스 섹션 {}개", source_sections.len())),
+    );
+
+    let prompt = if is_existing_draft {
+        format!(
+            "Revise an existing MarkMind Markdown slide draft. The hidden `markmind:slide-draft` marker was detected, so this is a revision pass, not a new draft pass.\n\nPrimary source for this run:\n- Treat `<existing_slide_draft>` as the current deck manuscript.\n- Apply Draft revision mode and Extra instructions before considering broad regeneration.\n- Preserve useful user edits already present in the draft.\n\nRequired output contract:\n- Markdown only.\n- Return the full revised deck, not a patch and not a summary.\n- Preserve the existing slide separator convention: separate slides with a line containing only `---`.\n- Preserve slide order, slide count, headings, images, tables, code fences, and comments unless Draft revision mode, slide count hint, or Extra instructions clearly asks to change them.\n- Apply the user's detailed instruction strongly, especially emphasis, rewrite, tone, expansion, trimming, reordering, or comment requests.\n- If Draft revision mode says to preserve structure, make localized edits instead of rewriting the whole deck.\n- If Draft revision mode says to restructure, improve flow while keeping source facts and existing useful slide material.\n- Do not output slide JSON, speaker layout JSON, design tokens, implementation notes, or the hidden `markmind:slide-draft` marker.\n- Keep each slide focused on one message. Prefer short bullets over copied paragraphs.\n- When a slide has multiple local topics, use Markdown subheadings (`###`) for each topic and separate groups with blank lines: subheading, related bullets/text, blank line, next subheading. Do not put different subtopics in one continuous bullet list.\n- Follow the Draft comments option. If comments are enabled, proactively add useful `> 코멘트:` / `> 검토 필요:` / `> 추가 정보 필요:` blockquotes for questions, assumptions, missing evidence, and suggested refinements. If comments are disabled, keep the draft clean and omit unsupported details instead of adding comments.\n\n{}\n\n<existing_slide_draft>\n{}\n</existing_slide_draft>",
+            opt_block,
+            markdown_body
+        )
+    } else {
+        format!(
+            "Create a Markdown slide draft for MarkMind slideshow review mode. The user will review and edit this Markdown before exporting to PPTX.\n\nRequired output contract:\n- Markdown only.\n- Separate slides with a line containing only `---`.\n- Use standard Markdown blocks supported by the editor: headings, short paragraphs, bullet lists, tables, blockquotes, code fences, and images already present in the source.\n- Do not output slide JSON, speaker layout JSON, design tokens, implementation notes, or the hidden `markmind:slide-draft` marker.\n- Treat source IDs like S1, S2, and S3 as internal grounding IDs only. Do not print them and do not add visible `출처: S2` / `Source: S2` lines.\n- Convert the source into slide pages with a presentation narrative. Avoid one slide per source heading unless that is genuinely the best structure.\n- Keep each slide focused on one message. Prefer short bullets over copied paragraphs.\n- When a slide has multiple local topics, use Markdown subheadings (`###`) for each topic and separate groups with blank lines: subheading, related bullets/text, blank line, next subheading. Do not put different subtopics in one continuous bullet list.\n- Follow the Draft comments option. If comments are enabled, proactively add useful `> 코멘트:` / `> 검토 필요:` / `> 추가 정보 필요:` blockquotes for questions, assumptions, missing evidence, and suggested refinements. If comments are disabled, keep the draft clean and omit unsupported details instead of adding comments.\n\n{}\n\n{}\n\n{}",
+            opt_block,
+            outline_block,
+            source_map
+        )
+    };
+    emitter.emit(
+        if is_existing_draft {
+            "✅ 슬라이드 초안 수정 요청 준비 완료"
+        } else {
+            "✅ 슬라이드 초안 작성 요청 준비 완료"
+        },
+        Some(format!("소스 섹션 {}개", source_sections.len())),
+    );
+
+    let draft_raw = call_slides_llm_with_progress(
+        &emitter,
+        "slide-draft-llm",
+        if is_existing_draft {
+            "⏳ AI가 슬라이드 초안을 수정하는 중…"
+        } else {
+            "⏳ AI가 슬라이드 초안을 작성하는 중…"
+        },
+        if is_existing_draft {
+            "✅ 슬라이드 초안 수정 완료"
+        } else {
+            "✅ 슬라이드 초안 작성 완료"
+        },
+        company,
+        auth,
+        model.as_deref(),
+        SLIDE_MARKDOWN_DRAFT_SYSTEM,
+        &prompt,
+        None,
+        SLIDE_MARKDOWN_DRAFT_MAX_TOKENS,
+    )
+    .await?;
+
+    emitter.emit("🔍 응답 정리 중...", None);
+    let cleaned = strip_internal_source_labels(&strip_outer_markdown_fence(&draft_raw));
+    emitter.emit("✅ 슬라이드 초안 준비 완료", None);
+    Ok(cleaned)
 }
 
 // ─── 범용 Claude 텍스트 생성 (문법/번역/문서개선/구조화 — React AI 모드) ─────
@@ -205,8 +1140,13 @@ pub async fn ai_generate_claude(
     let result = match claude_auth {
         ClaudeAuthMode::Subscription => {
             let token = crate::subscription_auth::claude_access_token().await?;
-            anthropic::generate_text(ClaudeAuth::Subscription(&token), model_id, &prompt, Some(opts))
-                .await
+            anthropic::generate_text(
+                ClaudeAuth::Subscription(&token),
+                model_id,
+                &prompt,
+                Some(opts),
+            )
+            .await
         }
         ClaudeAuthMode::ApiKey => {
             let key = get_key(Provider::Claude)
@@ -240,6 +1180,7 @@ pub async fn ai_generate_codex(
         model_id,
         system.as_deref(),
         &prompt,
+        None,
     )
     .await
     .map(|r| r.text)
@@ -274,7 +1215,7 @@ pub async fn ai_generate_openai(
     let key = get_key(Provider::Openai)
         .map_err(err_to_string)?
         .ok_or_else(|| "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
-    openai_api::generate_text(&key, &model, system.as_deref(), &prompt)
+    openai_api::generate_text(&key, &model, system.as_deref(), &prompt, None)
         .await
         .map(|r| r.text)
         .map_err(err_to_string)
@@ -326,7 +1267,15 @@ pub async fn generate_image_gemini(
     let key = get_key(Provider::Gemini)
         .map_err(err_to_string)?
         .ok_or_else(|| "Gemini API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
-    image_gen::generate_gemini(&key, &model, &prompt, &aspect_ratio, &resolution, &reference_images).await
+    image_gen::generate_gemini(
+        &key,
+        &model,
+        &prompt,
+        &aspect_ratio,
+        &resolution,
+        &reference_images,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -343,7 +1292,16 @@ pub async fn generate_image_openai(
     let key = get_key(Provider::Openai)
         .map_err(err_to_string)?
         .ok_or_else(|| "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
-    image_gen::generate_openai(&key, &model, &prompt, &aspect_ratio, &resolution, &quality, &reference_images).await
+    image_gen::generate_openai(
+        &key,
+        &model,
+        &prompt,
+        &aspect_ratio,
+        &resolution,
+        &quality,
+        &reference_images,
+    )
+    .await
 }
 
 // ─── ChatGPT(Codex 구독) 이미지 생성 ────────────────────────────────────────
@@ -388,6 +1346,128 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    #[test]
+    fn markdown_source_sections_preserve_heading_paths() {
+        let md = [
+            "---",
+            "title: Demo",
+            "---",
+            "# Strategy",
+            "opening",
+            "```",
+            "## not a heading",
+            "```",
+            "## Problem",
+            "market is fragmented",
+            "### Evidence",
+            "- duplicate work",
+            "## Solution",
+            "shared deck pipeline",
+        ]
+        .join("\n");
+        let sections = markdown_source_sections(&md);
+        let titles = sections
+            .iter()
+            .map(|s| s.title.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(titles, vec!["Strategy", "Problem", "Evidence", "Solution"]);
+        assert_eq!(sections[1].level, 2);
+        assert_eq!(sections[1].section_path, vec!["Strategy"]);
+        assert_eq!(sections[2].section_path, vec!["Strategy", "Problem"]);
+        assert!(sections[0].content.contains("## not a heading"));
+    }
+
+    #[test]
+    fn source_map_prompt_exposes_ids_paths_and_content_signals() {
+        let md = [
+            "# Report",
+            "## Metrics",
+            "| A | B |",
+            "| - | - |",
+            "| 73% | win |",
+            "![chart](chart.png)",
+            "> cited signal",
+        ]
+        .join("\n");
+        let sections = markdown_source_sections(&md);
+        let prompt = source_map_prompt(&sections);
+
+        assert!(prompt.contains("[S2]"));
+        assert!(prompt.contains("path: Report"));
+        assert!(prompt.contains("signals: table,image,quote,stat"));
+        assert!(prompt.contains("73%"));
+    }
+
+    #[test]
+    fn source_map_prompt_chunks_long_sections_instead_of_dropping_tail() {
+        let md = format!(
+            "# Long Section\n{}\nTAIL_EVIDENCE_SHOULD_REMAIN",
+            "중요한 배경 설명 ".repeat(180)
+        );
+        let sections = markdown_source_sections(&md);
+        let prompt = source_map_prompt(&sections);
+
+        assert!(prompt.contains("excerpt part 2/"));
+        assert!(prompt.contains("TAIL_EVIDENCE_SHOULD_REMAIN"));
+    }
+
+    #[test]
+    fn strip_outer_markdown_fence_removes_wrapping_fence_only() {
+        let wrapped = "```markdown\n# Title\n\n---\n\n## Body\n```";
+        assert_eq!(
+            strip_outer_markdown_fence(wrapped),
+            "# Title\n\n---\n\n## Body"
+        );
+
+        let plain = "# Title\n\n```ts\nconst x = 1;\n```";
+        assert_eq!(strip_outer_markdown_fence(plain), plain);
+    }
+
+    #[test]
+    fn strip_internal_source_labels_removes_only_source_ids() {
+        let md = [
+            "# Slide",
+            "- 핵심 메시지 (출처: S2)",
+            "- 실제 출처: 회사 보고서",
+            "출처: S2, S3",
+            "> Source: S4",
+            "---",
+            "## Next",
+            "**출처:** S5",
+        ]
+        .join("\n");
+
+        let cleaned = strip_internal_source_labels(&md);
+        assert!(cleaned.contains("- 핵심 메시지"));
+        assert!(cleaned.contains("- 실제 출처: 회사 보고서"));
+        assert!(!cleaned.contains("출처: S2"));
+        assert!(!cleaned.contains("Source: S4"));
+        assert!(!cleaned.contains("S5"));
+    }
+
+    #[test]
+    fn slide_draft_marker_detection_and_strip() {
+        let md = "<!-- markmind:slide-draft v1 -->\n# Slide\nbody";
+        assert!(has_slide_draft_marker(md));
+        assert_eq!(strip_slide_draft_marker(md), "# Slide\nbody");
+
+        let escaped = "&lt;!-- markmind:slide-draft v1 --&gt;\n# Slide";
+        assert!(has_slide_draft_marker(escaped));
+        assert_eq!(strip_slide_draft_marker(escaped), "# Slide");
+    }
+
+    #[test]
+    fn slide_generation_source_context_strips_draft_marker() {
+        let md = "<!-- markmind:slide-draft v2 -->\n# Actual Slide\nBody";
+        let (outline, sections, source_map) = slide_generation_source_context(md);
+
+        assert!(!outline.contains("markmind:slide-draft"));
+        assert!(!source_map.contains("markmind:slide-draft"));
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].title, "Actual Slide");
+    }
+
     /// Codex P2 follow-up: ensure `extract_speakers` returns labels from a
     /// clean (no-timestamp) transcript when it's part of an STT pair —
     /// previously the per-file gate skipped the clean file, breaking
@@ -398,7 +1478,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let ts_path = dir.path().join("ts.md");
         let cl_path = dir.path().join("clean.md");
-        std::fs::write(&ts_path, "**[00:00:05] 화자A:** 안녕\n**[00:00:10] 화자B:** 반갑").unwrap();
+        std::fs::write(
+            &ts_path,
+            "**[00:00:05] 화자A:** 안녕\n**[00:00:10] 화자B:** 반갑",
+        )
+        .unwrap();
         // clean has the same labels but no timestamps — exact shape of
         // remove_timestamps output
         std::fs::write(&cl_path, "**화자A:** 안녕\n**화자B:** 반갑").unwrap();
@@ -418,7 +1502,10 @@ mod tests {
         let p = dir.path().join("notes.md");
         std::fs::write(&p, "**일시:** 2026년 5월 28일\n**참석자:** 승우, 재문").unwrap();
         let labels = extract_speakers(vec![p.to_string_lossy().into_owned()]).unwrap();
-        assert!(labels.is_empty(), "metadata-only doc must not yield speakers");
+        assert!(
+            labels.is_empty(),
+            "metadata-only doc must not yield speakers"
+        );
     }
 
     /// rename_speakers must update BOTH timestamped and clean files when
@@ -440,8 +1527,16 @@ mod tests {
         .unwrap();
         let ts_after = std::fs::read_to_string(&ts_path).unwrap();
         let cl_after = std::fs::read_to_string(&cl_path).unwrap();
-        assert!(ts_after.contains("김철수:**"), "ts file not renamed: {}", ts_after);
-        assert!(cl_after.contains("김철수:**"), "clean file not renamed: {}", cl_after);
+        assert!(
+            ts_after.contains("김철수:**"),
+            "ts file not renamed: {}",
+            ts_after
+        );
+        assert!(
+            cl_after.contains("김철수:**"),
+            "clean file not renamed: {}",
+            cl_after
+        );
     }
 }
 
@@ -473,17 +1568,11 @@ mod tests {
 fn speaker_line_patterns() -> Result<Vec<regex::Regex>, regex::Error> {
     Ok(vec![
         // 1: **[time] LABEL:**   /   **LABEL:**          (full bold envelope)
-        regex::Regex::new(
-            r"(?m)^\*\*(?:\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)?([^\*\n:]{1,40}?):\*\*",
-        )?,
+        regex::Regex::new(r"(?m)^\*\*(?:\[\d{1,2}:\d{2}(?::\d{2})?\]\s+)?([^\*\n:]{1,40}?):\*\*")?,
         // 2: [time] **LABEL**:   (timestamp + label-only bold, colon outside)
-        regex::Regex::new(
-            r"(?m)^\[\d{1,2}:\d{2}(?::\d{2})?\]\s+\*\*([^\*\n:]{1,40}?)\*\*\s*:\s",
-        )?,
+        regex::Regex::new(r"(?m)^\[\d{1,2}:\d{2}(?::\d{2})?\]\s+\*\*([^\*\n:]{1,40}?)\*\*\s*:\s")?,
         // 3: [time] LABEL:       (timestamp anchored, no bold)
-        regex::Regex::new(
-            r"(?m)^\[\d{1,2}:\d{2}(?::\d{2})?\]\s+([^\*\n:]{1,40}?):\s+\S",
-        )?,
+        regex::Regex::new(r"(?m)^\[\d{1,2}:\d{2}(?::\d{2})?\]\s+([^\*\n:]{1,40}?):\s+\S")?,
     ])
 }
 
@@ -495,9 +1584,8 @@ fn speaker_line_patterns() -> Result<Vec<regex::Regex>, regex::Error> {
 /// `**일시:**`, `**참석자:**`, `**결정사항:**` as fake speakers.
 fn has_any_timestamp(text: &str) -> bool {
     static TS_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = TS_RE.get_or_init(|| {
-        regex::Regex::new(r"\[\d{1,2}:\d{2}(?::\d{2})?\]").expect("regex compile")
-    });
+    let re = TS_RE
+        .get_or_init(|| regex::Regex::new(r"\[\d{1,2}:\d{2}(?::\d{2})?\]").expect("regex compile"));
     re.is_match(text)
 }
 
@@ -579,7 +1667,10 @@ pub fn merge_md_files(
             }
             frontmatter_emitted = true;
         }
-        let label = labels.get(idx).cloned().unwrap_or_else(|| format!("파일 {}", idx + 1));
+        let label = labels
+            .get(idx)
+            .cloned()
+            .unwrap_or_else(|| format!("파일 {}", idx + 1));
         combined.push_str(&format!("## 파일 {} — {}\n\n", idx + 1, label));
         combined.push_str(body.trim());
         combined.push_str("\n\n");
@@ -587,7 +1678,13 @@ pub fn merge_md_files(
 
     let safe_base = output_basename
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' || c == ' ' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' || c == ' ' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>();
     let target = dir.join(format!("{}.md", safe_base.trim()));
     // 충돌 시 (2), (3) ...
@@ -627,10 +1724,7 @@ fn split_frontmatter(md: &str) -> (Option<String>, String) {
 /// 화자 라벨 일괄 치환. mappings: (from, to). `to` 가 빈 문자열이면 그 화자의
 /// 모든 발화 라인 통째로 제거 (라벨 prefix 부터 다음 발화 직전까지).
 #[tauri::command]
-pub fn rename_speakers(
-    paths: Vec<String>,
-    mappings: Vec<(String, String)>,
-) -> Result<(), String> {
+pub fn rename_speakers(paths: Vec<String>, mappings: Vec<(String, String)>) -> Result<(), String> {
     use std::collections::HashMap;
     // 빈 매핑 / 동일 매핑 정리
     let mut rename: HashMap<String, String> = HashMap::new();
@@ -682,9 +1776,7 @@ pub fn rename_speakers(
     // captures borrow from the input string, and proving that to the
     // checker for a Fn(&str) -> Option<Captures<'?>> is more verbose than
     // just inlining the loop at the call site.
-    let any_header_matches = |s: &str| -> bool {
-        header_patterns.iter().any(|p| p.is_match(s))
-    };
+    let any_header_matches = |s: &str| -> bool { header_patterns.iter().any(|p| p.is_match(s)) };
 
     // Set-level gate — at least one path must look like STT output. The
     // clean transcript that pairs with a timestamped one has timestamps
@@ -727,9 +1819,7 @@ pub fn rename_speakers(
             let mut matched_rest = "";
             for p in &header_patterns {
                 if let Some(caps) = p.captures(trimmed_line) {
-                    matched_label = caps
-                        .name("label")
-                        .map(|m| m.as_str().trim().to_string());
+                    matched_label = caps.name("label").map(|m| m.as_str().trim().to_string());
                     matched_prefix = caps.name("prefix").map(|m| m.as_str()).unwrap_or("");
                     matched_suffix = caps.name("suffix").map(|m| m.as_str()).unwrap_or("");
                     matched_rest = caps.name("rest").map(|m| m.as_str()).unwrap_or("");

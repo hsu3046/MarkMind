@@ -13,6 +13,8 @@
 // 이 파서의 출력(Slide[])은 buildPptx.ts 와 LLM 스마트 레이아웃 경로가 공유하는
 // 단일 스키마다(경로 통일).
 
+import { normalizeSlideMasterSpec, type SlideMasterSpec } from './slideMaster';
+
 export interface InlineSpan {
   text: string;
   bold?: boolean;
@@ -23,16 +25,63 @@ export interface InlineSpan {
 export type SlideBlock =
   | { kind: 'bullet'; spans: InlineSpan[]; indent: number }
   | { kind: 'text'; spans: InlineSpan[] }
-  | { kind: 'subhead'; text: string }
+  | { kind: 'subhead'; text: string; level?: number }
   | { kind: 'code'; text: string; lang?: string }
   | { kind: 'table'; rows: string[][] } // rows[0] = 헤더
   | { kind: 'image'; src: string; alt?: string };
 
+export type SlideLayout =
+  | 'title'
+  | 'content'
+  | 'section'
+  | 'two-column'
+  | 'image-focus'
+  | 'quote'
+  | 'stat'
+  | 'comparison'
+  | 'timeline';
+
+export type SlideImageRole = 'cover' | 'hero' | 'support' | 'logo' | 'icon' | 'background';
+export type SlideImageSourcePreference = 'auto' | 'stock' | 'logo' | 'generated' | 'none';
+export type SlideImageLicenseStrictness = 'presentation' | 'open' | 'internal-only';
+
+export interface SlideImageSpec {
+  src?: string;
+  alt?: string;
+  prompt?: string;
+  kind?: string;
+  role?: SlideImageRole;
+  query?: string;
+  entity?: string;
+  aspect?: string;
+  style?: string;
+  sourcePreference?: SlideImageSourcePreference;
+  licenseStrictness?: SlideImageLicenseStrictness;
+}
+
 export interface Slide {
   title: string;
-  layout: 'title' | 'content';
+  layout: SlideLayout;
   body: SlideBlock[];
   notes?: string;
+  /** 0-100 deck-level importance hint from the LLM. Renderer/pipeline may re-score deterministically. */
+  importance?: number;
+  importanceReason?: string;
+  /** LLM path: source section IDs from the Rust source map, e.g. ["S2", "S5"]. */
+  sourceIds?: string[];
+  /** 원본 마크다운 헤딩 레벨(H1=1...). LLM 경로도 같은 힌트를 넣을 수 있다. */
+  sourceLevel?: number;
+  /** 현재 슬라이드의 상위 섹션 경로. 예: ["Product", "Strategy"]. */
+  sectionPath?: string[];
+  columns?: SlideBlock[][];
+  quote?: { text: string; attribution?: string };
+  stat?: { value: string; label?: string; context?: string };
+  image?: SlideImageSpec;
+}
+
+export interface SlideDeck {
+  slides: Slide[];
+  masterSpec?: SlideMasterSpec;
 }
 
 const HEADING_RE = /^(#{1,6})\s+(.*)$/;
@@ -42,6 +91,15 @@ const LIST_RE = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/;
 const TABLE_ROW_RE = /^\s*\|(.+)\|\s*$/;
 const TABLE_SEP_RE = /^\s*\|?[\s:|-]+\|?\s*$/; // |---|:--:| 류 구분행
 const IMAGE_ONLY_RE = /^\s*!\[([^\]]*)\]\(([^)]+)\)\s*$/;
+const SLIDE_DRAFT_MARKER_LINE_RE =
+  /^\s*(?:<!--\s*markmind:slide-draft\b[^>]*-->|&lt;!--\s*markmind:slide-draft\b.*?--&gt;)\s*$/i;
+
+function stripSlideDraftMarker(md: string): string {
+  return md
+    .split('\n')
+    .filter((line) => !SLIDE_DRAFT_MARKER_LINE_RE.test(line))
+    .join('\n');
+}
 
 /** YAML frontmatter 제거 + 본문에서 `title:` 회수(덱 제목 폴백용). */
 function stripFrontmatter(md: string): { body: string; title?: string } {
@@ -114,20 +172,203 @@ export function parseInline(text: string): InlineSpan[] {
   return spans.length > 0 ? spans : [{ text }];
 }
 
-/** LLM 슬라이드 객체({title,layout,bullets,notes}) → Slide. */
+const SLIDE_LAYOUTS = new Set<SlideLayout>([
+  'title',
+  'content',
+  'section',
+  'two-column',
+  'image-focus',
+  'quote',
+  'stat',
+  'comparison',
+  'timeline',
+]);
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    : [];
+}
+
+function blocksFromBullets(bullets: string[], kind: 'text' | 'bullet' = 'bullet'): SlideBlock[] {
+  return bullets.map((b) =>
+    kind === 'text'
+      ? { kind: 'text', spans: parseInline(b) }
+      : { kind: 'bullet', spans: parseInline(b), indent: 0 },
+  );
+}
+
+function blocksFromUnknown(value: unknown): SlideBlock[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => {
+      if (typeof item === 'string') return blocksFromBullets([item]);
+      if (!item || typeof item !== 'object') return [];
+      const o = item as Record<string, unknown>;
+      const text = typeof o.text === 'string' ? o.text : typeof o.value === 'string' ? o.value : '';
+      if (!text.trim()) return [];
+      if (o.kind === 'subhead') {
+        const level = numberInRange(o.level, 1, 6) ?? numberInRange(o.headingLevel, 1, 6);
+        return [{ kind: 'subhead', text, level }];
+      }
+      return blocksFromBullets([text], o.kind === 'text' ? 'text' : 'bullet');
+    });
+  }
+  return [];
+}
+
+function numberInRange(value: unknown, min: number, max: number): number | undefined {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isInteger(n) && n >= min && n <= max ? n : undefined;
+}
+
+function stringPath(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const path = value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0).map((v) => v.trim());
+  return path.length > 0 ? path.slice(0, 6) : undefined;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+function sourceFromUnknown(o: Record<string, unknown>): { sourceLevel?: number; sectionPath?: string[] } {
+  const source = o.source && typeof o.source === 'object' ? (o.source as Record<string, unknown>) : {};
+  return {
+    sourceLevel:
+      numberInRange(source.headingLevel, 1, 6) ??
+      numberInRange(source.level, 1, 6) ??
+      numberInRange(o.headingLevel, 1, 6) ??
+      numberInRange(o.sourceLevel, 1, 6) ??
+      numberInRange(o.level, 1, 6),
+    sectionPath: stringPath(source.sectionPath) ?? stringPath(o.sectionPath),
+  };
+}
+
+function sourceIdsFromUnknown(o: Record<string, unknown>): string[] | undefined {
+  const source = o.source && typeof o.source === 'object' ? (o.source as Record<string, unknown>) : {};
+  const ids = uniqueStrings([
+    ...stringList(o.sourceIds),
+    ...stringList(o.sources),
+    ...stringList(source.sourceIds),
+    ...stringList(source.ids),
+  ]);
+  return ids.length > 0 ? ids : undefined;
+}
+
+function quoteFromUnknown(value: unknown): Slide['quote'] | undefined {
+  if (typeof value === 'string' && value.trim()) return { text: value.trim() };
+  if (!value || typeof value !== 'object') return undefined;
+  const o = value as Record<string, unknown>;
+  const text = typeof o.text === 'string' ? o.text.trim() : '';
+  if (!text) return undefined;
+  return {
+    text,
+    attribution: typeof o.attribution === 'string' && o.attribution.trim() ? o.attribution.trim() : undefined,
+  };
+}
+
+function statFromUnknown(value: unknown): Slide['stat'] | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const o = value as Record<string, unknown>;
+  const statValue =
+    typeof o.value === 'string' ? o.value.trim() : typeof o.value === 'number' ? String(o.value) : '';
+  if (!statValue) return undefined;
+  return {
+    value: statValue,
+    label: typeof o.label === 'string' && o.label.trim() ? o.label.trim() : undefined,
+    context: typeof o.context === 'string' && o.context.trim() ? o.context.trim() : undefined,
+  };
+}
+
+function importanceFromUnknown(value: unknown): number | undefined {
+  const raw = typeof value === 'number' ? value : typeof value === 'string' ? Number.parseFloat(value) : NaN;
+  if (!Number.isFinite(raw) || raw <= 0) return undefined;
+  const normalized = raw <= 5 ? raw * 20 : raw;
+  return Math.max(0, Math.min(100, Math.round(normalized)));
+}
+
+function imageFromUnknown(value: unknown): Slide['image'] | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const o = value as Record<string, unknown>;
+  const src = typeof o.src === 'string' && o.src.trim() ? o.src.trim() : undefined;
+  const prompt = typeof o.prompt === 'string' && o.prompt.trim() ? o.prompt.trim() : undefined;
+  const query = typeof o.query === 'string' && o.query.trim() ? o.query.trim() : undefined;
+  const entity = typeof o.entity === 'string' && o.entity.trim() ? o.entity.trim() : undefined;
+  const role = oneOf<SlideImageRole>(o.role, ['cover', 'hero', 'support', 'logo', 'icon', 'background']);
+  const sourcePreference = oneOf<SlideImageSourcePreference>(o.sourcePreference, ['auto', 'stock', 'logo', 'generated', 'none']);
+  const licenseStrictness = oneOf<SlideImageLicenseStrictness>(o.licenseStrictness, ['presentation', 'open', 'internal-only']);
+  const alt = typeof o.alt === 'string' && o.alt.trim() ? o.alt.trim() : undefined;
+  const aspect = typeof o.aspect === 'string' && o.aspect.trim() ? o.aspect.trim() : undefined;
+  const style = typeof o.style === 'string' && o.style.trim() ? o.style.trim() : undefined;
+  const kind = typeof o.kind === 'string' && o.kind.trim() ? o.kind.trim() : undefined;
+  if (!src && !prompt && !query && !entity && !role && !sourcePreference && !licenseStrictness && !alt && !aspect && !style && !kind) {
+    return undefined;
+  }
+  return {
+    src,
+    prompt,
+    query,
+    entity,
+    role,
+    sourcePreference,
+    licenseStrictness,
+    alt,
+    aspect,
+    style,
+    kind,
+  };
+}
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
+  return typeof value === 'string' && allowed.includes(value as T) ? (value as T) : undefined;
+}
+
+/** LLM 슬라이드 객체 → Slide. 새 필드는 없으면 기존 bullets 기반으로 복구한다. */
 function llmObjToSlide(o: Record<string, unknown>, index: number): Slide {
   const title = typeof o.title === 'string' ? o.title : '';
-  const bullets = Array.isArray(o.bullets)
-    ? (o.bullets as unknown[]).filter((b): b is string => typeof b === 'string')
-    : [];
-  const layout: 'title' | 'content' =
-    o.layout === 'title' || (index === 0 && o.layout !== 'content') ? 'title' : 'content';
-  const body: SlideBlock[] =
-    layout === 'title'
-      ? bullets.slice(0, 1).map((b) => ({ kind: 'text', spans: parseInline(b) }))
-      : bullets.map((b) => ({ kind: 'bullet', spans: parseInline(b), indent: 0 }));
+  const bullets = stringList(o.bullets);
+  const source = sourceFromUnknown(o);
+  const sourceIds = sourceIdsFromUnknown(o);
+  const rawLayout = typeof o.layout === 'string' ? o.layout : '';
+  const layout: SlideLayout =
+    rawLayout && SLIDE_LAYOUTS.has(rawLayout as SlideLayout)
+      ? (rawLayout as SlideLayout)
+      : index === 0
+        ? 'title'
+        : 'content';
+  let body = blocksFromUnknown(o.blocks);
+  if (body.length === 0) {
+    body = layout === 'title' || layout === 'section'
+      ? blocksFromBullets(bullets.slice(0, 2), 'text')
+      : blocksFromBullets(bullets);
+  }
   const notes = typeof o.notes === 'string' && o.notes.trim() ? o.notes.trim() : undefined;
-  return { title, layout, body, notes };
+  const columns = Array.isArray(o.columns)
+    ? o.columns.map(blocksFromUnknown).filter((col) => col.length > 0).slice(0, 3)
+    : undefined;
+  return {
+    title,
+    layout,
+    body,
+    notes,
+    importance: importanceFromUnknown(o.importance),
+    importanceReason: typeof o.importanceReason === 'string' && o.importanceReason.trim() ? o.importanceReason.trim() : undefined,
+    sourceIds,
+    sourceLevel: source.sourceLevel,
+    sectionPath: source.sectionPath,
+    columns,
+    quote: quoteFromUnknown(o.quote),
+    stat: statFromUnknown(o.stat),
+    image: imageFromUnknown(o.image),
+  };
 }
 
 /**
@@ -172,7 +413,7 @@ function extractBalancedObjects(s: string): string[] {
  *    `"slides"` 배열에서 완성된 `{...}` 객체만 추출해 살린다(우아한 degradation).
  * 둘 다 실패하면 null(→ 호출부가 규칙 기반으로 폴백).
  */
-export function slidesFromLlmJson(raw: string): Slide[] | null {
+export function slideDeckFromLlmJson(raw: string): SlideDeck | null {
   // 1) strict
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');
@@ -181,7 +422,13 @@ export function slidesFromLlmJson(raw: string): Slide[] | null {
       const obj = JSON.parse(raw.slice(start, end + 1));
       const arr = Array.isArray(obj) ? obj : obj.slides;
       if (Array.isArray(arr) && arr.length > 0) {
-        return arr.map((s, i) => llmObjToSlide((s ?? {}) as Record<string, unknown>, i));
+        const masterSpec = Array.isArray(obj)
+          ? undefined
+          : normalizeSlideMasterSpec(obj.masterSpec) ?? normalizeSlideMasterSpec(obj.master);
+        return {
+          slides: arr.map((s, i) => llmObjToSlide((s ?? {}) as Record<string, unknown>, i)),
+          masterSpec,
+        };
       }
     } catch {
       /* 잘림 가능성 → 부분 복구로 진행 */
@@ -203,7 +450,179 @@ export function slidesFromLlmJson(raw: string): Slide[] | null {
       /* 마지막 잘린 객체는 무시 */
     }
   });
-  return slides.length > 0 ? slides : null;
+  return slides.length > 0 ? { slides } : null;
+}
+
+export function slidesFromLlmJson(raw: string): Slide[] | null {
+  return slideDeckFromLlmJson(raw)?.slides ?? null;
+}
+
+function slideHasImageSrc(slide: Slide): boolean {
+  return Boolean(slide.image?.src?.trim() || slide.body.some((block) => block.kind === 'image' && block.src.trim()));
+}
+
+function firstSourceImage(slide: Slide): SlideImageSpec | undefined {
+  const src = slide.image?.src?.trim();
+  if (src) return { ...slide.image, src };
+  const block = slide.body.find((item): item is Extract<SlideBlock, { kind: 'image' }> => item.kind === 'image');
+  return block?.src.trim() ? { src: block.src.trim(), alt: block.alt, kind: 'source', role: 'support' } : undefined;
+}
+
+function sourceImagesFromLine(line: string): SlideImageSpec[] {
+  return [...line.matchAll(/!\[([^\]]*)\]\(([^)]+)\)/g)]
+    .map((img) => ({ src: img[2].trim(), alt: img[1], kind: 'source' as const, role: 'support' as const }))
+    .filter((image) => image.src.length > 0);
+}
+
+function sourceImageMapFromMarkdown(markdown: string): Map<string, SlideImageSpec[]> {
+  const lines = stripSlideDraftMarker(markdown).split('\n');
+  const images = new Map<string, SlideImageSpec[]>();
+  let inFrontmatter = false;
+  let inFence = false;
+  let fenceMarker = '';
+  let nextId = 1;
+  let currentId: string | undefined;
+  let currentImages: SlideImageSpec[] = [];
+  let preludeHasContent = false;
+  let preludeImages: SlideImageSpec[] = [];
+
+  const rememberImage = (line: string) => {
+    const lineImages = sourceImagesFromLine(line);
+    if (lineImages.length === 0) return;
+    if (currentId) currentImages.push(...lineImages);
+    else preludeImages.push(...lineImages);
+  };
+
+  const closeCurrent = () => {
+    if (currentId && currentImages.length > 0) images.set(currentId, currentImages);
+    currentId = undefined;
+    currentImages = [];
+  };
+
+  const closePrelude = () => {
+    if (!preludeHasContent) return;
+    const id = `S${nextId++}`;
+    if (preludeImages.length > 0) images.set(id, preludeImages);
+    preludeHasContent = false;
+    preludeImages = [];
+  };
+
+  lines.forEach((line, lineIndex) => {
+    const trimmed = line.trim();
+    if (lineIndex === 0 && trimmed === '---') {
+      inFrontmatter = true;
+      return;
+    }
+    if (inFrontmatter) {
+      if (trimmed === '---') inFrontmatter = false;
+      return;
+    }
+
+    const left = line.trimStart();
+    const fence = left.startsWith('```') ? '```' : left.startsWith('~~~') ? '~~~' : '';
+    if (fence) {
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = fence;
+      } else if (left.startsWith(fenceMarker)) {
+        inFence = false;
+      }
+      if (!currentId && trimmed) preludeHasContent = true;
+      return;
+    }
+
+    if (!inFence && HEADING_RE.test(line)) {
+      if (currentId) closeCurrent();
+      else closePrelude();
+      currentId = `S${nextId++}`;
+      return;
+    }
+
+    if (!currentId && trimmed) preludeHasContent = true;
+    if (!inFence) rememberImage(line);
+  });
+
+  if (currentId) closeCurrent();
+  else closePrelude();
+  return images;
+}
+
+function sourceIndexFromId(id: string): number | undefined {
+  const match = id.trim().match(/^S(\d+)$/i);
+  if (!match) return undefined;
+  const index = Number.parseInt(match[1], 10) - 1;
+  return Number.isFinite(index) && index >= 0 ? index : undefined;
+}
+
+/**
+ * AI JSON 경로가 성공하더라도 source-only PPTX 내보내기에서는 원본 Markdown 이미지가
+ * 사라지면 안 된다. LLM이 이미지 src를 직접 복사하지 못한 경우 원본 Markdown을 Rust
+ * source map과 같은 heading-section 순서로 스캔해 sourceIds(S1, S2...)에 맞는 이미지
+ * src를 보강한다. 원본 Markdown 문자열이 없을 때만 기존 슬라이드 순번 fallback을 쓴다.
+ */
+export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | string): Slide[] {
+  const sourceSlides = typeof source === 'string' ? markdownToSlides(source) : source;
+  const sourceImagesById = typeof source === 'string' ? sourceImageMapFromMarkdown(source) : new Map<string, SlideImageSpec[]>();
+  if (sourceImagesById.size === 0 && !sourceSlides.some(slideHasImageSrc)) return slides;
+  const sourceImageOffsets = new Map<string, number>();
+  const sourceImageEntries = [...sourceImagesById.entries()].flatMap(([id, images]) =>
+    images.map((image, imageIndex) => ({ id, image, imageIndex })),
+  );
+  let nextSourceImageIndex = 0;
+  const usedSourceIndexes = new Set<number>();
+  const takeSourceImage = (sourceId: string): SlideImageSpec | undefined => {
+    const normalized = sourceId.trim().toUpperCase();
+    const images = sourceImagesById.get(normalized);
+    const offset = sourceImageOffsets.get(normalized) ?? 0;
+    const image = images?.[offset];
+    if (!image) return undefined;
+    sourceImageOffsets.set(normalized, offset + 1);
+    return image;
+  };
+  const takeNextSourceImage = (): SlideImageSpec | undefined => {
+    while (nextSourceImageIndex < sourceImageEntries.length) {
+      const { id, image, imageIndex } = sourceImageEntries[nextSourceImageIndex++];
+      const offset = sourceImageOffsets.get(id) ?? 0;
+      if (imageIndex !== offset) continue;
+      sourceImageOffsets.set(id, offset + 1);
+      return image;
+    }
+    return undefined;
+  };
+  const takeImage = (sourceIndex: number | undefined): SlideImageSpec | undefined => {
+    if (sourceIndex === undefined || sourceIndex < 0 || sourceIndex >= sourceSlides.length || usedSourceIndexes.has(sourceIndex)) {
+      return undefined;
+    }
+    const image = firstSourceImage(sourceSlides[sourceIndex]);
+    if (!image) return undefined;
+    usedSourceIndexes.add(sourceIndex);
+    return image;
+  };
+
+  return slides.map((slide, slideIndex) => {
+    if (slideHasImageSrc(slide)) return slide;
+    let image: SlideImageSpec | undefined;
+    for (const sourceId of slide.sourceIds ?? []) {
+      image = takeSourceImage(sourceId) ?? (sourceImagesById.size === 0 ? takeImage(sourceIndexFromId(sourceId)) : undefined);
+      if (image) break;
+    }
+    if (!image && !slide.sourceIds?.length && sourceImagesById.size > 0) {
+      image = takeNextSourceImage();
+    }
+    if (!image && (!slide.sourceIds?.length || sourceImagesById.size === 0)) {
+      image = takeImage(slideIndex);
+    }
+    if (!image) return slide;
+    return {
+      ...slide,
+      image: {
+        ...slide.image,
+        ...image,
+        src: image.src,
+        alt: image.alt ?? slide.image?.alt ?? slide.title,
+      },
+    };
+  });
 }
 
 /** slide-level 산정 — 내용이 바로 뒤따르는 최상위(가장 작은 번호) 헤딩 레벨. */
@@ -251,7 +670,7 @@ function parseBody(lines: Line[], slideLevel: number): SlideBlock[] {
       case 'heading':
         flushPara();
         if (ln.level > slideLevel)
-          blocks.push({ kind: 'subhead', text: ln.text });
+          blocks.push({ kind: 'subhead', text: ln.text, level: ln.level });
         // slide-level 이하 헤딩은 상위에서 슬라이드 경계로 소비됨(여기 안 옴)
         break;
       case 'list':
@@ -305,7 +724,7 @@ function extractNotes(body: string): { body: string; notes?: string } {
  * 수평선/slide-level 헤딩 경계로 분할 → 슬라이드별 본문 파싱.
  */
 export function markdownToSlides(markdown: string): Slide[] {
-  const { body: noFm } = stripFrontmatter(markdown);
+  const { body: noFm } = stripFrontmatter(stripSlideDraftMarker(markdown));
   const { body: noNotesBody, notes: docNotes } = extractNotes(noFm);
 
   // 1) 펜스 코드블록을 atomic 으로: 코드 라인은 분류하지 않고 통째 보관.
@@ -339,12 +758,13 @@ export function markdownToSlides(markdown: string): Slide[] {
   const slideLevel = computeSlideLevel(lineView);
 
   // 2) 경계 분할: 수평선 / slide-level 이하 헤딩에서 새 슬라이드.
-  type Seg = { title: string; level: number | null; items: Item[] };
+  type Seg = { title: string; level: number | null; sectionPath: string[]; items: Item[] };
   const segs: Seg[] = [];
   let cur: Seg | null = null;
+  const headingStack: string[] = [];
   const ensure = () => {
     if (!cur) {
-      cur = { title: '', level: null, items: [] };
+      cur = { title: '', level: null, sectionPath: headingStack.filter(Boolean), items: [] };
       segs.push(cur);
     }
     return cur;
@@ -360,7 +780,10 @@ export function markdownToSlides(markdown: string): Slide[] {
       continue;
     }
     if (ln.t === 'heading' && ln.level <= slideLevel) {
-      cur = { title: ln.text, level: ln.level, items: [] };
+      const parentPath = headingStack.slice(0, Math.max(0, ln.level - 1)).filter(Boolean);
+      headingStack[ln.level - 1] = ln.text;
+      headingStack.length = ln.level;
+      cur = { title: ln.text, level: ln.level, sectionPath: parentPath, items: [] };
       segs.push(cur);
       continue;
     }
@@ -402,6 +825,8 @@ export function markdownToSlides(markdown: string): Slide[] {
       title: seg.title,
       layout: isTitle ? 'title' : 'content',
       body: merged,
+      sourceLevel: seg.level ?? undefined,
+      sectionPath: seg.sectionPath.length > 0 ? seg.sectionPath : undefined,
     });
   }
 

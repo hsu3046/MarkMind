@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { markdownToSlides, parseInline, slidesFromLlmJson } from './markdownToSlides';
+import {
+  markdownToSlides,
+  parseInline,
+  preserveSourceImagesForPptx,
+  slideDeckFromLlmJson,
+  slidesFromLlmJson,
+} from './markdownToSlides';
 
 describe('markdownToSlides — 분할 규칙', () => {
   it('수평선(---) 으로 슬라이드를 나눈다', () => {
@@ -31,6 +37,15 @@ describe('markdownToSlides — 분할 규칙', () => {
     expect(slides.map((s) => s.title)).toEqual(['First', 'Second']);
   });
 
+  it('MarkMind 슬라이드 초안 마커는 PPTX 변환 대상에서 제외한다', () => {
+    const md = ['<!-- markmind:slide-draft v1 -->', '# First', 'content', '---', '# Second'].join('\n');
+    const slides = markdownToSlides(md);
+    expect(slides.map((s) => s.title)).toEqual(['First', 'Second']);
+    expect(slides[0].body.map((b) => ('spans' in b ? b.spans.map((s) => s.text).join('') : ''))).not.toContain(
+      '<!-- markmind:slide-draft v1 -->',
+    );
+  });
+
   it('H1 이 바로 H2 로 이어지면 slide-level=2, H1 은 타이틀 슬라이드', () => {
     const md = ['# Cover', '## Section A', 'a', '## Section B', 'b'].join('\n');
     const slides = markdownToSlides(md);
@@ -42,6 +57,29 @@ describe('markdownToSlides — 분할 규칙', () => {
     ]);
     expect(slides[0].layout).toBe('title');
     expect(slides[1].layout).toBe('content');
+  });
+
+  it('마크다운 헤딩 계층을 슬라이드 출처 정보로 보존', () => {
+    const md = [
+      '# Strategy',
+      '## Problem',
+      'Market is fragmented.',
+      '### Evidence',
+      '- Teams duplicate work',
+      '## Solution',
+      'Create a shared deck pipeline.',
+    ].join('\n');
+    const slides = markdownToSlides(md);
+
+    expect(slides.map((s) => s.title)).toEqual(['Strategy', 'Problem', 'Solution']);
+    expect(slides[0].sourceLevel).toBe(1);
+    expect(slides[0].sectionPath).toBeUndefined();
+    expect(slides[1].sourceLevel).toBe(2);
+    expect(slides[1].sectionPath).toEqual(['Strategy']);
+    expect(slides[2].sectionPath).toEqual(['Strategy']);
+
+    const subhead = slides[1].body.find((b) => b.kind === 'subhead');
+    expect(subhead).toMatchObject({ kind: 'subhead', text: 'Evidence', level: 3 });
   });
 
   it('펜스 코드블록 안의 --- 와 # 은 경계/헤딩이 아니다', () => {
@@ -136,6 +174,23 @@ describe('slidesFromLlmJson', () => {
     expect(slides?.[0].title).toBe('T');
   });
 
+  it('상위 master 사양을 슬라이드 덱 메타데이터로 보존', () => {
+    const raw = JSON.stringify({
+      master: {
+        slideNumber: { enabled: true, includeOn: ['content', 'section'], position: 'bottom-center' },
+        footer: { text: 'Confidential', includeOn: ['content'], position: 'bottom-left' },
+        date: { enabled: false, text: '2026-06-23' },
+      },
+      slides: [{ title: 'T', layout: 'content', bullets: ['x'] }],
+    });
+    const deck = slideDeckFromLlmJson(raw);
+    expect(deck?.slides.length).toBe(1);
+    expect(deck?.masterSpec?.slideNumber?.includeOn).toEqual(['content', 'section']);
+    expect(deck?.masterSpec?.footer?.text).toBe('Confidential');
+    expect(deck?.masterSpec?.date?.enabled).toBe(false);
+    expect(slidesFromLlmJson(raw)?.[0].title).toBe('T');
+  });
+
   it('잘린 JSON 에서 완성된 슬라이드만 부분 복구', () => {
     // 마지막 객체가 토큰 한도로 잘린 상황
     const raw =
@@ -144,6 +199,139 @@ describe('slidesFromLlmJson', () => {
       '{"title":"C","layout":"content","bullets":["c1",';
     const slides = slidesFromLlmJson(raw);
     expect(slides?.map((s) => s.title)).toEqual(['A', 'B']); // C 는 미완성 → 제외
+  });
+
+  it('확장 레이아웃 필드를 보존', () => {
+    const raw = JSON.stringify({
+      slides: [
+        { title: 'Cover', layout: 'title', bullets: ['subtitle'] },
+        {
+          title: 'Why now',
+          layout: 'stat',
+          importance: 92,
+          importanceReason: 'core evidence slide',
+          sourceIds: ['S2', 'S3'],
+          source: { headingLevel: 2, sectionPath: ['Market'] },
+          stat: { value: '73%', label: 'teams need cleaner slides', context: 'Survey summary' },
+          notes: 'speaker note',
+        },
+        {
+          title: 'Options',
+          layout: 'two-column',
+          columns: [
+            ['Fast setup', 'Good defaults'],
+            [{ kind: 'subhead', text: 'Custom', level: 3 }, { kind: 'text', text: 'DESIGN.md later' }],
+          ],
+        },
+        {
+          title: 'Signal',
+          layout: 'quote',
+          quote: { text: 'Design is a system.', attribution: 'Team note' },
+        },
+        {
+          title: 'Visual',
+          layout: 'image-focus',
+          image: {
+            query: 'clean renewable energy infrastructure',
+            entity: 'renewable energy',
+            role: 'hero',
+            aspect: '16:9',
+            sourcePreference: 'auto',
+            licenseStrictness: 'open',
+          },
+        },
+      ],
+    });
+    const slides = slidesFromLlmJson(raw);
+    expect(slides?.[1].layout).toBe('stat');
+    expect(slides?.[1].importance).toBe(92);
+    expect(slides?.[1].importanceReason).toBe('core evidence slide');
+    expect(slides?.[1].sourceIds).toEqual(['S2', 'S3']);
+    expect(slides?.[1].sourceLevel).toBe(2);
+    expect(slides?.[1].sectionPath).toEqual(['Market']);
+    expect(slides?.[1].stat?.value).toBe('73%');
+    expect(slides?.[2].columns?.length).toBe(2);
+    expect(slides?.[2].columns?.[1][0]).toMatchObject({ kind: 'subhead', level: 3 });
+    expect(slides?.[3].quote?.attribution).toBe('Team note');
+    expect(slides?.[4].image).toMatchObject({
+      query: 'clean renewable energy infrastructure',
+      entity: 'renewable energy',
+      role: 'hero',
+      aspect: '16:9',
+      sourcePreference: 'auto',
+      licenseStrictness: 'open',
+    });
+  });
+
+  it('이미지 제외 의도만 있는 image 객체도 보존', () => {
+    const raw = JSON.stringify({
+      slides: [{ title: 'No visual', layout: 'content', image: { sourcePreference: 'none' }, bullets: ['text only'] }],
+    });
+    const slides = slidesFromLlmJson(raw);
+    expect(slides?.[0].image?.sourcePreference).toBe('none');
+  });
+
+  it('source-only PPTX 경로에서 원본 Markdown 이미지 src를 보강', () => {
+    const sourceSlides = markdownToSlides(['# Visual evidence', '![diagram](assets/diagram.png)', 'supporting text'].join('\n'));
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [{ title: 'Visual evidence', layout: 'content', sourceIds: ['S1'], bullets: ['supporting text'] }],
+      }),
+    );
+
+    const merged = preserveSourceImagesForPptx(aiSlides ?? [], sourceSlides);
+
+    expect(merged[0].image?.src).toBe('assets/diagram.png');
+    expect(merged[0].image?.alt).toBe('diagram');
+  });
+
+  it('source-only PPTX 경로에서 sourceIds를 원본 source section ID로 매핑', () => {
+    const markdown = ['# Report', 'Intro paragraph.', '## Evidence', '![chart](assets/chart.png)', 'Details'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          { title: 'Report', layout: 'title', sourceIds: ['S1'], bullets: ['Intro paragraph.'] },
+          { title: 'Evidence', layout: 'content', sourceIds: ['S2'], bullets: ['Details'] },
+        ],
+      }),
+    );
+
+    const merged = preserveSourceImagesForPptx(aiSlides ?? [], markdown);
+
+    expect(merged[0].image?.src).toBeUndefined();
+    expect(merged[1].image?.src).toBe('assets/chart.png');
+    expect(merged[1].image?.alt).toBe('chart');
+  });
+
+  it('source-only PPTX 경로에서 리스트 안의 원본 이미지도 보강', () => {
+    const markdown = ['# Report', 'Intro paragraph.', '## Evidence', '- ![chart](assets/chart.png)', 'Details'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [{ title: 'Evidence', layout: 'content', sourceIds: ['S2'], bullets: ['Details'] }],
+      }),
+    );
+
+    const merged = preserveSourceImagesForPptx(aiSlides ?? [], markdown);
+
+    expect(merged[0].image?.src).toBe('assets/chart.png');
+    expect(merged[0].image?.alt).toBe('chart');
+  });
+
+  it('source-only PPTX 경로에서 같은 sourceId의 원본 이미지를 순서대로 소비', () => {
+    const markdown = ['# Report', '## Evidence', '![first](assets/first.png)', '![second](assets/second.png)'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          { title: 'First evidence', layout: 'content', sourceIds: ['S2'], bullets: ['first'] },
+          { title: 'Second evidence', layout: 'content', sourceIds: ['S2'], bullets: ['second'] },
+        ],
+      }),
+    );
+
+    const merged = preserveSourceImagesForPptx(aiSlides ?? [], markdown);
+
+    expect(merged[0].image?.src).toBe('assets/first.png');
+    expect(merged[1].image?.src).toBe('assets/second.png');
   });
 
   it('완전 비 JSON 은 null', () => {

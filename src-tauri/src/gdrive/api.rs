@@ -42,7 +42,10 @@ struct ListResponse {
 ///
 /// `max_results`: 가져올 최대 파일 수 (None = 무제한, 끝까지 follow `nextPageToken`).
 /// API 호출 1회당 page_size=100 (Drive max). 1000개 가져오려면 10번 호출.
-pub async fn list_files(query: Option<&str>, max_results: Option<u32>) -> GDriveResult<Vec<DriveFile>> {
+pub async fn list_files(
+    query: Option<&str>,
+    max_results: Option<u32>,
+) -> GDriveResult<Vec<DriveFile>> {
     const PAGE_SIZE: u32 = 100; // Drive API max
     const SAFETY_LIMIT: u32 = 10_000; // 무한 loop 방어
 
@@ -73,7 +76,10 @@ pub async fn list_files(query: Option<&str>, max_results: Option<u32>) -> GDrive
         if !res.status().is_success() {
             let status = res.status();
             let body = res.text().await.unwrap_or_default();
-            return Err(GDriveError::Api(format!("list_files ({}): {}", status, body)));
+            return Err(GDriveError::Api(format!(
+                "list_files ({}): {}",
+                status, body
+            )));
         }
         let parsed: ListResponse = res.json().await?;
         all.extend(parsed.files);

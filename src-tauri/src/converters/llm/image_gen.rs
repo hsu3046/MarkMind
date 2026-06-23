@@ -191,9 +191,9 @@ fn openai_size(aspect_ratio: &str, resolution: &str) -> String {
     const MAX_EDGE: i64 = 3840;
     let (rw, rh) = parse_ratio(aspect_ratio);
     let target = match resolution.to_uppercase().as_str() {
-        "4K" => MAX_PX as f64,    // 4K — 제약상 최대 픽셀
-        "2K" => 4_194_304.0,      // 2K ≈ 2048²
-        _ => 1_048_576.0,         // 1K ≈ 1024²
+        "4K" => MAX_PX as f64, // 4K — 제약상 최대 픽셀
+        "2K" => 4_194_304.0,   // 2K ≈ 2048²
+        _ => 1_048_576.0,      // 1K ≈ 1024²
     };
     // 비율 유지하며 목표 픽셀에 맞는 실수 변 길이
     let mut h = (target * rh / rw).sqrt();
@@ -384,7 +384,9 @@ mod tests {
     /// openai_size: 제약(16배수·최대변3840·픽셀 655360~8294400)을 항상 만족해야.
     #[test]
     fn openai_size_satisfies_constraints() {
-        for ar in ["1:1", "16:9", "9:16", "3:2", "2:3", "4:3", "21:9", "garbage"] {
+        for ar in [
+            "1:1", "16:9", "9:16", "3:2", "2:3", "4:3", "21:9", "garbage",
+        ] {
             for res in ["1K", "2K", "4K"] {
                 let s = openai_size(ar, res);
                 let (w, h): (i64, i64) = {
@@ -395,7 +397,10 @@ mod tests {
                 assert_eq!(h % 16, 0, "{ar}/{res}={s}: height not /16");
                 assert!(w <= 3840 && h <= 3840, "{ar}/{res}={s}: edge > 3840");
                 let px = w * h;
-                assert!((655_360..=8_294_400).contains(&px), "{ar}/{res}={s}: px {px} out of range");
+                assert!(
+                    (655_360..=8_294_400).contains(&px),
+                    "{ar}/{res}={s}: px {px} out of range"
+                );
             }
         }
     }

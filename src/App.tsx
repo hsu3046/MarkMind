@@ -4,7 +4,7 @@ import { AIMode, DiffChunk } from './types/ai';
 import { Editor, EditorHandle } from './components/Editor';
 import { McpProposalView } from './components/McpProposalView';
 import { generateDiff, isAuthError } from './services/aiService';
-import { getAIModelSelection, AI_CATALOG } from './services/aiModelConfig';
+import { getAIModelSelection } from './services/aiModelConfig';
 import { setValidationStatus } from './services/apiValidation';
 import { Preview, type PreviewHandle } from './components/Preview';
 import { MindmapView } from './components/MindmapView';
@@ -13,6 +13,9 @@ import { SearchBar } from './components/SearchBar';
 import { GanttView } from './components/GanttView';
 import { SlideshowView } from './components/SlideshowView';
 import { getSlideshowSettings, setSlideshowSettings as persistSlideshowSettings, type SlideshowSettings } from './lib/slideSplit';
+import { applySlideDesignOptions, BUILTIN_SLIDE_THEMES, DEFAULT_SLIDE_THEME, getSlideTheme, type SlideExportOptions } from './lib/slideTheme';
+import { clampMarkdownSlideDraft, PPTX_MAX_SLIDES, slideImagePolicyMode } from './lib/slideLimits';
+import { markMindPptxDesignRulesText } from './lib/pptxDesignSystem';
 import { Toolbar, EditableFileName, PaneHeader, ViewMode, PaneView, EDITABLE_VIEWS, isPaneView } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { OutlinePanel } from './components/OutlinePanel';
@@ -35,6 +38,8 @@ import { useRecentFiles } from './hooks/useRecentFiles';
 import { useAI } from './hooks/useAI';
 import { useAuth } from './hooks/useAuth';
 import { useConverter } from './hooks/useConverter';
+import { ProgressPanel } from './components/convert/ProgressPanel';
+import type { JobState, ProgressStep } from './types/converter';
 import { isTauri } from './services/platform';
 import { useNativeMenu } from './hooks/useNativeMenu';
 import { getCallbackPath } from './services/knowaiAuth';
@@ -63,6 +68,34 @@ function countMcpChanges(chunks: DiffChunk[]): number {
     inChange = changed;
   }
   return n;
+}
+
+const SLIDE_REVIEW_MARKER_RE =
+  /^\s*>\s*(?:코멘트|검토 필요|확인 필요|추가 정보 필요|정보 필요|TODO|NEEDS REVIEW|CHECK)\s*:/im;
+const SLIDE_DRAFT_MARKER_RE = /^\s*(?:<!--\s*markmind:slide-draft\b[^>]*-->|&lt;!--\s*markmind:slide-draft\b.*?--&gt;)\s*$/im;
+const SLIDE_DRAFT_MARKER_VERSION_RE =
+  /^\s*(?:<!--\s*markmind:slide-draft\s+v(\d+)\b[^>]*-->|&lt;!--\s*markmind:slide-draft\s+v(\d+)\b.*?--&gt;)\s*$/im;
+
+function getSlideDraftMarkerVersion(markdown: string): number {
+  const match = markdown.match(SLIDE_DRAFT_MARKER_VERSION_RE);
+  if (!match) return SLIDE_DRAFT_MARKER_RE.test(markdown) ? 1 : 0;
+  const raw = match[1] ?? match[2];
+  const version = Number.parseInt(raw, 10);
+  return Number.isFinite(version) && version > 0 ? version : 1;
+}
+
+function withSlideDraftMarker(markdown: string, version: number): string {
+  const body = markdown.replace(SLIDE_DRAFT_MARKER_RE, '').trim();
+  const safeVersion = Math.max(1, Math.floor(version));
+  return `<!-- markmind:slide-draft v${safeVersion} -->\n${body}\n`;
+}
+
+function createSlideProgressJobId(): string {
+  const uuid =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID().replace(/-/g, '')
+      : Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return `slide-${uuid}`;
 }
 
 function App() {
@@ -355,6 +388,23 @@ function App() {
   const [pptxAiReady, setPptxAiReady] = useState(false);
   // PPTX 내보내기 진행 표시(특히 AI 레이아웃은 LLM 호출로 수초~수십초 소요).
   const [pptxBusy, setPptxBusy] = useState<string | null>(null);
+  const [pptxProgress, setPptxProgress] = useState<JobState>({ phase: 'idle', steps: [] });
+  const pptxProgressJobIdRef = useRef<string | null>(null);
+  const [pptxOptions, setPptxOptions] = useState<SlideExportOptions>({
+    themeId: DEFAULT_SLIDE_THEME.id,
+    language: '',
+    draftPurpose: 'executive briefing for decision makers',
+    draftStructure: 'choose the strongest narrative structure',
+    draftDepth: 'standard',
+    draftRevisionMode: 'apply detailed instructions while preserving the current slide order and count unless explicitly requested',
+    draftReviewMode: 'add frequent reviewer comments and questions for gaps, assumptions, and choices',
+    designLayout: 'auto content-aware layout mix with strong variety',
+    visualDensity: 'balanced text density with readable slide capacity',
+    imagePolicy: 'add image intent only when it materially improves the slide',
+    imageSourceMode: 'auto choose stock photos, logos, or generated images based on slide intent',
+    fontPreference: 'free multilingual sans font pairing',
+    marginPreference: 'theme default balanced margins',
+  });
   useEffect(() => {
     if (!isTauri()) return;
     (async () => {
@@ -374,19 +424,168 @@ function App() {
     })();
   }, [settingsVisible]);
 
-  // PPTX 내보내기 — LLM 스마트 레이아웃 단일 경로(디폴트). 규칙 기반은 LLM 응답을
-  // 전혀 해석 못한 catastrophic 실패 시의 안전망으로만 내부 사용한다.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let mounted = true;
+    let unlisten: (() => void) | null = null;
+
+    (async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        unlisten = await listen<ProgressStep>('converter-progress', (event) => {
+          if (!mounted) return;
+          const step = event.payload;
+          if (!pptxProgressJobIdRef.current || step.jobId !== pptxProgressJobIdRef.current) return;
+          setPptxProgress((prev) => {
+            if (step.stepId) {
+              const idx = prev.steps.findIndex((s) => s.stepId === step.stepId);
+              if (idx >= 0) {
+                const next = [...prev.steps];
+                next[idx] = step;
+                return { ...prev, steps: next };
+              }
+            }
+            return { ...prev, steps: [...prev.steps, step] };
+          });
+        });
+      } catch (err) {
+        console.warn('[slide_progress] event listener 실패:', err);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      if (unlisten) Promise.resolve(unlisten()).catch(() => { /* listener race */ });
+    };
+  }, []);
+
+  const beginPptxProgress = useCallback((label: string): string => {
+    const jobId = createSlideProgressJobId();
+    pptxProgressJobIdRef.current = jobId;
+    setPptxBusy(label);
+    setPptxProgress({ phase: 'running', steps: [] });
+    return jobId;
+  }, []);
+
+  const pushPptxProgressStep = useCallback((jobId: string, step: string, detail?: string, stepId?: string) => {
+    if (pptxProgressJobIdRef.current !== jobId) return;
+    const progressStep: ProgressStep = { jobId, step, detail, stepId };
+    setPptxProgress((prev) => {
+      if (stepId) {
+        const idx = prev.steps.findIndex((s) => s.stepId === stepId);
+        if (idx >= 0) {
+          const next = [...prev.steps];
+          next[idx] = progressStep;
+          return { ...prev, steps: next };
+        }
+      }
+      return { ...prev, steps: [...prev.steps, progressStep] };
+    });
+  }, []);
+
+  const clearPptxProgress = useCallback(() => {
+    pptxProgressJobIdRef.current = null;
+    setPptxBusy(null);
+    setPptxProgress({ phase: 'idle', steps: [] });
+  }, []);
+
+  // 슬라이드 초안 생성 — AI는 편집 가능한 Markdown 페이지만 생성한다.
+  const handleGenerateSlideDraft = useCallback(async () => {
+    if (content.trim().length === 0) return;
+    const isExistingDraft = SLIDE_DRAFT_MARKER_RE.test(content);
+    const nextDraftVersion = isExistingDraft ? getSlideDraftMarkerVersion(content) + 1 : 1;
+    const ok = await confirmAction(
+      isDirty
+        ? isExistingDraft
+          ? '수정 지시를 반영해 현재 슬라이드 초안을 수정합니다. 저장하지 않은 변경도 수정 결과로 바뀝니다. 계속할까요?'
+          : 'AI 슬라이드 초안이 현재 문서를 교체합니다. 저장하지 않은 변경도 초안으로 바뀝니다. 계속할까요?'
+        : isExistingDraft
+          ? '수정 지시를 반영해 현재 슬라이드 초안을 수정합니다. 계속할까요?'
+          : 'AI 슬라이드 초안이 현재 문서를 교체합니다. 계속할까요?',
+      { title: isExistingDraft ? '슬라이드 초안 수정' : '슬라이드 초안 만들기', kind: 'warning' },
+    );
+    if (!ok) return;
+
+    const sel = getAIModelSelection();
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const jobId = beginPptxProgress(isExistingDraft ? '슬라이드 초안 수정 중…' : '슬라이드 초안 생성 중…');
+
+      const draft = await invoke<string>('generate_slide_markdown_draft', {
+        markdown: content,
+        company: sel.company,
+        auth: sel.auth,
+        model: sel.model,
+        jobId,
+        options: {
+          audience: pptxOptions.audience?.trim() || null,
+          tone: pptxOptions.tone?.trim() || null,
+          language: pptxOptions.language?.trim() || null,
+          slideCountHint: pptxOptions.slideCountHint?.trim() || null,
+          draftPurpose: pptxOptions.draftPurpose?.trim() || null,
+          draftStructure: pptxOptions.draftStructure?.trim() || null,
+          draftDepth: pptxOptions.draftDepth?.trim() || null,
+          draftRevisionMode: pptxOptions.draftRevisionMode?.trim() || null,
+          draftReviewMode: pptxOptions.draftReviewMode?.trim() || null,
+          extraInstructions: pptxOptions.extraInstructions?.trim() || null,
+        },
+      });
+      let next = draft.trim();
+      if (!next) throw new Error('AI가 빈 슬라이드 초안을 반환했습니다.');
+      const clamped = clampMarkdownSlideDraft(next);
+      if (clamped.clamped) {
+        next = clamped.markdown;
+        pushPptxProgressStep(
+          jobId,
+          '✅ 슬라이드 장수 제한 적용',
+          `${clamped.originalCount}장 → ${PPTX_MAX_SLIDES}장`,
+          'slide-draft-limit',
+        );
+      }
+      pushPptxProgressStep(jobId, '📝 문서에 반영 중...', undefined, 'slide-draft-apply');
+      updateContent(withSlideDraftMarker(next, nextDraftVersion));
+      setViewMode('slideshow');
+      pushPptxProgressStep(jobId, '✅ 슬라이드 초안 반영 완료');
+    } catch (err) {
+      console.error('[slide_draft] failed:', err);
+      alert(`슬라이드 초안 생성에 실패했습니다.\n${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      clearPptxProgress();
+    }
+  }, [beginPptxProgress, clearPptxProgress, content, isDirty, pptxOptions, pushPptxProgressStep, updateContent]);
+
+  // 고급: PPTX 내보내기 — AI가 최종 슬라이드 JSON까지 만든다.
   const handleExportPptx = useCallback(async () => {
+    if (content.trim().length === 0) return;
+    if (SLIDE_REVIEW_MARKER_RE.test(content)) {
+      const ok = await confirmAction(
+        '코멘트나 검토 필요 표시가 남아 있습니다. 그래도 파워포인트를 생성할까요?',
+        { title: '코멘트 확인', kind: 'warning' },
+      );
+      if (!ok) return;
+    }
+
     // 모든 AI 작업은 전역 회사/인증/모델 선택(Settings > 기본 설정)을 따른다.
     const sel = getAIModelSelection();
     const baseName = (fileName || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '');
     try {
-      const [{ save }, { invoke }, { markdownToSlides, slidesFromLlmJson }, { buildPptx }] =
+      const [
+        { save },
+        { invoke },
+        { markdownToSlides, preserveSourceImagesForPptx, slideDeckFromLlmJson },
+        { buildPptx },
+        { normalizeSlidesForPptx, validateSlideDeck, summarizeSlideIssues },
+        { resolveSlideAssets },
+        { saveSlideAssetBundle },
+      ] =
         await Promise.all([
           import('@tauri-apps/plugin-dialog'),
           import('@tauri-apps/api/core'),
           import('./lib/markdownToSlides'),
           import('./lib/buildPptx'),
+          import('./lib/slideValidation'),
+          import('./services/slideAssets'),
+          import('./services/slideAssetBundle'),
         ]);
       const path = await save({
         defaultPath: `${baseName}.pptx`,
@@ -395,18 +594,34 @@ function App() {
       });
       if (!path) return; // 사용자 취소
 
-      const companyLabel = AI_CATALOG[sel.company].label;
-      setPptxBusy(`AI 슬라이드 생성 중… (${companyLabel})`);
+      const jobId = beginPptxProgress('파워포인트 생성 중…');
+      const slideTheme = applySlideDesignOptions(getSlideTheme(pptxOptions.themeId), pptxOptions);
 
       const raw = await invoke<string>('generate_slides_llm', {
         markdown: content,
         company: sel.company,
         auth: sel.auth,
         model: sel.model,
+        jobId,
+        options: {
+          designLayout: pptxOptions.designLayout?.trim() || null,
+          visualDensity: pptxOptions.visualDensity?.trim() || null,
+          imagePolicy: pptxOptions.imagePolicy?.trim() || null,
+          imageSourceMode: pptxOptions.imageSourceMode?.trim() || null,
+          fontPreference: pptxOptions.fontPreference?.trim() || null,
+          fontFamily: pptxOptions.fontFamily?.trim() || null,
+          marginPreference: pptxOptions.marginPreference?.trim() || null,
+          extraInstructions: pptxOptions.extraInstructions?.trim() || null,
+          designRules: markMindPptxDesignRulesText(pptxOptions.designRules),
+          themeName: slideTheme.name,
+          themeRules: slideTheme.rules,
+        },
       });
-      let slides = slidesFromLlmJson(raw);
+      pushPptxProgressStep(jobId, '🔍 AI 응답 검증 중...', undefined, 'pptx-validate-response');
+      const aiDeck = slideDeckFromLlmJson(raw);
+      let slides = aiDeck?.slides ?? null;
       console.log(
-        `[export_pptx] AI(${sel.company}/${sel.auth}) 응답 ${raw.length}자 → 슬라이드 ${slides?.length ?? 0}장`,
+        `[export_pptx] AI(${sel.company}/${sel.auth}) 응답 ${raw.length}자 → 슬라이드 ${slides?.length ?? 0}장, master ${aiDeck?.masterSpec ? 'yes' : 'no'}`,
       );
       if (!slides || slides.length === 0) {
         // 조용한 폴백 금지 — 사용자에게 알리고 원문 로깅(메모리: silent fallback 함정)
@@ -414,18 +629,55 @@ function App() {
         alert('AI 응답을 해석하지 못해 기본 레이아웃으로 저장합니다.\n(개발자 콘솔에 원문이 로깅되었습니다)');
         slides = markdownToSlides(content);
       }
+      if (slideImagePolicyMode(pptxOptions.imagePolicy) === 'sourceOnly') {
+        slides = preserveSourceImagesForPptx(slides, content);
+      }
 
-      setPptxBusy('PPTX 파일 생성 중…');
+      pushPptxProgressStep(jobId, '📊 슬라이드 레이아웃 검증 중...', undefined, 'pptx-layout-qa');
+      slides = normalizeSlidesForPptx(slides);
+      if (slides.length > PPTX_MAX_SLIDES) {
+        const originalCount = slides.length;
+        slides = slides.slice(0, PPTX_MAX_SLIDES);
+        pushPptxProgressStep(
+          jobId,
+          '✅ 슬라이드 장수 제한 적용',
+          `${originalCount}장 → ${PPTX_MAX_SLIDES}장`,
+          'pptx-slide-limit',
+        );
+      }
+      const report = validateSlideDeck(slides);
+      const issueSummary = summarizeSlideIssues(report);
+      if (issueSummary) console.warn('[export_pptx] slide QA warnings:\n' + issueSummary);
       const baseDir = filePath ? filePath.replace(/\/[^/]*$/, '') : undefined;
-      const buf = await buildPptx(slides, { title: baseName, baseDir });
+      const assetResult = await resolveSlideAssets(slides, pptxOptions, {
+        theme: slideTheme,
+        onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
+      });
+      slides = assetResult.slides;
+      pushPptxProgressStep(jobId, '💾 PPTX 파일 생성 중...', undefined, 'pptx-build');
+      const buf = await buildPptx(slides, { title: baseName, baseDir, theme: slideTheme, masterSpec: aiDeck?.masterSpec });
+      pushPptxProgressStep(jobId, '💾 PPTX 저장 중...', undefined, 'pptx-save');
       await invoke('save_pptx', { path, data: Array.from(new Uint8Array(buf)) });
+      if (assetResult.assets.length > 0) {
+        pushPptxProgressStep(jobId, '💾 이미지 에셋 저장 중...', `${assetResult.assets.length}개`, 'pptx-assets-save');
+        try {
+          const savedAssets = await saveSlideAssetBundle(path, assetResult.assets);
+          if (savedAssets) {
+            pushPptxProgressStep(jobId, '✅ 이미지 에셋 저장 완료', `${savedAssets.saved}개`, 'pptx-assets-save');
+          }
+        } catch (assetErr) {
+          console.warn('[export_pptx] 이미지 에셋 저장 실패:', assetErr);
+          pushPptxProgressStep(jobId, '⚠️ 이미지 에셋 저장 실패', undefined, 'pptx-assets-save');
+        }
+      }
+      pushPptxProgressStep(jobId, '✅ 파워포인트 생성 완료');
     } catch (err) {
       console.error('[export_pptx] failed:', err);
       alert(`PPTX 내보내기에 실패했습니다.\n${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      setPptxBusy(null);
+      clearPptxProgress();
     }
-  }, [fileName, filePath, content]);
+  }, [beginPptxProgress, clearPptxProgress, content, fileName, filePath, pptxOptions, pushPptxProgressStep]);
 
   // AI
   const ai = useAI();
@@ -1909,9 +2161,13 @@ function App() {
           ocrDropped={ocrDropped}
           onConsumeAudioDropped={() => setAudioDropped(null)}
           onConsumeOcrDropped={() => setOcrDropped(null)}
+          onGenerateSlideDraft={handleGenerateSlideDraft}
           onExportPptx={handleExportPptx}
           pptxAvailable={pptxAiReady}
           pptxBusy={pptxBusy}
+          pptxThemes={BUILTIN_SLIDE_THEMES}
+          pptxOptions={pptxOptions}
+          onPptxOptionsChange={setPptxOptions}
           onInsertGeneratedImage={handleInsertGeneratedImage}
           imageGenRefDropped={imageGenRefDropped}
           onConsumeImageGenRefDropped={() => setImageGenRefDropped(null)}
@@ -1926,8 +2182,16 @@ function App() {
       {pptxBusy && (
         <div className="pptx-busy-overlay" role="status" aria-live="polite">
           <div className="pptx-busy-card">
-            <Loader2 size={20} className="spinning" />
-            <span>{pptxBusy}</span>
+            <div className="pptx-busy-head">
+              <Loader2 size={20} className="spinning" />
+              <span>{pptxBusy}</span>
+            </div>
+            <ProgressPanel
+              state={pptxProgress}
+              newestFirst={false}
+              showStepProgress={false}
+              modelDetailMode="running"
+            />
           </div>
         </div>
       )}

@@ -3553,9 +3553,13 @@ code.hljs {
 }
 .pptx-busy-card {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 12px;
-  padding: 16px 22px;
+  width: min(460px, calc(100vw - 48px));
+  max-height: min(560px, calc(100vh - 80px));
+  overflow: hidden;
+  padding: 16px;
   border-radius: 12px;
   background: var(--bg-elevated, #ffffff);
   color: var(--text-primary, #1a1a2e);
@@ -3563,8 +3567,27 @@ code.hljs {
   font-size: 14px;
   font-weight: 500;
 }
+.pptx-busy-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.pptx-busy-head span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .pptx-busy-card .spinning {
   color: #2f6fed;
+}
+.pptx-busy-card .convert-progress {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  background: var(--bg-secondary);
 }
 
 /* ─── 뷰어 설정: 본문 폰트 / 읽기 폭 (Settings → 뷰어 설정 탭) ─── */

@@ -96,7 +96,10 @@ fn read_template(path: &Path, source: TemplateSource) -> ConverterResult<Option<
         info: TemplateInfo {
             id,
             name,
-            description: fm.get("description").map(|s| s.trim().to_string()).unwrap_or_default(),
+            description: fm
+                .get("description")
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default(),
             source,
             path: path.to_path_buf(),
         },
@@ -127,7 +130,11 @@ fn list_from_dir(dir: &Path, source: TemplateSource) -> Vec<LoadedTemplate> {
     let mut out = Vec::new();
     for entry in read.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) != Some("md".into())
+        if path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_lowercase())
+            != Some("md".into())
         {
             continue;
         }
@@ -164,8 +171,9 @@ pub fn get_template(app: &AppHandle, id_or_path: &str) -> ConverterResult<Loaded
     // 절대/상대 경로
     if id_or_path.contains('/') || id_or_path.contains('\\') {
         let path = PathBuf::from(id_or_path);
-        let t = read_template(&path, TemplateSource::User)?
-            .ok_or_else(|| ConverterError::Template(format!("템플릿을 읽을 수 없습니다: {}", id_or_path)))?;
+        let t = read_template(&path, TemplateSource::User)?.ok_or_else(|| {
+            ConverterError::Template(format!("템플릿을 읽을 수 없습니다: {}", id_or_path))
+        })?;
         return Ok(t);
     }
 
@@ -212,8 +220,16 @@ pub fn save_user_template(filename: &str, content: &str) -> ConverterResult<Temp
     }
     let parsed = parse_frontmatter(content)
         .ok_or_else(|| ConverterError::Template("템플릿에 frontmatter 가 없습니다.".into()))?;
-    if parsed.0.get("name").map(|s| s.trim()).unwrap_or("").is_empty() {
-        return Err(ConverterError::Template("frontmatter 에 name 필드가 필요합니다.".into()));
+    if parsed
+        .0
+        .get("name")
+        .map(|s| s.trim())
+        .unwrap_or("")
+        .is_empty()
+    {
+        return Err(ConverterError::Template(
+            "frontmatter 에 name 필드가 필요합니다.".into(),
+        ));
     }
 
     let target = user_dir()?.join(format!("{}.md", base));

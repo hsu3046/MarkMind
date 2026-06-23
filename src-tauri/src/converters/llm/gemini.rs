@@ -257,14 +257,24 @@ pub async fn generate_text_with_file_api(
         generation_config: None,
     };
     let url = format!("{}/{}:generateContent?key={}", GENERATE_URL, model, api_key);
-    let result = call_generate(&url, &body, model, &format!("generateContent(file {})", model)).await;
+    let result = call_generate(
+        &url,
+        &body,
+        model,
+        &format!("generateContent(file {})", model),
+    )
+    .await;
 
     // 항상 삭제 (성공/실패 무관)
     let _ = delete_file(api_key, &current.name).await;
     result
 }
 
-async fn upload_file(api_key: &str, file_path: &Path, mime_type: &str) -> ConverterResult<GeminiFile> {
+async fn upload_file(
+    api_key: &str,
+    file_path: &Path,
+    mime_type: &str,
+) -> ConverterResult<GeminiFile> {
     let file_bytes = tokio::fs::read(file_path).await?;
     let file_size = file_bytes.len();
     let display_name = file_path
@@ -344,14 +354,18 @@ async fn upload_file(api_key: &str, file_path: &Path, mime_type: &str) -> Conver
             parse_gemini_error(&body)
         )));
     }
-    let parsed: FileUploadResponse = upload_resp.json().await.map_err(|e| {
-        ConverterError::Gemini(format!("File API 응답 파싱 실패: {}", e))
-    })?;
+    let parsed: FileUploadResponse = upload_resp
+        .json()
+        .await
+        .map_err(|e| ConverterError::Gemini(format!("File API 응답 파싱 실패: {}", e)))?;
     Ok(parsed.file)
 }
 
 async fn get_file_status(api_key: &str, name: &str) -> ConverterResult<GeminiFile> {
-    let url = format!("https://generativelanguage.googleapis.com/v1beta/{}?key={}", name, api_key);
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
+        name, api_key
+    );
     let client = build_client()?;
     let resp = client.get(&url).send().await.map_err(http_to_converter)?;
     if !resp.status().is_success() {
@@ -361,14 +375,18 @@ async fn get_file_status(api_key: &str, name: &str) -> ConverterResult<GeminiFil
             parse_gemini_error(&body)
         )));
     }
-    let info: GeminiFile = resp.json().await.map_err(|e| {
-        ConverterError::Gemini(format!("File API 응답 파싱 실패: {}", e))
-    })?;
+    let info: GeminiFile = resp
+        .json()
+        .await
+        .map_err(|e| ConverterError::Gemini(format!("File API 응답 파싱 실패: {}", e)))?;
     Ok(info)
 }
 
 async fn delete_file(api_key: &str, name: &str) -> ConverterResult<()> {
-    let url = format!("https://generativelanguage.googleapis.com/v1beta/{}?key={}", name, api_key);
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
+        name, api_key
+    );
     let client = build_client()?;
     let _ = client.delete(&url).send().await;
     Ok(())
@@ -406,9 +424,10 @@ async fn call_generate(
         let body = resp.text().await.unwrap_or_default();
         return Err(classify_status_error(status.as_u16(), &body));
     }
-    let parsed: GenerateResponse = resp.json().await.map_err(|e| {
-        ConverterError::Gemini(format!("응답 JSON 파싱 실패: {}", e))
-    })?;
+    let parsed: GenerateResponse = resp
+        .json()
+        .await
+        .map_err(|e| ConverterError::Gemini(format!("응답 JSON 파싱 실패: {}", e)))?;
     let text = parsed
         .candidates
         .unwrap_or_default()
@@ -456,7 +475,11 @@ where
                     let backoff = backoff_ms(attempt);
                     log::warn!(
                         "[gemini] {} 시도 {}/{} 실패 ({:?}), {}ms 후 재시도",
-                        label, attempt, MAX_RETRIES, e, backoff
+                        label,
+                        attempt,
+                        MAX_RETRIES,
+                        e,
+                        backoff
                     );
                     last_err = Some(e);
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
@@ -496,7 +519,10 @@ fn classify_status_error(status: u16, body: &str) -> ConverterError {
     }
     match status {
         400 if msg.contains("API key not valid") || msg.contains("INVALID_ARGUMENT") => {
-            ConverterError::Gemini(format!("API 키가 잘못되었거나 입력이 유효하지 않습니다: {}", msg))
+            ConverterError::Gemini(format!(
+                "API 키가 잘못되었거나 입력이 유효하지 않습니다: {}",
+                msg
+            ))
         }
         401 | 403 => ConverterError::Gemini(format!("API 키 권한 오류: {}", msg)),
         429 => ConverterError::RateLimit,
@@ -527,6 +553,9 @@ fn clean_text(text: String) -> String {
         .or_else(|| trimmed.strip_prefix("```md\n"))
         .or_else(|| trimmed.strip_prefix("```\n"))
         .unwrap_or(trimmed);
-    let stripped = stripped.strip_suffix("```").map(|s| s.trim_end()).unwrap_or(stripped);
+    let stripped = stripped
+        .strip_suffix("```")
+        .map(|s| s.trim_end())
+        .unwrap_or(stripped);
     stripped.to_string()
 }

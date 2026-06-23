@@ -1,11 +1,12 @@
-use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use std::collections::HashMap;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 mod converters;
 mod export_pptx;
+mod fonts;
 mod gdrive;
 mod lan_server;
 mod mcp;
@@ -129,8 +130,15 @@ pub(crate) fn create_content_window(
 /// pending(store_pending(win-*, path))을 못 받고 "main"(없으면 null)을 가져가
 /// **빈 창**이 됐다. `window.label()` 로 자기 것을 가져오게 고침.
 #[tauri::command]
-fn get_pending_file(window: tauri::Window, state: tauri::State<'_, PendingFiles>) -> Option<String> {
-    state.0.lock().ok().and_then(|mut m| m.remove(window.label()))
+fn get_pending_file(
+    window: tauri::Window,
+    state: tauri::State<'_, PendingFiles>,
+) -> Option<String> {
+    state
+        .0
+        .lock()
+        .ok()
+        .and_then(|mut m| m.remove(window.label()))
 }
 
 /// 프론트(각 윈도우)가 자기 문서 상태를 MCP 공유 상태에 동기화.
@@ -176,7 +184,6 @@ fn mcp_apply_edit_result(
     );
 }
 
-
 /// PendingFiles HashMap 에 label → path 저장. 비async 헬퍼 — borrow checker 의
 /// async fn 안 MutexGuard 수명 추론 이슈 회피.
 fn store_pending_file(app: &tauri::AppHandle, label: &str, path: &str) {
@@ -192,7 +199,11 @@ async fn open_new_window(app: tauri::AppHandle, file_path: Option<String>) -> Re
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis();
-    let label = format!("win-{}-{}", timestamp, WIN_SEQ.fetch_add(1, Ordering::Relaxed));
+    let label = format!(
+        "win-{}-{}",
+        timestamp,
+        WIN_SEQ.fetch_add(1, Ordering::Relaxed)
+    );
 
     // path 가 있으면 PendingFiles 에 저장 — URL 에는 file 쿼리 안 넣음 (길이/인코딩 회피)
     if let Some(ref path) = file_path {
@@ -239,7 +250,11 @@ fn spawn_window_for_file(app: &tauri::AppHandle, path: &str) {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis();
-    let label = format!("win-{}-{}", timestamp, WIN_SEQ.fetch_add(1, Ordering::Relaxed));
+    let label = format!(
+        "win-{}-{}",
+        timestamp,
+        WIN_SEQ.fetch_add(1, Ordering::Relaxed)
+    );
 
     store_pending_file(app, &label, path);
 
@@ -331,6 +346,7 @@ pub fn run() {
             converters::commands::run_notes_job,
             converters::commands::get_conversions_dir,
             converters::commands::generate_slides_llm,
+            converters::commands::generate_slide_markdown_draft,
             converters::commands::ai_generate_claude,
             converters::commands::ai_generate_codex,
             converters::commands::ai_generate_gemini_agy,
@@ -340,6 +356,7 @@ pub fn run() {
             converters::commands::generate_image_openai,
             converters::commands::generate_image_codex,
             converters::commands::generate_image_grok,
+            converters::slide_assets::resolve_stock_slide_asset,
             converters::commands::extract_speakers,
             converters::commands::rename_speakers,
             converters::commands::merge_md_files,
@@ -359,6 +376,8 @@ pub fn run() {
             print_pdf::export_pdf,
             // PPTX export — 프론트 PptxGenJS ArrayBuffer → fs::write (이슈 #6)
             export_pptx::save_pptx,
+            // Installed fonts — PPTX 서체 선택용
+            fonts::list_installed_font_families,
             // 사용자 메모리(#15) — AI system prompt 주입용 "내 정보"
             user_memory::read_user_memory,
             user_memory::write_user_memory,

@@ -235,7 +235,11 @@ async fn list_files(State(ctx): State<Ctx>) -> Result<Json<ListResp>, StatusCode
         });
     }
     // 최근 수정 우선(모바일에서 방금 본 문서 찾기 쉽게).
-    files.sort_by(|a, b| b.modified.cmp(&a.modified).then_with(|| a.path.cmp(&b.path)));
+    files.sort_by(|a, b| {
+        b.modified
+            .cmp(&a.modified)
+            .then_with(|| a.path.cmp(&b.path))
+    });
     Ok(Json(ListResp {
         root: ctx.root.to_string_lossy().to_string(),
         files,
@@ -401,7 +405,10 @@ fn build_router(ctx: Ctx) -> Router {
 /// 서버를 `0.0.0.0:LAN_PORT` 에 bind 하고 spawn. bind 실패(포트 사용 중 등)는
 /// 동기로 즉시 Err 반환(사용자에게 표시). 성공 시 LanInfo(LAN IP + 포트).
 pub fn start(state: &LanState, root: String, token: String) -> Result<LanInfo, String> {
-    let mut guard = state.inner.lock().map_err(|_| "상태 lock 실패".to_string())?;
+    let mut guard = state
+        .inner
+        .lock()
+        .map_err(|_| "상태 lock 실패".to_string())?;
     if guard.is_some() {
         return Err("이미 연결되어 있습니다 (먼저 Disconnect)".into());
     }
@@ -477,7 +484,10 @@ pub fn start(state: &LanState, root: String, token: String) -> Result<LanInfo, S
 
 /// 서버 graceful shutdown(이미 꺼져 있으면 no-op).
 pub fn stop(state: &LanState) -> Result<(), String> {
-    let mut guard = state.inner.lock().map_err(|_| "상태 lock 실패".to_string())?;
+    let mut guard = state
+        .inner
+        .lock()
+        .map_err(|_| "상태 lock 실패".to_string())?;
     if let Some(srv) = guard.take() {
         let _ = srv.shutdown.send(());
     }
