@@ -11,9 +11,33 @@ export interface SaveSlideAssetBundleResult {
   manifestPath: string;
 }
 
+function pathSeparatorFor(path: string): '/' | '\\' {
+  return path.lastIndexOf('\\') > path.lastIndexOf('/') ? '\\' : '/';
+}
+
+function joinPath(parent: string, child: string): string {
+  if (!parent) return child;
+  const sep = pathSeparatorFor(parent);
+  const trimmed = parent.replace(/[\\/]+$/, '');
+  if (!trimmed) return `${sep}${child}`;
+  return `${trimmed}${sep}${child}`;
+}
+
+function parentDirFromPath(path: string): string {
+  const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  if (idx < 0) return '';
+  if (idx === 0) return path[0] ?? '';
+  return path.slice(0, idx);
+}
+
 function deckStemFromPath(pptxPath: string): string {
-  const file = pptxPath.split('/').pop() || 'deck.pptx';
+  const file = pptxPath.split(/[\\/]/).pop() || 'deck.pptx';
   return sanitizeFileName(file.replace(/\.pptx$/i, '') || 'deck');
+}
+
+export function slideAssetBundleDir(pptxPath: string): string {
+  const parent = parentDirFromPath(pptxPath);
+  return joinPath(parent, `${deckStemFromPath(pptxPath)}.assets`);
 }
 
 function dataUrlToBytes(dataUrl: string): { bytes: Uint8Array; mime: string } | null {
@@ -75,9 +99,9 @@ export async function saveSlideAssetBundle(
 ): Promise<SaveSlideAssetBundleResult | null> {
   if (records.length === 0) return null;
   const fs = await import('@tauri-apps/plugin-fs');
-  const dir = `${pptxPath.replace(/\/[^/]*$/, '')}/${deckStemFromPath(pptxPath)}.assets`;
-  const usedDir = `${dir}/used`;
-  const unusedDir = `${dir}/unused`;
+  const dir = slideAssetBundleDir(pptxPath);
+  const usedDir = joinPath(dir, 'used');
+  const unusedDir = joinPath(dir, 'unused');
   await fs.mkdir(usedDir, { recursive: true });
   await fs.mkdir(unusedDir, { recursive: true });
 
@@ -94,13 +118,13 @@ export async function saveSlideAssetBundle(
     const folderName = record.inserted ? 'used' : 'unused';
     const desired = `${slideAssetFileStem(record)}.${extFromMime(parsed.mime)}`;
     const name = await resolveCollision(targetDir, desired, fs.exists);
-    await fs.writeFile(`${targetDir}/${name}`, parsed.bytes);
+    await fs.writeFile(joinPath(targetDir, name), parsed.bytes);
     saved += 1;
     manifest.push({ ...withoutData, file: `${folderName}/${name}` });
   }
 
-  const manifestPath = `${dir}/manifest.json`;
+  const manifestPath = joinPath(dir, 'manifest.json');
   await fs.writeTextFile(manifestPath, `${JSON.stringify({ generatedAt: new Date().toISOString(), assets: manifest }, null, 2)}\n`);
-  await fs.writeTextFile(`${dir}/ATTRIBUTION.md`, attributionText(manifest));
+  await fs.writeTextFile(joinPath(dir, 'ATTRIBUTION.md'), attributionText(manifest));
   return { dir, saved, manifestPath };
 }

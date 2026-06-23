@@ -510,6 +510,14 @@ fn source_map_prompt(sections: &[MarkdownSourceSection]) -> String {
     out.join("\n")
 }
 
+fn slide_generation_source_context(markdown: &str) -> (String, Vec<MarkdownSourceSection>, String) {
+    let markdown_body = strip_slide_draft_marker(markdown);
+    let outline_block = markdown_outline_prompt(&markdown_body);
+    let source_sections = markdown_source_sections(&markdown_body);
+    let source_map = source_map_prompt(&source_sections);
+    (outline_block, source_sections, source_map)
+}
+
 fn markdown_outline_prompt(markdown: &str) -> String {
     let mut outline = Vec::new();
     let mut in_frontmatter = false;
@@ -960,9 +968,7 @@ pub async fn generate_slides_llm(
 ) -> Result<String, String> {
     let emitter = new_emitter(app, job_id);
     let opt_block = slide_options_prompt(options.as_ref());
-    let outline_block = markdown_outline_prompt(&markdown);
-    let source_sections = markdown_source_sections(&markdown);
-    let source_map = source_map_prompt(&source_sections);
+    let (outline_block, source_sections, source_map) = slide_generation_source_context(&markdown);
     emitter.emit(
         "✅ 문서 구조 분석 완료",
         Some(format!("소스 섹션 {}개", source_sections.len())),
@@ -1449,6 +1455,17 @@ mod tests {
         let escaped = "&lt;!-- markmind:slide-draft v1 --&gt;\n# Slide";
         assert!(has_slide_draft_marker(escaped));
         assert_eq!(strip_slide_draft_marker(escaped), "# Slide");
+    }
+
+    #[test]
+    fn slide_generation_source_context_strips_draft_marker() {
+        let md = "<!-- markmind:slide-draft v2 -->\n# Actual Slide\nBody";
+        let (outline, sections, source_map) = slide_generation_source_context(md);
+
+        assert!(!outline.contains("markmind:slide-draft"));
+        assert!(!source_map.contains("markmind:slide-draft"));
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].title, "Actual Slide");
     }
 
     /// Codex P2 follow-up: ensure `extract_speakers` returns labels from a

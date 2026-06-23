@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SlideAssetRecord } from './slideAssets';
-import { slideAssetFileStem } from './slideAssetBundle';
+import { slideAssetBundleDir, slideAssetFileStem } from './slideAssetBundle';
 
 const baseRecord: SlideAssetRecord = {
   slideIndex: 2,
@@ -25,5 +25,15 @@ describe('slideAssetBundle', () => {
     expect(slideAssetFileStem({ ...baseRecord, sourceMode: 'generated', provider: 'openai' })).toContain(
       'slide-03-generated-openai-support',
     );
+  });
+
+  it('Windows PPTX 경로 옆에 asset bundle 경로를 만든다', () => {
+    expect(slideAssetBundleDir('C:\\Users\\me\\Decks\\demo.pptx')).toBe(
+      'C:\\Users\\me\\Decks\\demo.assets',
+    );
+  });
+
+  it('POSIX PPTX 경로 옆에 asset bundle 경로를 만든다', () => {
+    expect(slideAssetBundleDir('/Users/me/Decks/demo.pptx')).toBe('/Users/me/Decks/demo.assets');
   });
 });
