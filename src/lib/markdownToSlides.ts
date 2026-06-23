@@ -468,6 +468,85 @@ function firstSourceImage(slide: Slide): SlideImageSpec | undefined {
   return block?.src.trim() ? { src: block.src.trim(), alt: block.alt, kind: 'source', role: 'support' } : undefined;
 }
 
+function sourceImageFromLine(line: string): SlideImageSpec | undefined {
+  const img = line.match(IMAGE_ONLY_RE);
+  if (!img) return undefined;
+  return { src: img[2].trim(), alt: img[1], kind: 'source', role: 'support' };
+}
+
+function sourceImageMapFromMarkdown(markdown: string): Map<string, SlideImageSpec> {
+  const lines = stripSlideDraftMarker(markdown).split('\n');
+  const images = new Map<string, SlideImageSpec>();
+  let inFrontmatter = false;
+  let inFence = false;
+  let fenceMarker = '';
+  let nextId = 1;
+  let currentId: string | undefined;
+  let currentImage: SlideImageSpec | undefined;
+  let preludeHasContent = false;
+  let preludeImage: SlideImageSpec | undefined;
+
+  const rememberImage = (line: string) => {
+    const image = sourceImageFromLine(line);
+    if (!image) return;
+    if (currentId) currentImage ??= image;
+    else preludeImage ??= image;
+  };
+
+  const closeCurrent = () => {
+    if (currentId && currentImage) images.set(currentId, currentImage);
+    currentId = undefined;
+    currentImage = undefined;
+  };
+
+  const closePrelude = () => {
+    if (!preludeHasContent) return;
+    const id = `S${nextId++}`;
+    if (preludeImage) images.set(id, preludeImage);
+    preludeHasContent = false;
+    preludeImage = undefined;
+  };
+
+  lines.forEach((line, lineIndex) => {
+    const trimmed = line.trim();
+    if (lineIndex === 0 && trimmed === '---') {
+      inFrontmatter = true;
+      return;
+    }
+    if (inFrontmatter) {
+      if (trimmed === '---') inFrontmatter = false;
+      return;
+    }
+
+    const left = line.trimStart();
+    const fence = left.startsWith('```') ? '```' : left.startsWith('~~~') ? '~~~' : '';
+    if (fence) {
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = fence;
+      } else if (left.startsWith(fenceMarker)) {
+        inFence = false;
+      }
+      if (!currentId && trimmed) preludeHasContent = true;
+      return;
+    }
+
+    if (!inFence && HEADING_RE.test(line)) {
+      if (currentId) closeCurrent();
+      else closePrelude();
+      currentId = `S${nextId++}`;
+      return;
+    }
+
+    if (!currentId && trimmed) preludeHasContent = true;
+    if (!inFence) rememberImage(line);
+  });
+
+  if (currentId) closeCurrent();
+  else closePrelude();
+  return images;
+}
+
 function sourceIndexFromId(id: string): number | undefined {
   const match = id.trim().match(/^S(\d+)$/i);
   if (!match) return undefined;
@@ -477,12 +556,24 @@ function sourceIndexFromId(id: string): number | undefined {
 
 /**
  * AI JSON 경로가 성공하더라도 source-only PPTX 내보내기에서는 원본 Markdown 이미지가
- * 사라지면 안 된다. LLM이 이미지 src를 직접 복사하지 못한 경우 원본 파서 결과에서
- * sourceIds 또는 같은 순번의 이미지 src를 결정론적으로 보강한다.
+ * 사라지면 안 된다. LLM이 이미지 src를 직접 복사하지 못한 경우 원본 Markdown을 Rust
+ * source map과 같은 heading-section 순서로 스캔해 sourceIds(S1, S2...)에 맞는 이미지
+ * src를 보강한다. 원본 Markdown 문자열이 없을 때만 기존 슬라이드 순번 fallback을 쓴다.
  */
-export function preserveSourceImagesForPptx(slides: Slide[], sourceSlides: Slide[]): Slide[] {
+export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | string): Slide[] {
+  const sourceSlides = typeof source === 'string' ? markdownToSlides(source) : source;
   if (!sourceSlides.some(slideHasImageSrc)) return slides;
+  const sourceImagesById = typeof source === 'string' ? sourceImageMapFromMarkdown(source) : new Map<string, SlideImageSpec>();
+  const usedSourceIds = new Set<string>();
   const usedSourceIndexes = new Set<number>();
+  const takeSourceImage = (sourceId: string): SlideImageSpec | undefined => {
+    const normalized = sourceId.trim().toUpperCase();
+    if (usedSourceIds.has(normalized)) return undefined;
+    const image = sourceImagesById.get(normalized);
+    if (!image) return undefined;
+    usedSourceIds.add(normalized);
+    return image;
+  };
   const takeImage = (sourceIndex: number | undefined): SlideImageSpec | undefined => {
     if (sourceIndex === undefined || sourceIndex < 0 || sourceIndex >= sourceSlides.length || usedSourceIndexes.has(sourceIndex)) {
       return undefined;
@@ -497,10 +588,12 @@ export function preserveSourceImagesForPptx(slides: Slide[], sourceSlides: Slide
     if (slideHasImageSrc(slide)) return slide;
     let image: SlideImageSpec | undefined;
     for (const sourceId of slide.sourceIds ?? []) {
-      image = takeImage(sourceIndexFromId(sourceId));
+      image = takeSourceImage(sourceId) ?? (sourceImagesById.size === 0 ? takeImage(sourceIndexFromId(sourceId)) : undefined);
       if (image) break;
     }
-    image ??= takeImage(slideIndex);
+    if (!image && (!slide.sourceIds?.length || sourceImagesById.size === 0)) {
+      image = takeImage(slideIndex);
+    }
     if (!image) return slide;
     return {
       ...slide,

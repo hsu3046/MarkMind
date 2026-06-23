@@ -285,6 +285,24 @@ describe('slidesFromLlmJson', () => {
     expect(merged[0].image?.alt).toBe('diagram');
   });
 
+  it('source-only PPTX 경로에서 sourceIds를 원본 source section ID로 매핑', () => {
+    const markdown = ['# Report', 'Intro paragraph.', '## Evidence', '![chart](assets/chart.png)', 'Details'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          { title: 'Report', layout: 'title', sourceIds: ['S1'], bullets: ['Intro paragraph.'] },
+          { title: 'Evidence', layout: 'content', sourceIds: ['S2'], bullets: ['Details'] },
+        ],
+      }),
+    );
+
+    const merged = preserveSourceImagesForPptx(aiSlides ?? [], markdown);
+
+    expect(merged[0].image?.src).toBeUndefined();
+    expect(merged[1].image?.src).toBe('assets/chart.png');
+    expect(merged[1].image?.alt).toBe('chart');
+  });
+
   it('완전 비 JSON 은 null', () => {
     expect(slidesFromLlmJson('sorry, I cannot do that')).toBeNull();
   });

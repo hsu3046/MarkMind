@@ -630,7 +630,7 @@ function App() {
         slides = markdownToSlides(content);
       }
       if (slideImagePolicyMode(pptxOptions.imagePolicy) === 'sourceOnly') {
-        slides = preserveSourceImagesForPptx(slides, markdownToSlides(content));
+        slides = preserveSourceImagesForPptx(slides, content);
       }
 
       pushPptxProgressStep(jobId, '📊 슬라이드 레이아웃 검증 중...', undefined, 'pptx-layout-qa');
