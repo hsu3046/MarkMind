@@ -7,6 +7,7 @@
 
 use crate::converters::error::{ConverterError, ConverterResult};
 use crate::converters::{GenerateResult, UsageInfo};
+use futures_util::StreamExt;
 use std::time::Duration;
 
 const CODEX_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
@@ -41,6 +42,7 @@ pub async fn generate_text(
         .header("authorization", format!("Bearer {}", access_token))
         .header("content-type", "application/json")
         .header("accept", "text/event-stream")
+        .header("accept-encoding", "identity")
         .header("originator", "codex_cli_rs")
         .header("openai-beta", "responses=experimental")
         .header("session_id", &session_id);
@@ -66,16 +68,9 @@ pub async fn generate_text(
         )));
     }
 
-    let sse = resp
-        .text()
-        .await
-        .map_err(|e| ConverterError::Network(e.to_string()))?;
-    let text = parse_sse_output(&sse);
+    let text = parse_sse_output_stream(resp).await?;
 
     if text.trim().is_empty() {
-        // 형식 불일치 진단 — 앞부분만(모델 출력 구조, 토큰/민감정보 없음).
-        let head: String = sse.chars().take(500).collect();
-        eprintln!("[codex] 빈 출력 — SSE 앞부분: {}", head);
         return Err(ConverterError::Codex(
             "응답에서 텍스트를 추출하지 못했습니다(형식 불일치). 로그를 확인하세요.".into(),
         ));
@@ -93,41 +88,88 @@ pub async fn generate_text(
     })
 }
 
+async fn parse_sse_output_stream(resp: reqwest::Response) -> ConverterResult<String> {
+    let mut stream = resp.bytes_stream();
+    let mut pending = String::new();
+    let mut out = String::new();
+    let mut head = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(err) => {
+                if !out.trim().is_empty() {
+                    eprintln!(
+                        "[codex] SSE stream ended with a body decode/read error after partial output: {}",
+                        err
+                    );
+                    return Ok(out);
+                }
+                return Err(ConverterError::Network(err.to_string()));
+            }
+        };
+        let text = String::from_utf8_lossy(&chunk);
+        if head.len() < 500 {
+            head.push_str(&text);
+            if head.len() > 500 {
+                head.truncate(500);
+            }
+        }
+        pending.push_str(&text);
+        while let Some(pos) = pending.find('\n') {
+            let line = pending[..pos].trim_end_matches('\r').trim().to_string();
+            pending = pending[pos + 1..].to_string();
+            parse_sse_line_into(&line, &mut out);
+        }
+    }
+    if !pending.trim().is_empty() {
+        parse_sse_line_into(pending.trim(), &mut out);
+    }
+    if out.trim().is_empty() {
+        eprintln!("[codex] 빈 출력 — SSE 앞부분: {}", head);
+    }
+    Ok(out)
+}
+
 /// Responses API SSE 파싱 — `data: {json}` 라인에서 출력 텍스트를 누적.
 /// delta 스트림(`response.output_text.delta`)을 우선 쓰고, 비면 완료 이벤트의
 /// 중첩 output 구조에서 fallback 추출한다(형식 변형 관용 흡수).
 fn parse_sse_output(sse: &str) -> String {
     let mut out = String::new();
     for line in sse.lines() {
-        let line = line.trim();
-        let Some(data) = line.strip_prefix("data:") else {
-            continue;
-        };
-        let data = data.trim();
-        if data.is_empty() || data == "[DONE]" {
-            continue;
-        }
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(data) else {
-            continue;
-        };
-        let t = v.get("type").and_then(|x| x.as_str()).unwrap_or("");
-        match t {
-            "response.output_text.delta" => {
-                if let Some(d) = v.get("delta").and_then(|x| x.as_str()) {
-                    out.push_str(d);
-                }
-            }
-            "response.completed" | "response.output_item.done" => {
-                if out.is_empty() {
-                    if let Some(txt) = extract_completed_text(&v) {
-                        out.push_str(&txt);
-                    }
-                }
-            }
-            _ => {}
-        }
+        parse_sse_line_into(line, &mut out);
     }
     out
+}
+
+fn parse_sse_line_into(line: &str, out: &mut String) {
+    let line = line.trim();
+    let Some(data) = line.strip_prefix("data:") else {
+        return;
+    };
+    let data = data.trim();
+    if data.is_empty() || data == "[DONE]" {
+        return;
+    }
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(data) else {
+        return;
+    };
+    let t = v.get("type").and_then(|x| x.as_str()).unwrap_or("");
+    match t {
+        "response.output_text.delta" => {
+            if let Some(d) = v.get("delta").and_then(|x| x.as_str()) {
+                out.push_str(d);
+            }
+        }
+        "response.completed" | "response.output_item.done" => {
+            if out.is_empty() {
+                if let Some(txt) = extract_completed_text(&v) {
+                    out.push_str(&txt);
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 /// 완료 이벤트의 중첩 구조에서 output_text 텍스트를 긁어온다.
@@ -346,5 +388,19 @@ data: {"type":"response.completed","response":{"output":[]}}"#;
         let sse = r#"data: {"type":"response.output_text.delta","delta":"hello"}
 data: {"type":"response.completed","response":{"output":[{"type":"message"}]}}"#;
         assert_eq!(extract_image_b64(sse), None);
+    }
+
+    #[test]
+    fn parse_sse_output_collects_text_deltas() {
+        let sse = r#"data: {"type":"response.output_text.delta","delta":"<html>"}
+data: {"type":"response.output_text.delta","delta":"ok</html>"}
+data: [DONE]"#;
+        assert_eq!(parse_sse_output(sse), "<html>ok</html>");
+    }
+
+    #[test]
+    fn parse_sse_output_falls_back_to_completed_text() {
+        let sse = r#"data: {"type":"response.completed","response":{"output":[{"content":[{"text":"done"}]}]}}"#;
+        assert_eq!(parse_sse_output(sse), "done");
     }
 }

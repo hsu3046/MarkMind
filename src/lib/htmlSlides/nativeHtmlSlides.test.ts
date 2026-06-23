@@ -90,4 +90,11 @@ describe('nativeHtmlSlides', () => {
     expect(report.errors).toEqual([]);
     expect(report.slideCount).toBe(2);
   });
+
+  it('rejects truncated native HTML before accepting partial streamed output', () => {
+    const report = validateHtmlNativeSlides('<html><head><style>.deck-stage{width:1920px;height:1080px}</style></head><body><div class="deck-stage"><section class="slide" data-layout="cover">');
+
+    expect(report.errors.join('\n')).toContain('HTML 문서가 끝까지 닫히지 않았습니다');
+    expect(report.errors.join('\n')).toContain('일부 slide section이 닫히지 않았습니다');
+  });
 });

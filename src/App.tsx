@@ -99,6 +99,16 @@ function createSlideProgressJobId(): string {
   return `slide-${uuid}`;
 }
 
+function isRetryableHtmlNativeError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/(401|403|429|quota|billing|usage_limit|rate limit|api 키|인증|할당량|결제)/i.test(message)) {
+    return false;
+  }
+  return /(network|네트워크|decoding response body|body decode|timeout|timed out|connection|reset|closed|incomplete|unexpected eof)/i.test(
+    message,
+  );
+}
+
 function App() {
   const { theme, setThemeTransient, resetThemeToOS } = useTheme();
   const auth = useAuth();
@@ -767,7 +777,7 @@ function App() {
         'Keep content concise: no long notes, no implementation explanation visible in the deck, and no repeated source prose.',
         'Run a self-check for overflow, contrast, placeholder coverage, layout diversity, and fixed-stage behavior before returning HTML.',
       ].join('\n');
-      const buildHtmlLlmOptions = (retryInstruction?: string) => ({
+      const buildHtmlLlmOptions = (retryInstruction?: string, maxOutputTokens = 48000) => ({
         designLayout: htmlExportOptions.designLayout?.trim() || 'HTML-first editorial layout mix with image-focus, section, stat, quote, grid, and asymmetric content slides',
         visualDensity: htmlExportOptions.visualDensity?.trim() || null,
         imagePolicy: htmlExportOptions.imagePolicy?.trim() || null,
@@ -777,7 +787,7 @@ function App() {
         marginPreference: htmlExportOptions.marginPreference?.trim() || null,
         extraInstructions: [htmlExportOptions.extraInstructions?.trim(), retryInstruction].filter(Boolean).join('\n\n') || null,
         designRules: htmlDesignRules,
-        maxOutputTokens: 64000,
+        maxOutputTokens,
         themeName: htmlTheme.name,
         themeRules: [
           htmlTheme.description,
@@ -785,17 +795,47 @@ function App() {
         ],
       });
 
-      const raw = await invoke<string>('generate_html_slides_llm', {
-        markdown: content,
-        company: sel.company,
-        auth: sel.auth,
-        model: sel.model,
-        jobId,
-        options: buildHtmlLlmOptions(),
-      });
+      let raw = '';
+      try {
+        raw = await invoke<string>('generate_html_slides_llm', {
+          markdown: content,
+          company: sel.company,
+          auth: sel.auth,
+          model: sel.model,
+          jobId,
+          options: buildHtmlLlmOptions(),
+        });
+      } catch (nativeErr) {
+        if (!isRetryableHtmlNativeError(nativeErr)) throw nativeErr;
+        console.warn('[export_html_slides] native HTML request failed, retrying compact mode:', nativeErr);
+        pushPptxProgressStep(jobId, 'HTML-native 응답 실패', 'compact HTML로 재시도', 'html-native-retry');
+        try {
+          raw = await invoke<string>('generate_html_slides_llm', {
+            markdown: content,
+            company: sel.company,
+            auth: sel.auth,
+            model: sel.model,
+            jobId,
+            options: buildHtmlLlmOptions(
+              [
+                'The previous HTML-native response failed while the app was reading the response body.',
+                'Return a compact but complete single HTML document.',
+                'Target 6-10 slides unless the source explicitly requires fewer.',
+                'Keep CSS concise by reusing classes; avoid verbose comments, duplicated rules, oversized inline scripts, and decorative code bloat.',
+                'Still preserve the selected template grammar, layout diversity, and markmind asset placeholders/intents.',
+              ].join(' '),
+              28000,
+            ),
+          });
+        } catch (retryErr) {
+          if (!isRetryableHtmlNativeError(retryErr)) throw retryErr;
+          console.warn('[export_html_slides] compact native HTML retry failed, falling back:', retryErr);
+          pushPptxProgressStep(jobId, 'HTML-native 재시도 실패', '기존 렌더러 안전망으로 전환', 'html-native-retry');
+        }
+      }
       const baseDir = filePath ? filePath.replace(/\/[^/]*$/, '') : undefined;
       pushPptxProgressStep(jobId, 'HTML 응답 검증 중...', undefined, 'html-validate-response');
-      const nativeDeck = htmlNativeDeckFromLlmHtml(raw);
+      const nativeDeck = raw ? htmlNativeDeckFromLlmHtml(raw) : null;
       let html: string | null = null;
       let htmlAssetRecords: Awaited<ReturnType<typeof resolveSlideAssets>>['assets'] = [];
       if (nativeDeck) {

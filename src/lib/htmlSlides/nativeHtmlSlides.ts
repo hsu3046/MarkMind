@@ -279,6 +279,11 @@ export function validateHtmlNativeSlides(html: string): HtmlNativeValidationRepo
 
   if (slideCount === 0) errors.push('슬라이드 section을 찾지 못했습니다.');
   if (!/\bdeck-stage\b/.test(html)) errors.push('고정 16:9 stage(.deck-stage)가 없습니다.');
+  if (/<html[\s>]/i.test(html) && !/<\/html>/i.test(html)) errors.push('HTML 문서가 끝까지 닫히지 않았습니다.');
+  if (/<style\b/i.test(html) && !/<\/style>/i.test(html)) errors.push('style 태그가 닫히지 않았습니다.');
+  if (/<script\b/i.test(html) && !/<\/script>/i.test(html)) errors.push('script 태그가 닫히지 않았습니다.');
+  const sectionCloseCount = html.match(/<\/section>/gi)?.length ?? 0;
+  if (slideCount > 0 && sectionCloseCount < slideCount) errors.push('일부 slide section이 닫히지 않았습니다.');
   if (!/1920/.test(html) || !/1080/.test(html)) warnings.push('1920x1080 기준 크기 토큰이 보이지 않습니다.');
   if (/<script\b(?=[^>]*\bsrc\s*=)/i.test(html)) errors.push('외부 script src는 허용하지 않습니다.');
   if (/<\s*(iframe|object|embed|applet)\b/i.test(html)) errors.push('iframe/object/embed/applet 태그는 허용하지 않습니다.');
