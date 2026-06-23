@@ -45,6 +45,18 @@ describe('splitIntoSlides — 함정 처리', () => {
         expect(splitIntoSlides('---\ntitle: X\n---\n# A\nbody', opts())).toEqual(['# A\nbody']);
     });
 
+    it('MarkMind 슬라이드 초안 마커는 슬라이드 내용에서 제외', () => {
+        expect(
+            splitIntoSlides('<!-- markmind:slide-draft v1 -->\n# A\nbody\n---\n# B', opts()),
+        ).toEqual(['# A\nbody', '# B']);
+    });
+
+    it('초안 마커가 frontmatter 앞에 있어도 frontmatter 를 정상 제외', () => {
+        expect(
+            splitIntoSlides('<!-- markmind:slide-draft v1 -->\n---\ntitle: X\n---\n# A\nbody', opts()),
+        ).toEqual(['# A\nbody']);
+    });
+
     it('빈 문서 → 빈 슬라이드 1장', () => {
         expect(splitIntoSlides('', opts())).toEqual(['']);
     });

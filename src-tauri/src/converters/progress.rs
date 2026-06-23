@@ -6,6 +6,13 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProgressModelInfo {
+    pub company: String,
+    pub auth: String,
+    pub model: String,
+}
+
 /// 단일 진행 step — frontend ProgressPanel 이 한 줄씩 표시
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgressStep {
@@ -19,6 +26,9 @@ pub struct ProgressStep {
     /// 0.0 ~ 1.0 — 알 수 있는 경우만
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress: Option<f32>,
+    /// AI 모델 표시용 메타데이터. frontend 가 Settings 와 같은 카탈로그/로고로 렌더한다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<ProgressModelInfo>,
     /// stable id — 같은 stepId 면 ProgressPanel 이 in-place 갱신 (heartbeat / progress 갱신용).
     /// None 이면 새 row append (기본 동작).
     #[serde(rename = "stepId", skip_serializing_if = "Option::is_none")]
@@ -38,7 +48,11 @@ pub struct ProgressEmitter {
 
 impl ProgressEmitter {
     pub fn new(app: AppHandle, job_id: String) -> Self {
-        Self { app, job_id, prefix: None }
+        Self {
+            app,
+            job_id,
+            prefix: None,
+        }
     }
 
     pub fn job_id(&self) -> &str {
@@ -87,18 +101,25 @@ impl ProgressEmitter {
             step: self.prefix_step(step.into()),
             detail,
             progress: None,
+            model: None,
             step_id: None,
         };
         let _ = self.app.emit("converter-progress", event);
     }
 
     #[allow(dead_code)]
-    pub fn emit_with_progress(&self, step: impl Into<String>, detail: Option<String>, progress: f32) {
+    pub fn emit_with_progress(
+        &self,
+        step: impl Into<String>,
+        detail: Option<String>,
+        progress: f32,
+    ) {
         let event = ProgressStep {
             job_id: self.job_id.clone(),
             step: self.prefix_step(step.into()),
             detail,
             progress: Some(progress),
+            model: None,
             step_id: None,
         };
         let _ = self.app.emit("converter-progress", event);
@@ -119,6 +140,26 @@ impl ProgressEmitter {
             step: self.prefix_step(step.into()),
             detail,
             progress,
+            model: None,
+            step_id: Some(step_id.into()),
+        };
+        let _ = self.app.emit("converter-progress", event);
+    }
+
+    pub fn emit_update_with_model(
+        &self,
+        step_id: impl Into<String>,
+        step: impl Into<String>,
+        detail: Option<String>,
+        progress: Option<f32>,
+        model: Option<ProgressModelInfo>,
+    ) {
+        let event = ProgressStep {
+            job_id: self.job_id.clone(),
+            step: self.prefix_step(step.into()),
+            detail,
+            progress,
+            model,
             step_id: Some(step_id.into()),
         };
         let _ = self.app.emit("converter-progress", event);

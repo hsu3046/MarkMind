@@ -1,16 +1,16 @@
 /**
  * AI 에이전트 사이드 패널 — 단일 진입점(#60).
- * 8 모드: 음성 인식(stt) / 이미지 인식(ocr) / 회의록 작성 / 슬라이드 만들기(pptx) /
+ * 8 모드: 음성 인식(stt) / 이미지 인식(ocr) / 회의록 작성 / 슬라이드 생성(pptx) /
  *         문서 개선 / 문법 교정 / 번역 / 마인드맵 정리(structurize).
  *  - stt/ocr: 기존 AudioTab/OcrTab 을 그대로 mount(변환 로직 재사용). converter 자체 키 사용.
- *  - pptx: 현재 문서를 AI 레이아웃으로 .pptx 내보내기(onExportPptx).
+ *  - pptx: 슬라이드 Markdown 초안 생성 + AI 기반 PPTX 생성.
  *  - 나머지: prompt → onRun → InlineDiff / ResultCard.
  * 모드별 옵션 UI 는 sub-component 로 분리 (ModeSelector, LlmSelector, NotesOptions, NotesResultCard).
  */
 
 import { useState, useRef, useEffect, ReactNode } from 'react';
 import { AIMode, TranslateLanguage, AITurn } from '../types/ai';
-import { Sparkles, Send, Loader2, AlertCircle, Presentation } from 'lucide-react';
+import { Sparkles, Send, Loader2, AlertCircle } from 'lucide-react';
 import type { NotesJobResult, TemplateInfo } from '../types/converter';
 import type { useConverter } from '../hooks/useConverter';
 import type { DroppedFile } from './convert/types';
@@ -27,8 +27,10 @@ import { ConversationTimeline } from './ai/ConversationTimeline';
 import { NotesOptions } from './ai/NotesOptions';
 import { NotesResultCard } from './ai/NotesResultCard';
 import { ImageGenPanel } from './ai/ImageGenPanel';
+import { SlideExportPanel } from './ai/SlideExportPanel';
 import { AudioTab } from './convert/AudioTab';
 import { OcrTab } from './convert/OcrTab';
+import type { SlideExportOptions, SlideTheme } from '../lib/slideTheme';
 import './AIPanel.css';
 
 interface AIPanelProps {
@@ -61,10 +63,14 @@ interface AIPanelProps {
     ocrDropped: DroppedFile | null;
     onConsumeAudioDropped: () => void;
     onConsumeOcrDropped: () => void;
-    // ── 슬라이드 만들기(pptx) ──
+    // ── 슬라이드 생성(pptx) ──
+    onGenerateSlideDraft: () => void;
     onExportPptx: () => void;
     pptxAvailable: boolean;
     pptxBusy: string | null;
+    pptxThemes: SlideTheme[];
+    pptxOptions: SlideExportOptions;
+    onPptxOptionsChange: (next: SlideExportOptions) => void;
     // ── 이미지 생성(image-gen) ──
     onInsertGeneratedImage: (dataUrl: string) => void;
     imageGenRefDropped: string[] | null;
@@ -117,9 +123,13 @@ export function AIPanel({
     ocrDropped,
     onConsumeAudioDropped,
     onConsumeOcrDropped,
+    onGenerateSlideDraft,
     onExportPptx,
     pptxAvailable,
     pptxBusy,
+    pptxThemes,
+    pptxOptions,
+    onPptxOptionsChange,
     onInsertGeneratedImage,
     imageGenRefDropped,
     onConsumeImageGenRefDropped,
@@ -228,30 +238,17 @@ export function AIPanel({
 
             {isPptxMode && (
                 <div className="ai-pptx-mode">
-                    {!pptxAvailable ? (
-                        <div className="ai-no-key">
-                            <AlertCircle size={20} />
-                            <p>슬라이드 레이아웃에 Claude 또는 Gemini 키가 필요합니다</p>
-                            <button className="ai-btn primary" onClick={onShowSettings}>
-                                설정하기
-                            </button>
-                        </div>
-                    ) : (
-                        <>
-                            <div className="ai-prompt-actions">
-                                <button
-                                    className="ai-btn primary"
-                                    onClick={onExportPptx}
-                                    disabled={!!pptxBusy || content.trim().length === 0}
-                                    title="슬라이드 만들기"
-                                >
-                                    {pptxBusy ? <Loader2 size={14} className="spinning" /> : <Presentation size={14} />}
-                                    {pptxBusy ? '생성 중...' : '슬라이드 만들기'}
-                                </button>
-                                {pptxBusy && <div className="ai-pptx-busy">{pptxBusy}</div>}
-                            </div>
-                        </>
-                    )}
+                    <SlideExportPanel
+                        content={content}
+                        available={pptxAvailable}
+                        busy={pptxBusy}
+                        themes={pptxThemes}
+                        options={pptxOptions}
+                        onOptionsChange={onPptxOptionsChange}
+                        onGenerateDraft={onGenerateSlideDraft}
+                        onExportDirect={onExportPptx}
+                        onShowSettings={onShowSettings}
+                    />
                 </div>
             )}
 

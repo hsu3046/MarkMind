@@ -59,10 +59,16 @@ pub async fn generate_text(
     let mut messages = Vec::new();
     if let Some(s) = system {
         if !s.is_empty() {
-            messages.push(ChatMessage { role: "system", content: s });
+            messages.push(ChatMessage {
+                role: "system",
+                content: s,
+            });
         }
     }
-    messages.push(ChatMessage { role: "user", content: prompt });
+    messages.push(ChatMessage {
+        role: "user",
+        content: prompt,
+    });
 
     let body = ChatRequest {
         model,

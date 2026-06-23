@@ -79,8 +79,8 @@ pub struct ConnectResult {
 /// OAuth flow 시작 → refresh_token + access_token 획득 후 저장.
 /// 반환값: 연결된 사용자 email.
 pub async fn connect() -> GDriveResult<ConnectResult> {
-    let (client_id, client_secret) = storage::get_client_credentials()?
-        .ok_or(GDriveError::NotConfigured)?;
+    let (client_id, client_secret) =
+        storage::get_client_credentials()?.ok_or(GDriveError::NotConfigured)?;
 
     // 1. loopback server 시작 (random port)
     let server = Server::http("127.0.0.1:0")
@@ -123,12 +123,19 @@ pub async fn connect() -> GDriveResult<ConnectResult> {
     }
 
     // 7. code → token 교환
-    let token = exchange_code(&code, &code_verifier, &redirect_uri, &client_id, &client_secret).await?;
+    let token = exchange_code(
+        &code,
+        &code_verifier,
+        &redirect_uri,
+        &client_id,
+        &client_secret,
+    )
+    .await?;
 
     // 8. refresh_token 확보 (없으면 에러 — access_type=offline + prompt=consent 이면 항상 옴)
-    let refresh = token
-        .refresh_token
-        .ok_or_else(|| GDriveError::OAuth("refresh_token 없음 (이미 동의한 적 있는 계정?)".into()))?;
+    let refresh = token.refresh_token.ok_or_else(|| {
+        GDriveError::OAuth("refresh_token 없음 (이미 동의한 적 있는 계정?)".into())
+    })?;
 
     // 9. access_token 메모리 캐시 (Keychain 무관)
     let now = now_secs();
@@ -154,8 +161,8 @@ pub async fn connect() -> GDriveResult<ConnectResult> {
 
 /// 캐시된 access_token 이 유효하면 반환. 만료/없으면 refresh_token 으로 갱신.
 pub async fn get_or_refresh_access_token() -> GDriveResult<String> {
-    let (client_id, client_secret) = storage::get_client_credentials()?
-        .ok_or(GDriveError::NotConfigured)?;
+    let (client_id, client_secret) =
+        storage::get_client_credentials()?.ok_or(GDriveError::NotConfigured)?;
 
     let now = now_secs();
 
@@ -167,8 +174,7 @@ pub async fn get_or_refresh_access_token() -> GDriveResult<String> {
     }
 
     // 2. refresh_token 으로 갱신
-    let refresh = storage::get_refresh_token()?
-        .ok_or(GDriveError::NotAuthenticated)?;
+    let refresh = storage::get_refresh_token()?.ok_or(GDriveError::NotAuthenticated)?;
     let token = refresh_access_token(&refresh, &client_id, &client_secret).await?;
 
     storage::set_cached_access(AccessTokenCache {
@@ -325,11 +331,10 @@ fn respond_html(request: tiny_http::Request, html: &str) -> std::io::Result<()> 
     let body = html.as_bytes();
     let response = Response::new(
         tiny_http::StatusCode(200),
-        vec![tiny_http::Header::from_bytes(
-            &b"Content-Type"[..],
-            &b"text/html; charset=utf-8"[..],
-        )
-        .unwrap()],
+        vec![
+            tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..])
+                .unwrap(),
+        ],
         Cursor::new(body.to_vec()),
         Some(body.len()),
         None,

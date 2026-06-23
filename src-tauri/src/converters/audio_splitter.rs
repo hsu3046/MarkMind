@@ -113,9 +113,12 @@ pub async fn probe_duration(path: &Path) -> ConverterResult<f64> {
     // (auto_download 호출 제거 — resolve_binary 가 동봉/PATH/cache fallback 후 최후에만 다운로드)
     let output = Command::new(ffprobe_path()?)
         .args([
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
         ])
         .arg(path)
         .output()
@@ -130,9 +133,9 @@ pub async fn probe_duration(path: &Path) -> ConverterResult<f64> {
     }
     let raw = String::from_utf8_lossy(&output.stdout);
     let trimmed = raw.trim();
-    trimmed.parse::<f64>().map_err(|_| {
-        ConverterError::Ffmpeg(format!("ffprobe duration 파싱 실패: '{}'", trimmed))
-    })
+    trimmed
+        .parse::<f64>()
+        .map_err(|_| ConverterError::Ffmpeg(format!("ffprobe duration 파싱 실패: '{}'", trimmed)))
 }
 
 /// 녹음 시각 메타데이터 추출. 없으면 Ok(None).
@@ -266,10 +269,14 @@ pub async fn split_audio_to_chunks(
                     .arg(input)
                     .args([
                         "-vn",
-                        "-ac", "1",       // mono
-                        "-ar", "16000",   // 16kHz
-                        "-acodec", "libmp3lame",
-                        "-b:a", "32k",
+                        "-ac",
+                        "1", // mono
+                        "-ar",
+                        "16000", // 16kHz
+                        "-acodec",
+                        "libmp3lame",
+                        "-b:a",
+                        "32k",
                     ])
                     .arg(&chunk_path)
                     .output()
@@ -287,7 +294,9 @@ pub async fn split_audio_to_chunks(
     // 실측 길이로 누적 startSec 보정
     let mut cumulative = 0.0;
     for chunk in chunks.iter_mut() {
-        let measured = probe_duration(&chunk.chunk_path).await.unwrap_or(chunk_duration_sec);
+        let measured = probe_duration(&chunk.chunk_path)
+            .await
+            .unwrap_or(chunk_duration_sec);
         chunk.start_sec = cumulative;
         cumulative += measured;
     }

@@ -8,10 +8,10 @@
 //!   3) post-processing (threshold + min duration + pad + merge)
 //!   4) ffmpeg concat demuxer 로 speech 구간만 이어붙인 mp3 + 매핑 테이블
 
+use super::audio_splitter::ffmpeg_path;
 use crate::converters::error::{ConverterError, ConverterResult};
 use crate::converters::progress::{fmt_duration, ProgressEmitter};
 use ndarray::{Array, Array1, Array3};
-use super::audio_splitter::ffmpeg_path;
 use ort::session::{builder::GraphOptimizationLevel, Session};
 use ort::value::TensorRef;
 use std::path::{Path, PathBuf};
@@ -88,14 +88,13 @@ pub fn run_vad(
         &probs,
         PostProcessConfig {
             threshold: opts.threshold,
-            min_speech_samples: ((opts.min_speech_duration_ms as f32 / 1000.0)
-                * SAMPLE_RATE as f32) as usize,
+            min_speech_samples: ((opts.min_speech_duration_ms as f32 / 1000.0) * SAMPLE_RATE as f32)
+                as usize,
             min_silence_samples: ((opts.min_silence_duration_ms as f32 / 1000.0)
                 * SAMPLE_RATE as f32) as usize,
-            speech_pad_samples: ((opts.speech_pad_ms as f32 / 1000.0)
-                * SAMPLE_RATE as f32) as usize,
-            merge_gap_samples: ((opts.merge_gap_ms as f32 / 1000.0)
-                * SAMPLE_RATE as f32) as usize,
+            speech_pad_samples: ((opts.speech_pad_ms as f32 / 1000.0) * SAMPLE_RATE as f32)
+                as usize,
+            merge_gap_samples: ((opts.merge_gap_ms as f32 / 1000.0) * SAMPLE_RATE as f32) as usize,
             total_samples: pcm.len(),
         },
     ))
@@ -275,7 +274,17 @@ pub async fn decode_to_16k_pcm(input: &Path) -> ConverterResult<Vec<i16>> {
         .ok_or_else(|| ConverterError::Vad("non-UTF8 path".into()))?;
     let output = Command::new(ffmpeg_path()?)
         .args([
-            "-i", in_str, "-ac", "1", "-ar", "16000", "-f", "s16le", "-loglevel", "error", "-",
+            "-i",
+            in_str,
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-f",
+            "s16le",
+            "-loglevel",
+            "error",
+            "-",
         ])
         .output()
         .await
@@ -335,7 +344,10 @@ pub async fn trim_silence(
     // 임시 작업 디렉토리 — OS temp dir 사용 (input 폴더가 read-only 인 경우 대비).
     // tempfile 사용 안 함 (Drop 시 자동 삭제하지만 우리는 trim_result 가 work_dir 보유 후
     // cleanup_trimmed() 에서 명시 삭제)
-    let work_dir = std::env::temp_dir().join(format!("markmind_vad_trim_{}", uuid::Uuid::new_v4().simple()));
+    let work_dir = std::env::temp_dir().join(format!(
+        "markmind_vad_trim_{}",
+        uuid::Uuid::new_v4().simple()
+    ));
     tokio::fs::create_dir_all(&work_dir).await?;
 
     // 1) PCM 디코드
@@ -557,8 +569,18 @@ mod tests {
         // 원본 [0-10] 화자 + [20-30] 무음 + [30-40] 화자
         // trimmed [0-10] [10-20]  ← 무음 10초 제거
         let map = vec![
-            SegmentMap { trimmed_start: 0.0, trimmed_end: 10.0, original_start: 0.0, original_end: 10.0 },
-            SegmentMap { trimmed_start: 10.0, trimmed_end: 20.0, original_start: 30.0, original_end: 40.0 },
+            SegmentMap {
+                trimmed_start: 0.0,
+                trimmed_end: 10.0,
+                original_start: 0.0,
+                original_end: 10.0,
+            },
+            SegmentMap {
+                trimmed_start: 10.0,
+                trimmed_end: 20.0,
+                original_start: 30.0,
+                original_end: 40.0,
+            },
         ];
         // trimmed 5초 = 원본 5초
         assert_eq!(trimmed_to_original(5.0, &map), 5.0);
@@ -572,8 +594,10 @@ mod tests {
     #[test]
     fn test_trimmed_to_original_clamp() {
         let map = vec![SegmentMap {
-            trimmed_start: 0.0, trimmed_end: 10.0,
-            original_start: 0.0, original_end: 10.0,
+            trimmed_start: 0.0,
+            trimmed_end: 10.0,
+            original_start: 0.0,
+            original_end: 10.0,
         }];
         // 범위 초과 → 마지막 original_end 로 clamp
         assert_eq!(trimmed_to_original(15.0, &map), 10.0);

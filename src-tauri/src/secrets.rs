@@ -219,7 +219,10 @@ mod tests {
         }
         let loaded = load();
         assert_eq!(loaded.gemini, Some("test-key".to_string()));
-        assert_eq!(loaded.gdrive_user_email, Some("test@example.com".to_string()));
+        assert_eq!(
+            loaded.gdrive_user_email,
+            Some("test@example.com".to_string())
+        );
         if let Ok(mut g) = CACHE.lock() {
             *g = None;
         }

@@ -27,9 +27,8 @@ use std::collections::HashMap;
 /// 메타 / 손편집 마크다운은 false. (commands.rs::has_any_timestamp 와 동일.)
 fn has_any_timestamp(text: &str) -> bool {
     static TS_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-    let re = TS_RE.get_or_init(|| {
-        Regex::new(r"\[\d{1,2}:\d{2}(?::\d{2})?\]").expect("regex compile")
-    });
+    let re =
+        TS_RE.get_or_init(|| Regex::new(r"\[\d{1,2}:\d{2}(?::\d{2})?\]").expect("regex compile"));
     re.is_match(text)
 }
 
@@ -263,9 +262,7 @@ fn extract_speaker_samples(text: &str) -> Vec<SpeakerSample> {
         let mut matched_rest: &str = "";
         for p in &header_patterns {
             if let Some(caps) = p.captures(line) {
-                matched_label = caps
-                    .name("label")
-                    .map(|m| m.as_str().trim().to_string());
+                matched_label = caps.name("label").map(|m| m.as_str().trim().to_string());
                 matched_rest = caps.name("rest").map(|m| m.as_str()).unwrap_or("");
                 break;
             }
@@ -470,7 +467,9 @@ mod tests {
         let s = extract_speaker_samples(text);
         let labels: Vec<&str> = s.iter().map(|s| s.label.as_str()).collect();
         assert_eq!(labels, vec!["화자A", "화자B"]);
-        assert!(!labels.iter().any(|l| *l == "일시" || *l == "참석자" || *l == "장소"));
+        assert!(!labels
+            .iter()
+            .any(|l| *l == "일시" || *l == "참석자" || *l == "장소"));
     }
 
     /// Codex follow-up — extract and apply_rename must use the same

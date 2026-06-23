@@ -92,7 +92,10 @@ pub async fn diarize_local(
         cmd.env("MARKMIND_FFMPEG", ff);
     }
     // HF_TOKEN 이 환경에 없으면, 이미 캐시된 게이트 모델을 토큰 없이 쓰도록 오프라인 모드.
-    if std::env::var("HF_TOKEN").map(|v| v.trim().is_empty()).unwrap_or(true) {
+    if std::env::var("HF_TOKEN")
+        .map(|v| v.trim().is_empty())
+        .unwrap_or(true)
+    {
         cmd.env("HF_HUB_OFFLINE", "1");
     }
 
@@ -132,7 +135,11 @@ pub async fn diarize_local(
                     cur_step = step.to_string();
                     step_started = Instant::now();
                 }
-                let frac = if total > 0.0 { (completed / total).clamp(0.0, 1.0) } else { 0.0 };
+                let frac = if total > 0.0 {
+                    (completed / total).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
                 let el = step_started.elapsed().as_secs_f64();
                 let detail = if completed > 0.0 && completed < total {
                     let eta = el * (total - completed) / completed;
@@ -178,17 +185,26 @@ pub async fn diarize_local(
 
     let turns: Vec<Turn> = serde_json::from_str(stdout_str.trim()).map_err(|e| {
         let head: String = stdout_str.chars().take(120).collect();
-        ConverterError::Internal(format!("diarization 출력 파싱 실패: {} (stdout: {})", e, head))
+        ConverterError::Internal(format!(
+            "diarization 출력 파싱 실패: {} (stdout: {})",
+            e, head
+        ))
     })?;
 
     emitter.emit_update(
         "diar-local",
         "🎭 화자 분리 완료",
-        Some(format!("{} 소요", fmt_duration(started.elapsed().as_secs_f64()))),
+        Some(format!(
+            "{} 소요",
+            fmt_duration(started.elapsed().as_secs_f64())
+        )),
         Some(1.0),
     );
 
     Ok(labels_to_segments(
-        turns.into_iter().map(|t| (t.start, t.end, t.speaker)).collect(),
+        turns
+            .into_iter()
+            .map(|t| (t.start, t.end, t.speaker))
+            .collect(),
     ))
 }

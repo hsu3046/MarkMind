@@ -31,6 +31,15 @@ describe('markdownToSlides — 분할 규칙', () => {
     expect(slides.map((s) => s.title)).toEqual(['First', 'Second']);
   });
 
+  it('MarkMind 슬라이드 초안 마커는 PPTX 변환 대상에서 제외한다', () => {
+    const md = ['<!-- markmind:slide-draft v1 -->', '# First', 'content', '---', '# Second'].join('\n');
+    const slides = markdownToSlides(md);
+    expect(slides.map((s) => s.title)).toEqual(['First', 'Second']);
+    expect(slides[0].body.map((b) => ('spans' in b ? b.spans.map((s) => s.text).join('') : ''))).not.toContain(
+      '<!-- markmind:slide-draft v1 -->',
+    );
+  });
+
   it('H1 이 바로 H2 로 이어지면 slide-level=2, H1 은 타이틀 슬라이드', () => {
     const md = ['# Cover', '## Section A', 'a', '## Section B', 'b'].join('\n');
     const slides = markdownToSlides(md);
@@ -42,6 +51,29 @@ describe('markdownToSlides — 분할 규칙', () => {
     ]);
     expect(slides[0].layout).toBe('title');
     expect(slides[1].layout).toBe('content');
+  });
+
+  it('마크다운 헤딩 계층을 슬라이드 출처 정보로 보존', () => {
+    const md = [
+      '# Strategy',
+      '## Problem',
+      'Market is fragmented.',
+      '### Evidence',
+      '- Teams duplicate work',
+      '## Solution',
+      'Create a shared deck pipeline.',
+    ].join('\n');
+    const slides = markdownToSlides(md);
+
+    expect(slides.map((s) => s.title)).toEqual(['Strategy', 'Problem', 'Solution']);
+    expect(slides[0].sourceLevel).toBe(1);
+    expect(slides[0].sectionPath).toBeUndefined();
+    expect(slides[1].sourceLevel).toBe(2);
+    expect(slides[1].sectionPath).toEqual(['Strategy']);
+    expect(slides[2].sectionPath).toEqual(['Strategy']);
+
+    const subhead = slides[1].body.find((b) => b.kind === 'subhead');
+    expect(subhead).toMatchObject({ kind: 'subhead', text: 'Evidence', level: 3 });
   });
 
   it('펜스 코드블록 안의 --- 와 # 은 경계/헤딩이 아니다', () => {
@@ -144,6 +176,44 @@ describe('slidesFromLlmJson', () => {
       '{"title":"C","layout":"content","bullets":["c1",';
     const slides = slidesFromLlmJson(raw);
     expect(slides?.map((s) => s.title)).toEqual(['A', 'B']); // C 는 미완성 → 제외
+  });
+
+  it('확장 레이아웃 필드를 보존', () => {
+    const raw = JSON.stringify({
+      slides: [
+        { title: 'Cover', layout: 'title', bullets: ['subtitle'] },
+        {
+          title: 'Why now',
+          layout: 'stat',
+          sourceIds: ['S2', 'S3'],
+          source: { headingLevel: 2, sectionPath: ['Market'] },
+          stat: { value: '73%', label: 'teams need cleaner slides', context: 'Survey summary' },
+          notes: 'speaker note',
+        },
+        {
+          title: 'Options',
+          layout: 'two-column',
+          columns: [
+            ['Fast setup', 'Good defaults'],
+            [{ kind: 'subhead', text: 'Custom', level: 3 }, { kind: 'text', text: 'DESIGN.md later' }],
+          ],
+        },
+        {
+          title: 'Signal',
+          layout: 'quote',
+          quote: { text: 'Design is a system.', attribution: 'Team note' },
+        },
+      ],
+    });
+    const slides = slidesFromLlmJson(raw);
+    expect(slides?.[1].layout).toBe('stat');
+    expect(slides?.[1].sourceIds).toEqual(['S2', 'S3']);
+    expect(slides?.[1].sourceLevel).toBe(2);
+    expect(slides?.[1].sectionPath).toEqual(['Market']);
+    expect(slides?.[1].stat?.value).toBe('73%');
+    expect(slides?.[2].columns?.length).toBe(2);
+    expect(slides?.[2].columns?.[1][0]).toMatchObject({ kind: 'subhead', level: 3 });
+    expect(slides?.[3].quote?.attribution).toBe('Team note');
   });
 
   it('완전 비 JSON 은 null', () => {

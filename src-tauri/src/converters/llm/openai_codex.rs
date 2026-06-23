@@ -55,7 +55,11 @@ pub async fn generate_text(
         let raw = resp.text().await.unwrap_or_default();
         let snippet: String = raw.chars().take(500).collect();
         eprintln!("[codex] 에러 본문: {}", snippet);
-        return Err(ConverterError::Codex(format!("HTTP {} — {}", status.as_u16(), snippet)));
+        return Err(ConverterError::Codex(format!(
+            "HTTP {} — {}",
+            status.as_u16(),
+            snippet
+        )));
     }
 
     let sse = resp
@@ -141,7 +145,11 @@ fn extract_completed_text(v: &serde_json::Value) -> Option<String> {
             }
         }
     }
-    if let Some(content) = v.get("item").and_then(|i| i.get("content")).and_then(|c| c.as_array()) {
+    if let Some(content) = v
+        .get("item")
+        .and_then(|i| i.get("content"))
+        .and_then(|c| c.as_array())
+    {
         for c in content {
             if let Some(txt) = c.get("text").and_then(|t| t.as_str()) {
                 acc.push_str(txt);

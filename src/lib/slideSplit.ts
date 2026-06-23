@@ -66,6 +66,15 @@ const STRIKE_RE = /~~[^~\n]+~~/g; // 취소선
     구형 HTML 주석 `<!-- skip -->` 은 라운드트립 시 `&lt;…&gt;` 로 깨지므로 하위호환으로
     깨진 형태까지 인식한다(근본 보존은 #89 — raw HTML 라운드트립). */
 const SKIP_MARKER_RE = /%%\s*skip\s*%%|(?:<|&lt;)!--\s*skip\s*--(?:>|&gt;)/i;
+const SLIDE_DRAFT_MARKER_LINE_RE =
+    /^\s*(?:<!--\s*markmind:slide-draft\b[^>]*-->|&lt;!--\s*markmind:slide-draft\b.*?--&gt;)\s*$/i;
+
+function stripSlideDraftMarker(md: string): string {
+    return md
+        .split('\n')
+        .filter((line) => !SLIDE_DRAFT_MARKER_LINE_RE.test(line))
+        .join('\n');
+}
 
 /** YAML frontmatter(`---\n…\n---`) 제거 — 슬라이드 내용이 아님. */
 function stripFrontmatter(md: string): string {
@@ -131,7 +140,7 @@ function isEmptyAfterHide(chunk: string, opts: SlideshowSettings): boolean {
  * 빈(공백만) 슬라이드는 버린다. 결과가 없으면 빈 1장(['']).
  */
 export function splitIntoSlides(markdown: string, opts: SlideshowSettings): string[] {
-    const lines = stripFrontmatter(markdown).split('\n');
+    const lines = stripFrontmatter(stripSlideDraftMarker(markdown)).split('\n');
     const slides: string[][] = [];
     let cur: string[] = [];
     let inFence = false;

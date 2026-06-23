@@ -4,9 +4,7 @@ use super::error::{ConverterError, ConverterResult};
 use super::keychain::{get_key, Provider};
 use super::llm::{anthropic, gemini};
 use super::progress::ProgressEmitter;
-use super::templates::{
-    build_evidence_markdown, get_template, strip_frontmatter, EvidenceMeta,
-};
+use super::templates::{build_evidence_markdown, get_template, strip_frontmatter, EvidenceMeta};
 use super::{
     conversions_dir, CostSummary, DetailLevel, EvidenceType, MODEL_CODEX, MODEL_NOTES_CLAUDE,
     MODEL_NOTES_GEMINI,
@@ -97,8 +95,8 @@ pub async fn run(
 
     let generate_result = match opts.company {
         AICompany::Gemini => {
-            let api_key = get_key(Provider::Gemini)?
-                .ok_or(ConverterError::MissingApiKey("Gemini"))?;
+            let api_key =
+                get_key(Provider::Gemini)?.ok_or(ConverterError::MissingApiKey("Gemini"))?;
             let model = opts.model.as_deref().unwrap_or(MODEL_NOTES_GEMINI);
             emitter.emit(
                 "🧠 미팅 노트 생성 중...",
@@ -118,7 +116,10 @@ pub async fn run(
             .await?;
             emitter.emit(
                 format!("✅ 노트 생성 완료 ({:.1}초)", start.elapsed().as_secs_f64()),
-                Some(format!("{} 토큰 출력", format_num(result.usage.output_tokens as usize))),
+                Some(format!(
+                    "{} 토큰 출력",
+                    format_num(result.usage.output_tokens as usize)
+                )),
             );
             result
         }
@@ -129,7 +130,10 @@ pub async fn run(
                 .unwrap_or_else(|| MODEL_NOTES_CLAUDE.to_string());
             emitter.emit(
                 "🧠 미팅 노트 생성 중...",
-                Some(format!("{} · {} · max {} tok", model, auth_label, MAX_OUTPUT_TOKENS)),
+                Some(format!(
+                    "{} · {} · max {} tok",
+                    model, auth_label, MAX_OUTPUT_TOKENS
+                )),
             );
             let start = std::time::Instant::now();
             let claude_opts = anthropic::ClaudeOptions {
@@ -163,13 +167,19 @@ pub async fn run(
             };
             emitter.emit(
                 format!("✅ 노트 생성 완료 ({:.1}초)", start.elapsed().as_secs_f64()),
-                Some(format!("{} 토큰 출력", format_num(result.usage.output_tokens as usize))),
+                Some(format!(
+                    "{} 토큰 출력",
+                    format_num(result.usage.output_tokens as usize)
+                )),
             );
             result
         }
         AICompany::Openai => {
             use super::llm::{openai_api, openai_codex};
-            let model = opts.model.clone().unwrap_or_else(|| MODEL_CODEX.to_string());
+            let model = opts
+                .model
+                .clone()
+                .unwrap_or_else(|| MODEL_CODEX.to_string());
             emitter.emit(
                 "🧠 미팅 노트 생성 중...",
                 Some(format!("{} · {} · ChatGPT", model, auth_label)),
@@ -177,8 +187,8 @@ pub async fn run(
             let start = std::time::Instant::now();
             let result = match opts.auth {
                 ClaudeAuthMode::Subscription => {
-                    let tokens =
-                        crate::subscription_auth::read_codex_tokens().map_err(ConverterError::Codex)?;
+                    let tokens = crate::subscription_auth::read_codex_tokens()
+                        .map_err(ConverterError::Codex)?;
                     openai_codex::generate_text(
                         &tokens.access_token,
                         tokens.account_id.as_deref(),
@@ -196,7 +206,10 @@ pub async fn run(
             };
             emitter.emit(
                 format!("✅ 노트 생성 완료 ({:.1}초)", start.elapsed().as_secs_f64()),
-                Some(format!("{} 토큰 출력", format_num(result.usage.output_tokens as usize))),
+                Some(format!(
+                    "{} 토큰 출력",
+                    format_num(result.usage.output_tokens as usize)
+                )),
             );
             result
         }
@@ -222,7 +235,6 @@ pub async fn run(
     let target_path = unique_path(&target_dir, &format!("회의록_{}", safe_name), "md");
     std::fs::write(&target_path, &markdown)?;
     // doc-converter 와 동일: 저장 step 은 표시 안 함 (결과 카드의 경로로 충분)
-
 
     Ok(NotesJobResult {
         markdown_path: target_path.to_string_lossy().into_owned(),

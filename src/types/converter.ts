@@ -104,6 +104,11 @@ export interface ProgressStep {
     step: string;
     detail?: string;
     progress?: number;
+    model?: {
+        company: string;
+        auth: AIAuthMode;
+        model: string;
+    };
     /** stable id — 같은 stepId 면 in-place 갱신 (heartbeat / progress). undefined 면 append. */
     stepId?: string;
 }

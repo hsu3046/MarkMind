@@ -71,7 +71,9 @@ struct MessageResponse {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ContentBlock {
-    Text { text: String },
+    Text {
+        text: String,
+    },
     #[serde(other)]
     Other,
 }
@@ -113,7 +115,10 @@ pub async fn generate_text(
             }];
             if let Some(s) = opts.system.as_deref() {
                 if !s.trim().is_empty() {
-                    blocks.push(SystemBlock { kind: "text", text: s });
+                    blocks.push(SystemBlock {
+                        kind: "text",
+                        text: s,
+                    });
                 }
             }
             Some(SystemField::Blocks(blocks))
@@ -167,7 +172,11 @@ pub async fn generate_text(
                         model: model.to_string(),
                         input_tokens: parsed.usage.input_tokens,
                         output_tokens: parsed.usage.output_tokens,
-                        cost_usd: calc_cost(model, parsed.usage.input_tokens, parsed.usage.output_tokens),
+                        cost_usd: calc_cost(
+                            model,
+                            parsed.usage.input_tokens,
+                            parsed.usage.output_tokens,
+                        ),
                     };
                     return Ok(GenerateResult { text, usage });
                 }
@@ -181,7 +190,11 @@ pub async fn generate_text(
                     let backoff = backoff_ms(attempt);
                     log::warn!(
                         "[claude] {} 시도 {}/{} 실패 ({}), {}ms 후 재시도",
-                        model, attempt, MAX_RETRIES, status_code, backoff
+                        model,
+                        attempt,
+                        MAX_RETRIES,
+                        status_code,
+                        backoff
                     );
                     last_err = Some(err);
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
@@ -194,7 +207,11 @@ pub async fn generate_text(
                     let backoff = backoff_ms(attempt);
                     log::warn!(
                         "[claude] {} 네트워크 오류 {}/{} ({}), {}ms 후 재시도",
-                        model, attempt, MAX_RETRIES, e, backoff
+                        model,
+                        attempt,
+                        MAX_RETRIES,
+                        e,
+                        backoff
                     );
                     last_err = Some(ConverterError::Network(e.to_string()));
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
@@ -209,7 +226,9 @@ pub async fn generate_text(
 
 fn classify_error(status: u16, body_msg: &str) -> ConverterError {
     match status {
-        401 | 403 => ConverterError::Claude("Claude 인증 실패 — API 키 또는 구독 로그인을 확인하세요.".into()),
+        401 | 403 => ConverterError::Claude(
+            "Claude 인증 실패 — API 키 또는 구독 로그인을 확인하세요.".into(),
+        ),
         429 => ConverterError::RateLimit,
         503 | 529 => ConverterError::Overloaded,
         _ => ConverterError::Claude(format!("HTTP {} — {}", status, body_msg)),

@@ -23,7 +23,9 @@ pub async fn extract_pdf_to_images(pdf_path: &std::path::Path) -> ConverterResul
 fn extract_blocking(pdf_path: &std::path::Path) -> ConverterResult<Vec<PathBuf>> {
     let pdfium = Pdfium::new(
         Pdfium::bind_to_system_library()
-            .or_else(|_| Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path("./")))
+            .or_else(|_| {
+                Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path("./"))
+            })
             .map_err(|e| {
                 ConverterError::Pdf(format!(
                     "pdfium 라이브러리 로드 실패 — libpdfium 이 설치/동봉되어 있는지 확인: {}",
@@ -48,9 +50,9 @@ fn extract_blocking(pdf_path: &std::path::Path) -> ConverterResult<Vec<PathBuf>>
 
     let mut paths = Vec::new();
     for (page_idx, page) in document.pages().iter().enumerate() {
-        let bitmap = page
-            .render_with_config(&render_config)
-            .map_err(|e| ConverterError::Pdf(format!("페이지 {} 렌더링 실패: {}", page_idx + 1, e)))?;
+        let bitmap = page.render_with_config(&render_config).map_err(|e| {
+            ConverterError::Pdf(format!("페이지 {} 렌더링 실패: {}", page_idx + 1, e))
+        })?;
         let image = bitmap.as_image();
         let target = out_dir.join(format!("page-{:04}.png", page_idx + 1));
         image

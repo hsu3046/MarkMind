@@ -68,13 +68,21 @@ static CLAUDE_TOKEN_CACHE: Mutex<Option<CachedClaudeToken>> = Mutex::new(None);
 struct ClaudeOauth {
     #[serde(rename = "accessToken")]
     access_token: String,
-    #[serde(rename = "refreshToken", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "refreshToken",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     refresh_token: Option<String>,
     /// unix epoch milliseconds.
     #[serde(rename = "expiresAt", default, skip_serializing_if = "Option::is_none")]
     expires_at: Option<u64>,
     /// 구독 종류 — "max" / "pro" 등 (플랜 표시용, write-back 보존).
-    #[serde(rename = "subscriptionType", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "subscriptionType",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     subscription_type: Option<String>,
     #[serde(flatten)]
     extra: serde_json::Map<String, serde_json::Value>,
@@ -139,7 +147,9 @@ fn claude_logged_in() -> bool {
 
 fn write_claude_creds(creds: &ClaudeCreds) -> Result<(), String> {
     let json = serde_json::to_string(creds).map_err(|e| e.to_string())?;
-    claude_entry()?.set_password(&json).map_err(|e| e.to_string())
+    claude_entry()?
+        .set_password(&json)
+        .map_err(|e| e.to_string())
 }
 
 /// 유효한 Claude 구독 access token 반환. 만료 임박이면 refresh 후 keychain write-back.
@@ -168,11 +178,9 @@ pub async fn claude_access_token() -> Result<String, String> {
     let token = if !needs_refresh {
         creds.claude_ai_oauth.access_token.clone()
     } else {
-        let refresh_token = creds
-            .claude_ai_oauth
-            .refresh_token
-            .clone()
-            .ok_or_else(|| "refresh token 이 없습니다. 터미널에서 `claude` 재로그인하세요.".to_string())?;
+        let refresh_token = creds.claude_ai_oauth.refresh_token.clone().ok_or_else(|| {
+            "refresh token 이 없습니다. 터미널에서 `claude` 재로그인하세요.".to_string()
+        })?;
         let refreshed = refresh_claude_token(&refresh_token).await?;
         creds.claude_ai_oauth.access_token = refreshed.access_token.clone();
         if refreshed.refresh_token.is_some() {
@@ -241,8 +249,9 @@ pub struct CodexTokens {
 /// (만료 refresh 는 미구현 — 만료 시 `codex` 재로그인 안내. 후속 Phase 에서 추가.)
 pub fn read_codex_tokens() -> Result<CodexTokens, String> {
     let path = codex_auth_path().ok_or_else(|| "HOME 환경변수를 찾을 수 없습니다.".to_string())?;
-    let raw = std::fs::read_to_string(&path)
-        .map_err(|_| "Codex 로그인을 찾을 수 없습니다. 터미널에서 `codex` 로 로그인하세요.".to_string())?;
+    let raw = std::fs::read_to_string(&path).map_err(|_| {
+        "Codex 로그인을 찾을 수 없습니다. 터미널에서 `codex` 로 로그인하세요.".to_string()
+    })?;
     let v: serde_json::Value =
         serde_json::from_str(&raw).map_err(|e| format!("auth.json 파싱 실패: {e}"))?;
     let tokens = v
@@ -311,7 +320,9 @@ pub fn read_grok_token() -> Result<String, String> {
         .values()
         .find_map(|scope| scope.get("key").and_then(|k| k.as_str()))
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| "Grok access token 이 없습니다. `grok login` 재로그인이 필요합니다.".to_string())?;
+        .ok_or_else(|| {
+            "Grok access token 이 없습니다. `grok login` 재로그인이 필요합니다.".to_string()
+        })?;
     Ok(token.to_string())
 }
 

@@ -99,7 +99,10 @@ pub async fn diarize_cloud(
     // 4) 폴링 → 화자 구간 → DiarSegment
     let turns = poll_job(&client, api_key, &job_id).await?;
     Ok(labels_to_segments(
-        turns.into_iter().map(|t| (t.start, t.end, t.speaker)).collect(),
+        turns
+            .into_iter()
+            .map(|t| (t.start, t.end, t.speaker))
+            .collect(),
     ))
 }
 
@@ -196,5 +199,8 @@ fn api_error(route: &str, status: reqwest::StatusCode, body: &str) -> ConverterE
         );
     }
     let snippet: String = body.chars().take(200).collect();
-    ConverterError::Internal(format!("pyannote.ai {} 오류 (HTTP {}): {}", route, status, snippet))
+    ConverterError::Internal(format!(
+        "pyannote.ai {} 오류 (HTTP {}): {}",
+        route, status, snippet
+    ))
 }
