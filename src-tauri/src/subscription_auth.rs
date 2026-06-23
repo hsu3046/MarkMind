@@ -38,6 +38,7 @@ pub enum AICompany {
     Gemini,
     Claude,
     Openai,
+    Grok,
 }
 
 // ─── Claude Code (Anthropic) ────────────────────────────────────────────────

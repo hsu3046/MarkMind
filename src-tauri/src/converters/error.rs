@@ -19,6 +19,9 @@ pub enum ConverterError {
     #[error("OpenAI API 오류: {0}")]
     OpenAi(String),
 
+    #[error("Grok API 오류: {0}")]
+    Grok(String),
+
     #[error("네트워크 연결이 불안정합니다. 잠시 후 다시 시도해주세요. ({0})")]
     Network(String),
 

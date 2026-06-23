@@ -733,21 +733,33 @@ async fn call_slides_llm(
 
     match company {
         AICompany::Gemini => {
-            let key = get_key(Provider::Gemini)
-                .map_err(err_to_string)?
-                .ok_or_else(|| "Gemini API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
-            let model_id = model.unwrap_or(super::MODEL_NOTES_GEMINI);
-            let full = format!("{}\n\n{}", system, prompt);
-            let cfg = llm::gemini::GenerationConfig {
-                max_output_tokens: Some(max_tokens),
-                temperature: Some(0.25),
-            };
-            Ok(
-                llm::gemini::generate_text(&key, model_id, &full, Vec::new(), Some(cfg))
-                    .await
-                    .map_err(err_to_string)?
-                    .text,
-            )
+            let model_id = model.unwrap_or(match auth {
+                ClaudeAuthMode::Subscription => super::MODEL_GEMINI_AGY,
+                ClaudeAuthMode::ApiKey => super::MODEL_NOTES_GEMINI,
+            });
+            match auth {
+                ClaudeAuthMode::Subscription => {
+                    llm::gemini_agy::generate_text(model_id, Some(system), prompt).await
+                }
+                ClaudeAuthMode::ApiKey => {
+                    let key = get_key(Provider::Gemini)
+                        .map_err(err_to_string)?
+                        .ok_or_else(|| {
+                            "Gemini API 키가 없습니다. Settings 에서 등록하세요.".to_string()
+                        })?;
+                    let full = format!("{}\n\n{}", system, prompt);
+                    let cfg = llm::gemini::GenerationConfig {
+                        max_output_tokens: Some(max_tokens),
+                        temperature: Some(0.25),
+                    };
+                    Ok(
+                        llm::gemini::generate_text(&key, model_id, &full, Vec::new(), Some(cfg))
+                            .await
+                            .map_err(err_to_string)?
+                            .text,
+                    )
+                }
+            }
         }
         AICompany::Claude => {
             let model_id = model.unwrap_or(super::MODEL_NOTES_CLAUDE);
@@ -817,15 +829,29 @@ async fn call_slides_llm(
             };
             Ok(result.map_err(err_to_string)?.text)
         }
+        AICompany::Grok => {
+            let model_id = model.unwrap_or(super::MODEL_GROK);
+            let auth_id = match auth {
+                ClaudeAuthMode::Subscription => "subscription",
+                ClaudeAuthMode::ApiKey => "api_key",
+            };
+            let key = grok_bearer(auth_id)?;
+            llm::grok::generate_text(&key, model_id, Some(system), prompt).await
+        }
     }
 }
 
-fn slide_default_model(company: crate::subscription_auth::AICompany) -> &'static str {
-    use crate::subscription_auth::AICompany;
-    match company {
-        AICompany::Gemini => super::MODEL_NOTES_GEMINI,
-        AICompany::Claude => super::MODEL_NOTES_CLAUDE,
-        AICompany::Openai => super::MODEL_CODEX,
+fn slide_default_model(
+    company: crate::subscription_auth::AICompany,
+    auth: crate::subscription_auth::ClaudeAuthMode,
+) -> &'static str {
+    use crate::subscription_auth::{AICompany, ClaudeAuthMode};
+    match (company, auth) {
+        (AICompany::Gemini, ClaudeAuthMode::Subscription) => super::MODEL_GEMINI_AGY,
+        (AICompany::Gemini, ClaudeAuthMode::ApiKey) => super::MODEL_NOTES_GEMINI,
+        (AICompany::Claude, _) => super::MODEL_NOTES_CLAUDE,
+        (AICompany::Openai, _) => super::MODEL_CODEX,
+        (AICompany::Grok, _) => super::MODEL_GROK,
     }
 }
 
@@ -839,6 +865,7 @@ fn slide_model_info(
         AICompany::Gemini => "gemini",
         AICompany::Claude => "claude",
         AICompany::Openai => "openai",
+        AICompany::Grok => "grok",
     };
     let auth_id = match auth {
         ClaudeAuthMode::ApiKey => "api_key",
@@ -847,7 +874,7 @@ fn slide_model_info(
     let model_id = model
         .map(str::trim)
         .filter(|m| !m.is_empty())
-        .unwrap_or_else(|| slide_default_model(company));
+        .unwrap_or_else(|| slide_default_model(company, auth));
     ProgressModelInfo {
         company: company_id.to_string(),
         auth: auth_id.to_string(),

@@ -2,12 +2,12 @@
 
 use super::error::{ConverterError, ConverterResult};
 use super::keychain::{get_key, Provider};
-use super::llm::{anthropic, gemini};
+use super::llm::{anthropic, gemini, gemini_agy, grok};
 use super::progress::ProgressEmitter;
 use super::templates::{build_evidence_markdown, get_template, strip_frontmatter, EvidenceMeta};
 use super::{
-    conversions_dir, CostSummary, DetailLevel, EvidenceType, MODEL_CODEX, MODEL_NOTES_CLAUDE,
-    MODEL_NOTES_GEMINI,
+    conversions_dir, CostSummary, DetailLevel, EvidenceType, GenerateResult, UsageInfo,
+    MODEL_CODEX, MODEL_GEMINI_AGY, MODEL_GROK, MODEL_NOTES_CLAUDE, MODEL_NOTES_GEMINI,
 };
 use serde::{Deserialize, Serialize};
 
@@ -71,6 +71,7 @@ pub async fn run(
         crate::subscription_auth::AICompany::Gemini => "Gemini",
         crate::subscription_auth::AICompany::Claude => "Claude",
         crate::subscription_auth::AICompany::Openai => "ChatGPT",
+        crate::subscription_auth::AICompany::Grok => "Grok",
     };
     emitter.emit(
         format!(
@@ -95,25 +96,44 @@ pub async fn run(
 
     let generate_result = match opts.company {
         AICompany::Gemini => {
-            let api_key =
-                get_key(Provider::Gemini)?.ok_or(ConverterError::MissingApiKey("Gemini"))?;
-            let model = opts.model.as_deref().unwrap_or(MODEL_NOTES_GEMINI);
+            let model = opts.model.as_deref().unwrap_or(match opts.auth {
+                ClaudeAuthMode::Subscription => MODEL_GEMINI_AGY,
+                ClaudeAuthMode::ApiKey => MODEL_NOTES_GEMINI,
+            });
             emitter.emit(
                 "🧠 미팅 노트 생성 중...",
-                Some(format!("{} · max {} tok", model, MAX_OUTPUT_TOKENS)),
+                Some(format!(
+                    "{} · {} · max {} tok",
+                    model, auth_label, MAX_OUTPUT_TOKENS
+                )),
             );
             let start = std::time::Instant::now();
-            let result = gemini::generate_text(
-                &api_key,
-                model,
-                &prompt,
-                vec![],
-                Some(gemini::GenerationConfig {
-                    max_output_tokens: Some(MAX_OUTPUT_TOKENS),
-                    temperature: None,
-                }),
-            )
-            .await?;
+            let result = match opts.auth {
+                ClaudeAuthMode::Subscription => {
+                    let text = gemini_agy::generate_text(model, None, &prompt)
+                        .await
+                        .map_err(ConverterError::Gemini)?;
+                    GenerateResult {
+                        text,
+                        usage: zero_usage(model),
+                    }
+                }
+                ClaudeAuthMode::ApiKey => {
+                    let api_key = get_key(Provider::Gemini)?
+                        .ok_or(ConverterError::MissingApiKey("Gemini"))?;
+                    gemini::generate_text(
+                        &api_key,
+                        model,
+                        &prompt,
+                        vec![],
+                        Some(gemini::GenerationConfig {
+                            max_output_tokens: Some(MAX_OUTPUT_TOKENS),
+                            temperature: None,
+                        }),
+                    )
+                    .await?
+                }
+            };
             emitter.emit(
                 format!("✅ 노트 생성 완료 ({:.1}초)", start.elapsed().as_secs_f64()),
                 Some(format!(
@@ -214,6 +234,26 @@ pub async fn run(
             );
             result
         }
+        AICompany::Grok => {
+            let model = opts.model.clone().unwrap_or_else(|| MODEL_GROK.to_string());
+            emitter.emit(
+                "🧠 미팅 노트 생성 중...",
+                Some(format!("{} · {}", model, auth_label)),
+            );
+            let start = std::time::Instant::now();
+            let key = grok_bearer(opts.auth)?;
+            let text = grok::generate_text(&key, &model, None, &prompt)
+                .await
+                .map_err(ConverterError::Grok)?;
+            emitter.emit(
+                format!("✅ 노트 생성 완료 ({:.1}초)", start.elapsed().as_secs_f64()),
+                Some("토큰 사용량 미제공".to_string()),
+            );
+            GenerateResult {
+                text,
+                usage: zero_usage(&model),
+            }
+        }
     };
 
     if generate_result.text.trim().is_empty() {
@@ -242,6 +282,27 @@ pub async fn run(
         template_name: template.info.name,
         cost: CostSummary::from_usages(vec![generate_result.usage]),
     })
+}
+
+fn zero_usage(model: &str) -> UsageInfo {
+    UsageInfo {
+        model: model.to_string(),
+        input_tokens: 0,
+        output_tokens: 0,
+        cost_usd: 0.0,
+    }
+}
+
+fn grok_bearer(auth: crate::subscription_auth::ClaudeAuthMode) -> ConverterResult<String> {
+    use crate::subscription_auth::ClaudeAuthMode;
+    match auth {
+        ClaudeAuthMode::Subscription => {
+            crate::subscription_auth::read_grok_token().map_err(ConverterError::Grok)
+        }
+        ClaudeAuthMode::ApiKey => {
+            get_key(Provider::Grok)?.ok_or(ConverterError::MissingApiKey("Grok"))
+        }
+    }
 }
 
 /// 1234567 → "1,234,567" (doc-converter `.toLocaleString()` 대응)
