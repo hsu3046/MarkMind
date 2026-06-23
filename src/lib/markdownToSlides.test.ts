@@ -257,6 +257,14 @@ describe('slidesFromLlmJson', () => {
     });
   });
 
+  it('이미지 제외 의도만 있는 image 객체도 보존', () => {
+    const raw = JSON.stringify({
+      slides: [{ title: 'No visual', layout: 'content', image: { sourcePreference: 'none' }, bullets: ['text only'] }],
+    });
+    const slides = slidesFromLlmJson(raw);
+    expect(slides?.[0].image?.sourcePreference).toBe('none');
+  });
+
   it('완전 비 JSON 은 null', () => {
     expect(slidesFromLlmJson('sorry, I cannot do that')).toBeNull();
   });

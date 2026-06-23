@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Slide } from '../lib/markdownToSlides';
 import { DEFAULT_SLIDE_THEME } from '../lib/slideTheme';
-import { buildGeneratedSlideImagePrompt, scoreSlideImageCandidate, type SlideImageIntent } from './slideAssets';
+import {
+  buildGeneratedSlideImagePrompt,
+  routeSlideImageIntent,
+  scoreSlideImageCandidate,
+  type SlideImageIntent,
+} from './slideAssets';
 
 describe('slideAssets', () => {
   it('중요도와 밀도를 합쳐 이미지 후보 점수를 계산', () => {
@@ -54,5 +59,24 @@ describe('slideAssets', () => {
     expect(prompt).toContain('negative space');
     expect(prompt).toContain('Do not include readable text');
     expect(prompt).toContain(DEFAULT_SLIDE_THEME.name);
+  });
+
+  it('Stock만 모드는 generated 선호 intent도 검색으로 라우팅', () => {
+    const intent: SlideImageIntent = {
+      slideIndex: 1,
+      slideId: 'S2',
+      title: 'AI adoption conditions',
+      role: 'support',
+      query: 'workplace collaboration training',
+      prompt: 'abstract workplace conditions',
+      aspect: '16:9',
+      sourcePreference: 'generated',
+      licenseStrictness: 'presentation',
+      importance: 72,
+      imageScore: 69,
+    };
+
+    expect(routeSlideImageIntent(intent, 'stockOnly')).toBe('stock');
+    expect(routeSlideImageIntent({ ...intent, sourcePreference: 'none' }, 'stockOnly')).toBeNull();
   });
 });

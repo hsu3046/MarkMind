@@ -302,10 +302,16 @@ function imageFromUnknown(value: unknown): Slide['image'] | undefined {
   const prompt = typeof o.prompt === 'string' && o.prompt.trim() ? o.prompt.trim() : undefined;
   const query = typeof o.query === 'string' && o.query.trim() ? o.query.trim() : undefined;
   const entity = typeof o.entity === 'string' && o.entity.trim() ? o.entity.trim() : undefined;
-  if (!src && !prompt && !query && !entity) return undefined;
   const role = oneOf<SlideImageRole>(o.role, ['cover', 'hero', 'support', 'logo', 'icon', 'background']);
   const sourcePreference = oneOf<SlideImageSourcePreference>(o.sourcePreference, ['auto', 'stock', 'logo', 'generated', 'none']);
   const licenseStrictness = oneOf<SlideImageLicenseStrictness>(o.licenseStrictness, ['presentation', 'open', 'internal-only']);
+  const alt = typeof o.alt === 'string' && o.alt.trim() ? o.alt.trim() : undefined;
+  const aspect = typeof o.aspect === 'string' && o.aspect.trim() ? o.aspect.trim() : undefined;
+  const style = typeof o.style === 'string' && o.style.trim() ? o.style.trim() : undefined;
+  const kind = typeof o.kind === 'string' && o.kind.trim() ? o.kind.trim() : undefined;
+  if (!src && !prompt && !query && !entity && !role && !sourcePreference && !licenseStrictness && !alt && !aspect && !style && !kind) {
+    return undefined;
+  }
   return {
     src,
     prompt,
@@ -314,10 +320,10 @@ function imageFromUnknown(value: unknown): Slide['image'] | undefined {
     role,
     sourcePreference,
     licenseStrictness,
-    alt: typeof o.alt === 'string' && o.alt.trim() ? o.alt.trim() : undefined,
-    aspect: typeof o.aspect === 'string' && o.aspect.trim() ? o.aspect.trim() : undefined,
-    style: typeof o.style === 'string' && o.style.trim() ? o.style.trim() : undefined,
-    kind: typeof o.kind === 'string' && o.kind.trim() ? o.kind.trim() : undefined,
+    alt,
+    aspect,
+    style,
+    kind,
   };
 }
 

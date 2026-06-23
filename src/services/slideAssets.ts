@@ -301,6 +301,10 @@ function canSearchStock(intent: SlideImageIntent): boolean {
   return intent.sourcePreference !== 'none' && intent.sourcePreference !== 'generated' && Boolean(intent.query || intent.entity);
 }
 
+function canForceStockSearch(intent: SlideImageIntent): boolean {
+  return intent.sourcePreference !== 'none' && Boolean(intent.query || intent.entity);
+}
+
 function canGenerate(intent: SlideImageIntent): boolean {
   return (
     intent.sourcePreference !== 'none' &&
@@ -320,10 +324,10 @@ function preferGeneratedForAuto(intent: SlideImageIntent): boolean {
   return CONCEPTUAL_RE.test(text);
 }
 
-function routeIntent(intent: SlideImageIntent, mode: SlideImageSourceMode): AssetSourceKind | null {
+export function routeSlideImageIntent(intent: SlideImageIntent, mode: SlideImageSourceMode): AssetSourceKind | null {
   if (intent.sourcePreference === 'none') return null;
   if (mode === 'generatedOnly') return canGenerate(intent) ? 'generated' : null;
-  if (mode === 'stockOnly') return canSearchStock(intent) ? 'stock' : null;
+  if (mode === 'stockOnly') return canForceStockSearch(intent) ? 'stock' : null;
   if (intent.sourcePreference === 'generated') return canGenerate(intent) ? 'generated' : null;
   if (intent.sourcePreference === 'stock' || intent.sourcePreference === 'logo' || intent.role === 'logo') {
     return canSearchStock(intent) ? 'stock' : null;
@@ -349,7 +353,7 @@ function splitQueues(
   const generated: SlideImageIntent[] = [];
   let skipped = 0;
   for (const intent of intents) {
-    const route = routeIntent(intent, sourceMode);
+    const route = routeSlideImageIntent(intent, sourceMode);
     if (route === 'stock' && stock.length < stockLimit) stock.push(intent);
     else if (route === 'generated' && generated.length < generatedLimit) generated.push(intent);
     else skipped += 1;
