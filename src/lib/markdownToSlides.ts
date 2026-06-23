@@ -457,6 +457,63 @@ export function slidesFromLlmJson(raw: string): Slide[] | null {
   return slideDeckFromLlmJson(raw)?.slides ?? null;
 }
 
+function slideHasImageSrc(slide: Slide): boolean {
+  return Boolean(slide.image?.src?.trim() || slide.body.some((block) => block.kind === 'image' && block.src.trim()));
+}
+
+function firstSourceImage(slide: Slide): SlideImageSpec | undefined {
+  const src = slide.image?.src?.trim();
+  if (src) return { ...slide.image, src };
+  const block = slide.body.find((item): item is Extract<SlideBlock, { kind: 'image' }> => item.kind === 'image');
+  return block?.src.trim() ? { src: block.src.trim(), alt: block.alt, kind: 'source', role: 'support' } : undefined;
+}
+
+function sourceIndexFromId(id: string): number | undefined {
+  const match = id.trim().match(/^S(\d+)$/i);
+  if (!match) return undefined;
+  const index = Number.parseInt(match[1], 10) - 1;
+  return Number.isFinite(index) && index >= 0 ? index : undefined;
+}
+
+/**
+ * AI JSON 경로가 성공하더라도 source-only PPTX 내보내기에서는 원본 Markdown 이미지가
+ * 사라지면 안 된다. LLM이 이미지 src를 직접 복사하지 못한 경우 원본 파서 결과에서
+ * sourceIds 또는 같은 순번의 이미지 src를 결정론적으로 보강한다.
+ */
+export function preserveSourceImagesForPptx(slides: Slide[], sourceSlides: Slide[]): Slide[] {
+  if (!sourceSlides.some(slideHasImageSrc)) return slides;
+  const usedSourceIndexes = new Set<number>();
+  const takeImage = (sourceIndex: number | undefined): SlideImageSpec | undefined => {
+    if (sourceIndex === undefined || sourceIndex < 0 || sourceIndex >= sourceSlides.length || usedSourceIndexes.has(sourceIndex)) {
+      return undefined;
+    }
+    const image = firstSourceImage(sourceSlides[sourceIndex]);
+    if (!image) return undefined;
+    usedSourceIndexes.add(sourceIndex);
+    return image;
+  };
+
+  return slides.map((slide, slideIndex) => {
+    if (slideHasImageSrc(slide)) return slide;
+    let image: SlideImageSpec | undefined;
+    for (const sourceId of slide.sourceIds ?? []) {
+      image = takeImage(sourceIndexFromId(sourceId));
+      if (image) break;
+    }
+    image ??= takeImage(slideIndex);
+    if (!image) return slide;
+    return {
+      ...slide,
+      image: {
+        ...slide.image,
+        ...image,
+        src: image.src,
+        alt: image.alt ?? slide.image?.alt ?? slide.title,
+      },
+    };
+  });
+}
+
 /** slide-level 산정 — 내용이 바로 뒤따르는 최상위(가장 작은 번호) 헤딩 레벨. */
 function computeSlideLevel(lines: Line[]): number {
   let best = 7;

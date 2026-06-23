@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { markdownToSlides, parseInline, slideDeckFromLlmJson, slidesFromLlmJson } from './markdownToSlides';
+import {
+  markdownToSlides,
+  parseInline,
+  preserveSourceImagesForPptx,
+  slideDeckFromLlmJson,
+  slidesFromLlmJson,
+} from './markdownToSlides';
 
 describe('markdownToSlides — 분할 규칙', () => {
   it('수평선(---) 으로 슬라이드를 나눈다', () => {
@@ -263,6 +269,20 @@ describe('slidesFromLlmJson', () => {
     });
     const slides = slidesFromLlmJson(raw);
     expect(slides?.[0].image?.sourcePreference).toBe('none');
+  });
+
+  it('source-only PPTX 경로에서 원본 Markdown 이미지 src를 보강', () => {
+    const sourceSlides = markdownToSlides(['# Visual evidence', '![diagram](assets/diagram.png)', 'supporting text'].join('\n'));
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [{ title: 'Visual evidence', layout: 'content', sourceIds: ['S1'], bullets: ['supporting text'] }],
+      }),
+    );
+
+    const merged = preserveSourceImagesForPptx(aiSlides ?? [], sourceSlides);
+
+    expect(merged[0].image?.src).toBe('assets/diagram.png');
+    expect(merged[0].image?.alt).toBe('diagram');
   });
 
   it('완전 비 JSON 은 null', () => {

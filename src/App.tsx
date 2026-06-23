@@ -14,7 +14,7 @@ import { GanttView } from './components/GanttView';
 import { SlideshowView } from './components/SlideshowView';
 import { getSlideshowSettings, setSlideshowSettings as persistSlideshowSettings, type SlideshowSettings } from './lib/slideSplit';
 import { applySlideDesignOptions, BUILTIN_SLIDE_THEMES, DEFAULT_SLIDE_THEME, getSlideTheme, type SlideExportOptions } from './lib/slideTheme';
-import { clampMarkdownSlideDraft, PPTX_MAX_SLIDES } from './lib/slideLimits';
+import { clampMarkdownSlideDraft, PPTX_MAX_SLIDES, slideImagePolicyMode } from './lib/slideLimits';
 import { markMindPptxDesignRulesText } from './lib/pptxDesignSystem';
 import { Toolbar, EditableFileName, PaneHeader, ViewMode, PaneView, EDITABLE_VIEWS, isPaneView } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
@@ -572,7 +572,7 @@ function App() {
       const [
         { save },
         { invoke },
-        { markdownToSlides, slideDeckFromLlmJson },
+        { markdownToSlides, preserveSourceImagesForPptx, slideDeckFromLlmJson },
         { buildPptx },
         { normalizeSlidesForPptx, validateSlideDeck, summarizeSlideIssues },
         { resolveSlideAssets },
@@ -628,6 +628,9 @@ function App() {
         console.warn('[export_pptx] AI 응답 파싱 실패, 규칙 기반 안전망으로 폴백. 원문:', raw);
         alert('AI 응답을 해석하지 못해 기본 레이아웃으로 저장합니다.\n(개발자 콘솔에 원문이 로깅되었습니다)');
         slides = markdownToSlides(content);
+      }
+      if (slideImagePolicyMode(pptxOptions.imagePolicy) === 'sourceOnly') {
+        slides = preserveSourceImagesForPptx(slides, markdownToSlides(content));
       }
 
       pushPptxProgressStep(jobId, '📊 슬라이드 레이아웃 검증 중...', undefined, 'pptx-layout-qa');

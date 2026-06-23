@@ -79,6 +79,9 @@ const SLIDES_PLAN_MAX_TOKENS: u32 = 12000;
 const SLIDES_TWO_PASS_SECTION_THRESHOLD: usize = 28;
 const SLIDES_TWO_PASS_SLIDE_THRESHOLD: usize = 24;
 const SLIDE_MARKDOWN_DRAFT_MAX_TOKENS: u32 = 30000;
+const SOURCE_MAP_BUDGET: usize = 18000;
+const SOURCE_MAP_MAX_SECTIONS: usize = 90;
+const SOURCE_MAP_CHUNK_CHARS: usize = 1100;
 
 const SLIDES_PLAN_SYSTEM: &str = concat!(
     "You are a deck planning agent. Build a grounded presentation plan from a Markdown source map. ",
@@ -97,14 +100,14 @@ const SLIDES_SYSTEM: &str = concat!(
     "You are a slide manuscript agent, not a visual renderer. Convert a grounded source map or deck plan into final slide JSON. ",
     "Output STRICT minified JSON only (no prose, no code fences, no markdown) of the form: {\"master\":{...},\"slides\":[...]}. The top-level master object is optional. ",
     "Allowed layout values: \"title\", \"content\", \"section\", \"two-column\", \"image-focus\", \"quote\", \"stat\", \"comparison\", \"timeline\". ",
-    "A slide may include: title:string, layout:string, importance:number(0-100), importanceReason:string, sourceIds:string[], bullets:string[], blocks:[{kind:\"text\"|\"bullet\"|\"subhead\",text:string,level?:number}], columns:[[string|{kind,text,level?}]], quote:{text,attribution?}, stat:{value,label?,context?}, image:{prompt?,query?,entity?,role?,kind?,alt?,aspect?,style?,sourcePreference?,licenseStrictness?}, source:{headingLevel?:number,sectionPath?:string[]}, notes:string. ",
+    "A slide may include: title:string, layout:string, importance:number(0-100), importanceReason:string, sourceIds:string[], bullets:string[], blocks:[{kind:\"text\"|\"bullet\"|\"subhead\",text:string,level?:number}], columns:[[string|{kind,text,level?}]], quote:{text,attribution?}, stat:{value,label?,context?}, image:{src?,prompt?,query?,entity?,role?,kind?,alt?,aspect?,style?,sourcePreference?,licenseStrictness?}, source:{headingLevel?:number,sectionPath?:string[]}, notes:string. ",
     "Never output more than 32 slides. Use the slide count target as a soft target inside that hard limit. ",
     "Optional master may include only deck-wide chrome policies for slideNumber, footer, or date, using enabled, includeOn(title/content/section), position(bottom-left/bottom-center/bottom-right), style(minimal/muted/accent/inverse), and short footer/date text. ",
     "Follow the deck plan when provided; otherwise plan internally from the source map. Do not flatten the document into a list. Each slide must express one clear message and cite its source through source.headingLevel and source.sectionPath. ",
     "Use slide titles rewritten for presentation impact when useful, but keep them faithful to the source. ",
     "Use \"section\" for major dividers, \"two-column\"/\"comparison\" for parallel ideas, \"stat\" for one important number, \"quote\" for a strong cited sentence, and \"image-focus\" only when an image asset would materially help. ",
     "For each slide, assign importance based on deck role: cover, conclusion, executive recommendation, core claim, and key evidence should be high; ordinary supporting details should be lower. ",
-    "For image needs, output image intent only; do not embed URLs or base64. Use query/entity for stock or logo retrieval. Use prompt for generated images, and make it a real image-generation prompt, not a search query: describe subject, composition, mood, style, and constraints. role must be among cover/hero/support/logo/icon/background, aspect such as 16:9 or 4:3, sourcePreference among auto/stock/logo/generated/none, and licenseStrictness among presentation/open/internal-only. ",
+    "For image needs, output image intent only; do not embed new external URLs or base64. If a source section includes an existing Markdown image path, you may copy that exact path into image.src to preserve a source image, especially when image policy is source images only. Otherwise use query/entity for stock or logo retrieval. Use prompt for generated images, and make it a real image-generation prompt, not a search query: describe subject, composition, mood, style, and constraints. role must be among cover/hero/support/logo/icon/background, aspect such as 16:9 or 4:3, sourcePreference among auto/stock/logo/generated/none, and licenseStrictness among presentation/open/internal-only. ",
     "When the image policy asks to actively add visuals, do not reserve images only for cover or section slides. Also add ambient or supporting visual intent to spacious body slides, sparse quote/stat slides, and concept slides where an image would improve atmosphere or comprehension. ",
     "For slides with multiple local topics, use blocks with explicit {kind:\"subhead\"} group labels followed by their related bullet/text blocks; never run separate subtopics together as one bullet list. Prefer splitting slides with more than three subhead groups. ",
     "Layout capacity rules: title slides need title plus at most two short support lines; content slides need at most seven short bullets; two-column/comparison slides need two balanced columns; stat slides need exactly one headline number; quote slides need one concise quotation; tables and code require short summaries when they would dominate the page. ",
@@ -435,6 +438,18 @@ fn source_signals(content: &str) -> String {
     }
 }
 
+fn source_excerpt_chunks(content: &str, max_chars: usize) -> Vec<String> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let chars = trimmed.chars().collect::<Vec<_>>();
+    chars
+        .chunks(max_chars)
+        .map(|chunk| chunk.iter().collect::<String>())
+        .collect()
+}
+
 fn source_map_prompt(sections: &[MarkdownSourceSection]) -> String {
     if sections.is_empty() {
         return String::new();
@@ -443,8 +458,8 @@ fn source_map_prompt(sections: &[MarkdownSourceSection]) -> String {
         "<source_sections>".to_string(),
         "Use these source IDs for planning and final slides. Every non-cover slide should cite one or more source IDs in the plan.".to_string(),
     ];
-    let mut budget = 18000usize;
-    for section in sections.iter().take(90) {
+    let mut budget = SOURCE_MAP_BUDGET;
+    for section in sections.iter().take(SOURCE_MAP_MAX_SECTIONS) {
         if budget == 0 {
             break;
         }
@@ -452,33 +467,43 @@ fn source_map_prompt(sections: &[MarkdownSourceSection]) -> String {
         if excerpt.is_empty() {
             excerpt = section.title.clone();
         }
-        excerpt = short_text(&excerpt, 1100);
+        let chunks = source_excerpt_chunks(&excerpt, SOURCE_MAP_CHUNK_CHARS);
+        let chunk_count = chunks.len().max(1);
         let path = if section.section_path.is_empty() {
             "(root)".to_string()
         } else {
             section.section_path.join(" / ")
         };
-        let entry = format!(
-            "\n[{}]\nheading: H{} {}\npath: {}\nlines: {}-{}\nsignals: {}\nexcerpt:\n{}\n",
-            section.id,
-            section.level,
-            section.title,
-            path,
-            section.line_start,
-            section.line_end,
-            source_signals(&section.content),
-            excerpt
-        );
-        if entry.len() > budget {
-            break;
+        for (chunk_index, chunk) in chunks.into_iter().enumerate() {
+            let excerpt_label = if chunk_count > 1 {
+                format!("excerpt part {}/{}", chunk_index + 1, chunk_count)
+            } else {
+                "excerpt".to_string()
+            };
+            let entry = format!(
+                "\n[{}]\nheading: H{} {}\npath: {}\nlines: {}-{}\nsignals: {}\n{}:\n{}\n",
+                section.id,
+                section.level,
+                section.title,
+                path,
+                section.line_start,
+                section.line_end,
+                source_signals(&section.content),
+                excerpt_label,
+                chunk
+            );
+            if entry.len() > budget {
+                budget = 0;
+                break;
+            }
+            budget -= entry.len();
+            out.push(entry);
         }
-        budget -= entry.len();
-        out.push(entry);
     }
-    if sections.len() > 90 {
+    if sections.len() > SOURCE_MAP_MAX_SECTIONS {
         out.push(format!(
             "\n... {} additional source sections omitted",
-            sections.len() - 90
+            sections.len() - SOURCE_MAP_MAX_SECTIONS
         ));
     }
     out.push("</source_sections>".to_string());
@@ -1339,6 +1364,19 @@ mod tests {
         assert!(prompt.contains("path: Report"));
         assert!(prompt.contains("signals: table,image,quote,stat"));
         assert!(prompt.contains("73%"));
+    }
+
+    #[test]
+    fn source_map_prompt_chunks_long_sections_instead_of_dropping_tail() {
+        let md = format!(
+            "# Long Section\n{}\nTAIL_EVIDENCE_SHOULD_REMAIN",
+            "중요한 배경 설명 ".repeat(180)
+        );
+        let sections = markdown_source_sections(&md);
+        let prompt = source_map_prompt(&sections);
+
+        assert!(prompt.contains("excerpt part 2/"));
+        assert!(prompt.contains("TAIL_EVIDENCE_SHOULD_REMAIN"));
     }
 
     #[test]
