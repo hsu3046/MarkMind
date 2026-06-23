@@ -401,6 +401,7 @@
 .step-model-detail {
     display: inline-flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 6px;
     min-width: 0;
     word-break: normal;
@@ -429,6 +430,12 @@
     color: var(--accent, #3b82f6);
     font-size: 10px;
     font-weight: 600;
+}
+.step-model-extra {
+    min-width: 0;
+    color: var(--text-tertiary, var(--text-secondary));
+    font-weight: 400;
+    overflow-wrap: anywhere;
 }
 /* step 자체에 progress bar (heartbeat row) — % 시각화 */
 .step-progress-bar {

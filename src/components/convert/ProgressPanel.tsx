@@ -11,7 +11,7 @@ import { AI_CATALOG, getSelectionDisplay } from '../../services/aiModelConfig';
 import {
     Upload, Clock, AudioLines, CheckCircle2, Binoculars, Notebook, Scissors,
     AlertTriangle, MessagesSquare, FastForward, Combine, Waypoints,
-    HardDriveDownload, Search, BarChart3, FileText, Save, Loader2,
+    HardDriveDownload, Search, BarChart3, FileText, Save, Loader2, Image as ImageIcon,
 } from 'lucide-react';
 
 interface ProgressPanelProps {
@@ -46,6 +46,7 @@ function iconFor(step: string): { icon: ReactNode; text: string } {
         { pattern: /^🔍\s*/, icon: <Search size={14} /> },
         { pattern: /^📊\s*/, icon: <BarChart3 size={14} /> },
         { pattern: /^📑\s*/, icon: <FileText size={14} /> },
+        { pattern: /^🖼️?\s*/, icon: <ImageIcon size={14} /> },
         { pattern: /^💾\s*/, icon: <Save size={14} /> },
         { pattern: /^📡\s*/, icon: <Upload size={14} /> },
         { pattern: /^⏳\s*/, icon: <Loader2 size={14} className="spinning" /> },
@@ -71,6 +72,7 @@ function ModelDetail({ step, mode }: { step: ProgressStep; mode: 'all' | 'runnin
             {display.logo && <img src={display.logo} alt="" className="step-model-logo" />}
             <span className="step-model-label">{display.label}</span>
             {display.sub && <span className="step-model-sub">구독</span>}
+            {step.detail && <span className="step-model-extra">{step.detail}</span>}
         </div>
     );
 }

@@ -356,6 +356,7 @@ pub fn run() {
             converters::commands::generate_image_openai,
             converters::commands::generate_image_codex,
             converters::commands::generate_image_grok,
+            converters::slide_assets::resolve_stock_slide_asset,
             converters::commands::extract_speakers,
             converters::commands::rename_speakers,
             converters::commands::merge_md_files,

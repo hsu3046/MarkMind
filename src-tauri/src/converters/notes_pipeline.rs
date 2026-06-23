@@ -195,13 +195,14 @@ pub async fn run(
                         &model,
                         None,
                         &prompt,
+                        None,
                     )
                     .await?
                 }
                 ClaudeAuthMode::ApiKey => {
                     let api_key = get_key(Provider::Openai)?
                         .ok_or(ConverterError::MissingApiKey("OpenAI"))?;
-                    openai_api::generate_text(&api_key, &model, None, &prompt).await?
+                    openai_api::generate_text(&api_key, &model, None, &prompt, None).await?
                 }
             };
             emitter.emit(

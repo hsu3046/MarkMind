@@ -4,6 +4,15 @@ import PptxGenJS from 'pptxgenjs';
 import type { Slide, SlideBlock, InlineSpan } from './markdownToSlides';
 import { DEFAULT_SLIDE_THEME, type SlideTheme } from './slideTheme';
 import { pptxFontFaceForText } from './pptxDesignSystem';
+import {
+  masterSpecIncludes,
+  resolveSlideMasterSpec,
+  type MasterElementStyle,
+  type MasterTextPosition,
+  type SlideMasterRole,
+  type SlideMasterSpec,
+  type SlideMasterTextSpec,
+} from './slideMaster';
 
 const PAGE_W = 13.333;
 const PAGE_H = 7.5;
@@ -30,6 +39,8 @@ const MIME: Record<string, string> = {
   bmp: 'image/bmp',
 };
 
+type MasterObject = NonNullable<PptxGenJS.SlideMasterProps['objects']>[number];
+
 const flattenText = (blocks: SlideBlock[]) =>
   blocks
     .map((b) => {
@@ -42,26 +53,102 @@ const flattenText = (blocks: SlideBlock[]) =>
     .filter(Boolean)
     .join(' ');
 
-function defineMasters(pptx: Pptx, theme: SlideTheme) {
-  const footer = { x: PAGE_W - 0.9, y: 7.06, color: theme.palette.muted, fontSize: 9 };
+function masterTextColor(theme: SlideTheme, role: SlideMasterRole, style: MasterElementStyle = 'muted'): string {
+  if (style === 'accent') return role === 'content' ? theme.palette.accent : theme.palette.accent2;
+  if (style === 'inverse') return role === 'content' ? theme.palette.title : theme.palette.inverseText;
+  if (role === 'content') return style === 'minimal' ? theme.palette.border : theme.palette.muted;
+  return style === 'minimal' ? theme.palette.accent : theme.palette.inverseText;
+}
+
+function masterTextPlacement(
+  position: MasterTextPosition = 'bottom-right',
+  textWidth = 0.9,
+  marginX = 0.72,
+): { x: number; y: number; w: number; h: number; align: 'left' | 'center' | 'right' } {
+  const w = Math.min(4.4, Math.max(0.72, textWidth));
+  if (position === 'bottom-left') return { x: marginX, y: 7.06, w, h: 0.24, align: 'left' };
+  if (position === 'bottom-center') return { x: (PAGE_W - w) / 2, y: 7.06, w, h: 0.24, align: 'center' };
+  return { x: PAGE_W - marginX - w, y: 7.06, w, h: 0.24, align: 'right' };
+}
+
+function estimatedMasterTextWidth(text: string): number {
+  return Math.min(4.4, Math.max(1.2, Array.from(text).length * 0.078));
+}
+
+function slideNumberProps(
+  spec: SlideMasterTextSpec | undefined,
+  role: SlideMasterRole,
+  theme: SlideTheme,
+): PptxGenJS.SlideNumberProps | undefined {
+  if (!masterSpecIncludes(spec, role)) return undefined;
+  return {
+    ...masterTextPlacement(spec?.position, 0.74, theme.spacing.marginX),
+    fontFace: fontFaceForTheme('9', theme),
+    fontSize: 9,
+    color: masterTextColor(theme, role, spec?.style),
+    margin: 0,
+  };
+}
+
+function masterTextObject(
+  text: string | undefined,
+  spec: (SlideMasterTextSpec & { text?: string }) | undefined,
+  role: SlideMasterRole,
+  theme: SlideTheme,
+): MasterObject | undefined {
+  if (!text || !masterSpecIncludes(spec, role)) return undefined;
+  const placement = masterTextPlacement(spec?.position, estimatedMasterTextWidth(text), theme.spacing.marginX);
+  return {
+    text: {
+      text,
+      options: {
+        ...placement,
+        fontFace: fontFaceForTheme(text, theme),
+        fontSize: 9,
+        color: masterTextColor(theme, role, spec?.style),
+        margin: 0,
+        fit: 'shrink',
+      },
+    },
+  };
+}
+
+function masterChromeObjects(
+  theme: SlideTheme,
+  role: SlideMasterRole,
+  inverse: boolean,
+  spec: SlideMasterSpec,
+): MasterObject[] {
+  const objects: MasterObject[] = motifObjects(theme, inverse);
+  const footer = masterTextObject(spec.footer?.text, spec.footer, role, theme);
+  const date = masterTextObject(spec.date?.text, spec.date, role, theme);
+  if (footer) objects.push(footer);
+  if (date) objects.push(date);
+  return objects;
+}
+
+function defineMasters(pptx: Pptx, theme: SlideTheme, inputMasterSpec?: SlideMasterSpec) {
+  const masterSpec = resolveSlideMasterSpec(inputMasterSpec);
   pptx.defineSlideMaster({
     title: 'TITLE_SLIDE',
     background: { color: theme.palette.title },
     objects: [
       { rect: { x: 0, y: 0, w: PAGE_W, h: PAGE_H, fill: { color: theme.palette.title }, line: { color: theme.palette.title } } },
-      ...motifObjects(theme, true),
+      ...masterChromeObjects(theme, 'title', true, masterSpec),
     ],
+    slideNumber: slideNumberProps(masterSpec.slideNumber, 'title', theme),
   });
   pptx.defineSlideMaster({
     title: 'CONTENT',
     background: { color: theme.palette.bg },
-    objects: motifObjects(theme, false),
-    slideNumber: footer,
+    objects: masterChromeObjects(theme, 'content', false, masterSpec),
+    slideNumber: slideNumberProps(masterSpec.slideNumber, 'content', theme),
   });
   pptx.defineSlideMaster({
     title: 'SECTION',
     background: { color: theme.palette.title },
-    objects: motifObjects(theme, true),
+    objects: masterChromeObjects(theme, 'section', true, masterSpec),
+    slideNumber: slideNumberProps(masterSpec.slideNumber, 'section', theme),
   });
 }
 
@@ -97,6 +184,7 @@ function spansToRich(
     color?: string;
     lineSpacingMultiple?: number;
     paraSpaceAfter?: number;
+    paraSpaceBefore?: number;
   },
 ) {
   return spans.map((s, idx) => ({
@@ -114,6 +202,7 @@ function spansToRich(
         : {}),
       lineSpacingMultiple: base.lineSpacingMultiple,
       paraSpaceAfter: base.paraSpaceAfter,
+      paraSpaceBefore: base.paraSpaceBefore,
       fontSize: base.fontSize,
       color: base.color,
     },
@@ -140,6 +229,67 @@ async function resolveImage(
     console.warn('[buildPptx] 이미지 로드 실패, 건너뜀:', src, e);
     return null;
   }
+}
+
+function slideImageSrc(slide: Slide): string | undefined {
+  return slide.image?.src?.trim() || undefined;
+}
+
+async function addSlideImage(
+  s: PptxSlide,
+  slide: Slide,
+  baseDir: string | undefined,
+  box: { x: number; y: number; w: number; h: number },
+  sizing: 'contain' | 'cover' = 'contain',
+): Promise<boolean> {
+  const src = slideImageSrc(slide);
+  if (!src) return false;
+  const img = await resolveImage(src, baseDir);
+  if (!img) return false;
+  s.addImage({
+    ...img,
+    ...box,
+    sizing: { type: sizing, w: box.w, h: box.h },
+    altText: slide.image?.alt || slide.title,
+  });
+  return true;
+}
+
+async function addSlideBackgroundImage(
+  s: PptxSlide,
+  slide: Slide,
+  theme: SlideTheme,
+  baseDir?: string,
+): Promise<boolean> {
+  const added = await addSlideImage(s, slide, baseDir, { x: 0, y: 0, w: PAGE_W, h: PAGE_H }, 'cover');
+  if (!added) return false;
+  s.addShape(RECT_SHAPE, {
+    x: 0,
+    y: 0,
+    w: PAGE_W,
+    h: PAGE_H,
+    fill: { color: theme.palette.title, transparency: 18 },
+    line: { color: theme.palette.title, transparency: 100 },
+  });
+  return true;
+}
+
+async function addSlideImagePanel(
+  s: PptxSlide,
+  slide: Slide,
+  theme: SlideTheme,
+  baseDir: string | undefined,
+  box: { x: number; y: number; w: number; h: number },
+  sizing: 'contain' | 'cover' = 'cover',
+): Promise<boolean> {
+  const added = await addSlideImage(s, slide, baseDir, box, sizing);
+  if (!added) return false;
+  s.addShape(RECT_SHAPE, {
+    ...box,
+    fill: { color: theme.palette.surface, transparency: 100 },
+    line: { color: theme.palette.border, transparency: 12, width: 0.7 },
+  });
+  return true;
 }
 
 function headingLevelFor(slide: Slide): number {
@@ -203,6 +353,7 @@ type BlockRenderProfile = {
   bodyFontSize: number;
   lineSpacingMultiple: number;
   paraSpaceAfter: number;
+  subheadSpaceBefore: number;
   gap: number;
 };
 
@@ -253,6 +404,7 @@ function defaultBlockProfile(theme: SlideTheme): BlockRenderProfile {
     bodyFontSize: theme.typeScale.body,
     lineSpacingMultiple: 1.12,
     paraSpaceAfter: 3,
+    subheadSpaceBefore: 10,
     gap: theme.spacing.gap,
   };
 }
@@ -264,14 +416,15 @@ function estimateTextRunHeight(
   profile: BlockRenderProfile,
 ): number {
   if (blocks.length === 0) return 0;
-  const height = blocks.reduce((sum, block) => {
+  const height = blocks.reduce((sum, block, idx) => {
     const fontSize = fontSizeForBlock(block, theme, profile);
     const indent = block.kind === 'bullet' ? 1 + block.indent : 0;
     const lines = estimatedLineCount(blockText(block), boxW, fontSize, indent);
     const lineHeight = (fontSize * profile.lineSpacingMultiple) / 72;
     const paragraphBreath = block.kind === 'subhead' ? 0.05 : 0.015;
+    const groupSpace = block.kind === 'subhead' && idx > 0 ? profile.subheadSpaceBefore / 72 : 0;
     const paragraphSpace = block === blocks[blocks.length - 1] ? 0 : profile.paraSpaceAfter / 72;
-    return sum + Math.max(0.24, lines * lineHeight) + paragraphSpace + paragraphBreath;
+    return sum + groupSpace + Math.max(0.24, lines * lineHeight) + paragraphSpace + paragraphBreath;
   }, 0);
   return Math.max(0.46, height + 0.02);
 }
@@ -335,6 +488,7 @@ function blockRenderProfile(blocks: SlideBlock[], theme: SlideTheme, box: { w: n
         bodyFontSize,
         lineSpacingMultiple: clamp(1.14 + growth * 0.014, 1.16, 1.34),
         paraSpaceAfter: clamp(4 + growth * 1.35, 5, 18),
+        subheadSpaceBefore: clamp(11 + growth * 1.25, 12, 20),
         gap: Math.min(0.34, theme.spacing.gap + growth * 0.012),
       };
       const candidateUsage = estimateBlocksHeight(blocks, theme, box.w, candidate) / Math.max(1, box.h);
@@ -351,6 +505,7 @@ function blockRenderProfile(blocks: SlideBlock[], theme: SlideTheme, box: { w: n
       bodyFontSize: clamp(theme.typeScale.body - 2, 12, theme.typeScale.body),
       lineSpacingMultiple: 1.04,
       paraSpaceAfter: 1,
+      subheadSpaceBefore: 6,
       gap: Math.max(0.08, theme.spacing.gap - 0.04),
     };
   }
@@ -359,6 +514,7 @@ function blockRenderProfile(blocks: SlideBlock[], theme: SlideTheme, box: { w: n
       bodyFontSize: clamp(theme.typeScale.body - 1, 13, theme.typeScale.body),
       lineSpacingMultiple: 1.08,
       paraSpaceAfter: 2,
+      subheadSpaceBefore: 8,
       gap: Math.max(0.1, theme.spacing.gap - 0.02),
     };
   }
@@ -383,8 +539,9 @@ function addTitle(s: PptxSlide, slide: Slide, theme: SlideTheme, inverse = false
   });
 }
 
-function renderTitleSlide(pptx: Pptx, slide: Slide, theme: SlideTheme) {
+async function renderTitleSlide(pptx: Pptx, slide: Slide, theme: SlideTheme, baseDir?: string) {
   const s = pptx.addSlide({ masterName: 'TITLE_SLIDE' });
+  await addSlideBackgroundImage(s, slide, theme, baseDir);
   s.addText(slide.title || 'Untitled', {
     x: 0.8,
     y: 2.28,
@@ -417,8 +574,9 @@ function renderTitleSlide(pptx: Pptx, slide: Slide, theme: SlideTheme) {
   if (slide.notes) s.addNotes(slide.notes);
 }
 
-function renderSectionSlide(pptx: Pptx, slide: Slide, theme: SlideTheme) {
+async function renderSectionSlide(pptx: Pptx, slide: Slide, theme: SlideTheme, baseDir?: string) {
   const s = pptx.addSlide({ masterName: 'SECTION' });
+  await addSlideBackgroundImage(s, slide, theme, baseDir);
   addSectionTrail(s, slide, theme, true);
   const level = headingLevelFor(slide);
   s.addText(slide.title || flattenText(slide.body) || 'Section', {
@@ -468,7 +626,8 @@ async function renderBlocks(
   const flushText = () => {
     if (textRun.length === 0) return;
     const rich: ReturnType<typeof spansToRich> = [];
-    for (const b of textRun) {
+    for (let idx = 0; idx < textRun.length; idx++) {
+      const b = textRun[idx];
       if (b.kind === 'subhead') {
         rich.push(
           ...spansToRich([{ text: b.text, bold: true }], theme, {
@@ -476,6 +635,7 @@ async function renderBlocks(
             fontSize: fontSizeForBlock(b, theme, profile),
             color: theme.palette.accent,
             lineSpacingMultiple: profile.lineSpacingMultiple,
+            paraSpaceBefore: idx > 0 ? profile.subheadSpaceBefore : undefined,
             paraSpaceAfter: Math.max(profile.paraSpaceAfter + 1, 4),
           }),
         );
@@ -595,14 +755,26 @@ async function renderContentSlide(pptx: Pptx, slide: Slide, theme: SlideTheme, b
   const s = pptx.addSlide({ masterName: 'CONTENT' });
   if (slide.title) addTitle(s, slide, theme);
   const bodyTop = bodyTopFor(slide, theme);
+  const hasResolvedImage = Boolean(slideImageSrc(slide));
+  const totalX = theme.spacing.marginX;
+  const totalW = PAGE_W - theme.spacing.marginX * 2;
+  const imageW = hasResolvedImage ? Math.min(4.25, totalW * 0.38) : 0;
+  const imageGap = hasResolvedImage ? Math.max(0.34, theme.spacing.columnGap) : 0;
+  const imageBox = {
+    x: totalX + totalW - imageW,
+    y: bodyTop,
+    w: imageW,
+    h: theme.spacing.bodyBottom - bodyTop,
+  };
+  const imageAdded = hasResolvedImage ? await addSlideImage(s, slide, baseDir, imageBox, 'contain') : false;
   await renderBlocks(
     s,
     slide.body,
     theme,
     {
-      x: theme.spacing.marginX,
+      x: totalX,
       y: bodyTop,
-      w: PAGE_W - theme.spacing.marginX * 2,
+      w: imageAdded ? Math.max(3.8, totalW - imageW - imageGap) : totalW,
       h: theme.spacing.bodyBottom - bodyTop,
     },
     baseDir,
@@ -616,13 +788,24 @@ async function renderTwoColumnSlide(pptx: Pptx, slide: Slide, theme: SlideTheme,
   const x = theme.spacing.marginX;
   const y = bodyTopFor(slide, theme);
   const w = PAGE_W - x * 2;
-  const gap = Math.max(0.34, theme.spacing.columnGap);
-  const colW = (w - gap) / 2;
   const columns = slide.columns?.length ? slide.columns : [slide.body.slice(0, Math.ceil(slide.body.length / 2)), slide.body.slice(Math.ceil(slide.body.length / 2))];
   const cardPadX = 0.22;
   const cardPadY = 0.18;
   const cardY = y - 0.06;
   const maxCardH = Math.max(1.52, theme.spacing.bodyBottom - cardY);
+  const hasResolvedImage = Boolean(slideImageSrc(slide));
+  const imageW = hasResolvedImage ? Math.min(3.05, w * 0.28) : 0;
+  const imageGap = hasResolvedImage ? Math.max(0.34, theme.spacing.columnGap) : 0;
+  const imageBox = {
+    x: x + w - imageW,
+    y: cardY,
+    w: imageW,
+    h: maxCardH,
+  };
+  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'cover') : false;
+  const contentW = imageAdded ? w - imageW - imageGap : w;
+  const gap = Math.max(0.34, theme.spacing.columnGap);
+  const colW = (contentW - gap) / 2;
   const innerW = colW - cardPadX * 1.55;
   const maxInnerH = Math.max(0.9, maxCardH - cardPadY * 2);
   const leftProfile = blockRenderProfile(columns[0] ?? [], theme, { w: innerW, h: maxInnerH });
@@ -659,10 +842,23 @@ async function renderTwoColumnSlide(pptx: Pptx, slide: Slide, theme: SlideTheme,
   if (slide.notes) s.addNotes(slide.notes);
 }
 
-function renderQuoteSlide(pptx: Pptx, slide: Slide, theme: SlideTheme) {
+async function renderQuoteSlide(pptx: Pptx, slide: Slide, theme: SlideTheme, baseDir?: string) {
   const s = pptx.addSlide({ masterName: 'CONTENT' });
   addSectionTrail(s, slide, theme);
   const quote = slide.quote?.text || flattenText(slide.body) || slide.title;
+  const hasResolvedImage = Boolean(slideImageSrc(slide));
+  const imageW = hasResolvedImage ? 3.75 : 0;
+  const imageBox = {
+    x: PAGE_W - theme.spacing.marginX - imageW,
+    y: 1.16,
+    w: imageW,
+    h: 4.52,
+  };
+  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'cover') : false;
+  const quoteX = theme.spacing.marginX + 0.55;
+  const quoteW = imageAdded
+    ? Math.max(5.4, imageBox.x - quoteX - Math.max(0.42, theme.spacing.columnGap))
+    : PAGE_W - theme.spacing.marginX * 2 - 0.7;
   s.addText('“', {
     x: theme.spacing.marginX,
     y: 1.08,
@@ -674,9 +870,9 @@ function renderQuoteSlide(pptx: Pptx, slide: Slide, theme: SlideTheme) {
     margin: 0,
   });
   s.addText(quote, {
-    x: theme.spacing.marginX + 0.55,
+    x: quoteX,
     y: 1.75,
-    w: PAGE_W - theme.spacing.marginX * 2 - 0.7,
+    w: quoteW,
     h: 2.2,
     fontFace: fontFaceForTheme(quote, theme, 'heading'),
     fontSize: 28,
@@ -688,9 +884,9 @@ function renderQuoteSlide(pptx: Pptx, slide: Slide, theme: SlideTheme) {
   const attribution = slide.quote?.attribution || slide.title;
   if (attribution) {
     s.addText(attribution, {
-      x: theme.spacing.marginX + 0.6,
+      x: quoteX + 0.05,
       y: 4.24,
-      w: PAGE_W - 2.2,
+      w: quoteW,
       h: 0.45,
       fontFace: fontFaceForTheme(attribution, theme),
       fontSize: theme.typeScale.body,
@@ -701,14 +897,27 @@ function renderQuoteSlide(pptx: Pptx, slide: Slide, theme: SlideTheme) {
   if (slide.notes) s.addNotes(slide.notes);
 }
 
-function renderStatSlide(pptx: Pptx, slide: Slide, theme: SlideTheme) {
+async function renderStatSlide(pptx: Pptx, slide: Slide, theme: SlideTheme, baseDir?: string) {
   const s = pptx.addSlide({ masterName: 'CONTENT' });
   if (slide.title) addTitle(s, slide, theme);
   const stat = slide.stat;
+  const hasResolvedImage = Boolean(slideImageSrc(slide));
+  const imageW = hasResolvedImage ? 3.55 : 0;
+  const imageBox = {
+    x: PAGE_W - theme.spacing.marginX - imageW,
+    y: bodyTopFor(slide, theme),
+    w: imageW,
+    h: theme.spacing.bodyBottom - bodyTopFor(slide, theme),
+  };
+  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'cover') : false;
+  const textX = theme.spacing.marginX;
+  const textW = imageAdded
+    ? Math.max(5.5, imageBox.x - textX - Math.max(0.46, theme.spacing.columnGap))
+    : PAGE_W - theme.spacing.marginX * 2;
   s.addText(stat?.value || 'Key point', {
-    x: theme.spacing.marginX,
+    x: textX,
     y: 2.05,
-    w: PAGE_W - theme.spacing.marginX * 2,
+    w: textW,
     h: 1.25,
     fontFace: fontFaceForTheme(stat?.value || 'Key point', theme, 'heading'),
     fontSize: theme.typeScale.stat,
@@ -719,9 +928,9 @@ function renderStatSlide(pptx: Pptx, slide: Slide, theme: SlideTheme) {
   });
   const statLabel = stat?.label || flattenText(slide.body).slice(0, 140);
   s.addText(statLabel, {
-    x: theme.spacing.marginX + 0.05,
+    x: textX + 0.05,
     y: 3.45,
-    w: PAGE_W - theme.spacing.marginX * 2,
+    w: textW,
     h: 0.75,
     fontFace: fontFaceForTheme(statLabel, theme),
     fontSize: 20,
@@ -732,9 +941,9 @@ function renderStatSlide(pptx: Pptx, slide: Slide, theme: SlideTheme) {
   });
   if (stat?.context) {
     s.addText(stat.context, {
-      x: theme.spacing.marginX + 0.05,
+      x: textX + 0.05,
       y: 4.35,
-      w: PAGE_W - theme.spacing.marginX * 2 - 1.4,
+      w: Math.max(3.8, textW - 1.4),
       h: 0.8,
       fontFace: fontFaceForTheme(stat.context, theme),
       fontSize: theme.typeScale.body,
@@ -789,7 +998,7 @@ async function renderImageFocusSlide(pptx: Pptx, slide: Slide, theme: SlideTheme
 
 export async function buildPptx(
   slides: Slide[],
-  opts?: { title?: string; baseDir?: string; theme?: SlideTheme },
+  opts?: { title?: string; baseDir?: string; theme?: SlideTheme; masterSpec?: SlideMasterSpec },
 ): Promise<ArrayBuffer> {
   const theme = opts?.theme ?? DEFAULT_SLIDE_THEME;
   const pptx = new PptxGenJS();
@@ -797,14 +1006,14 @@ export async function buildPptx(
   pptx.layout = 'MM_16x9';
   pptx.author = 'MarkMind';
   if (opts?.title) pptx.title = opts.title;
-  defineMasters(pptx, theme);
+  defineMasters(pptx, theme, opts?.masterSpec);
 
   for (const slide of slides) {
-    if (slide.layout === 'title') renderTitleSlide(pptx, slide, theme);
-    else if (slide.layout === 'section') renderSectionSlide(pptx, slide, theme);
+    if (slide.layout === 'title') await renderTitleSlide(pptx, slide, theme, opts?.baseDir);
+    else if (slide.layout === 'section') await renderSectionSlide(pptx, slide, theme, opts?.baseDir);
     else if (slide.layout === 'two-column' || slide.layout === 'comparison') await renderTwoColumnSlide(pptx, slide, theme, opts?.baseDir);
-    else if (slide.layout === 'quote') renderQuoteSlide(pptx, slide, theme);
-    else if (slide.layout === 'stat') renderStatSlide(pptx, slide, theme);
+    else if (slide.layout === 'quote') await renderQuoteSlide(pptx, slide, theme, opts?.baseDir);
+    else if (slide.layout === 'stat') await renderStatSlide(pptx, slide, theme, opts?.baseDir);
     else if (slide.layout === 'image-focus') await renderImageFocusSlide(pptx, slide, theme, opts?.baseDir);
     else await renderContentSlide(pptx, slide, theme, opts?.baseDir);
   }

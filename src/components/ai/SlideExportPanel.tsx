@@ -64,7 +64,7 @@ const PPTX_LAYOUTS = [
 const IMAGE_POLICIES = [
   { value: 'use source images only; do not add new image intent', label: '원문만' },
   { value: 'add image intent only when it materially improves the slide', label: '필요시' },
-  { value: 'actively add visual image intent for cover, section, and concept slides', label: '적극 추가' },
+  { value: 'actively add ambient and supporting visuals to spacious body slides as well as cover and section slides', label: '적극 추가' },
 ];
 
 const MARGIN_OPTIONS = [

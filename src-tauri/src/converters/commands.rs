@@ -70,11 +70,14 @@ pub fn get_conversions_dir() -> String {
 // 마크다운을 슬라이드용으로 "재구성"해 과밀 슬라이드를 막는다(규칙 기반의 약점
 // 보완). 기존 converters 의 키체인 + LLM 클라이언트를 그대로 재사용한다.
 // 반환은 프론트가 파싱하는 슬라이드 JSON 문자열:
-//   { "slides": [ { "title", "layout", "bullets"/"blocks"/"columns", "notes"? } ] }
+//   { "master"?: { deck-wide chrome }, "slides": [ { "title", "layout", "bullets"/"blocks"/"columns", "notes"? } ] }
 
-// 출력 토큰 상한 — 큰 덱(50장+)도 잘리지 않도록 넉넉히. 생성한 만큼만 과금.
-const SLIDES_MAX_TOKENS: u32 = 32000;
+// 최종 슬라이드 JSON 출력 상한. 장수 추정으로 흔들지 않고 단순 고정값을 쓴다.
+const SLIDES_MAX_TOKENS: u32 = 16000;
+const SLIDES_MAX_COUNT: usize = 32;
 const SLIDES_PLAN_MAX_TOKENS: u32 = 12000;
+const SLIDES_TWO_PASS_SECTION_THRESHOLD: usize = 28;
+const SLIDES_TWO_PASS_SLIDE_THRESHOLD: usize = 24;
 const SLIDE_MARKDOWN_DRAFT_MAX_TOKENS: u32 = 30000;
 
 const SLIDES_PLAN_SYSTEM: &str = concat!(
@@ -87,23 +90,28 @@ const SLIDES_PLAN_SYSTEM: &str = concat!(
     "Treat layouts as schemas, not decoration: choose the layout whose rhetorical shape fits the message. ",
     "Use title/opening, section, and ending roles deliberately; avoid a chain of generic title-plus-bullets slides. ",
     "Plan for native editable PowerPoint output: keep each slide to about six visible content elements, leave whitespace, and keep text near 60 percent of the available visual capacity. ",
-    "Use the requested slide count as a target, not a reason to pad weak slides. Never invent facts."
+    "Use the requested slide count as a target, not a reason to pad weak slides. Never output more than 32 slides. Never invent facts."
 );
 
 const SLIDES_SYSTEM: &str = concat!(
-    "You are a slide manuscript agent, not a visual renderer. Convert a grounded deck plan into final slide JSON. ",
-    "Output STRICT minified JSON only (no prose, no code fences, no markdown) of the form: {\"slides\":[...]}. ",
+    "You are a slide manuscript agent, not a visual renderer. Convert a grounded source map or deck plan into final slide JSON. ",
+    "Output STRICT minified JSON only (no prose, no code fences, no markdown) of the form: {\"master\":{...},\"slides\":[...]}. The top-level master object is optional. ",
     "Allowed layout values: \"title\", \"content\", \"section\", \"two-column\", \"image-focus\", \"quote\", \"stat\", \"comparison\", \"timeline\". ",
-    "A slide may include: title:string, layout:string, sourceIds:string[], bullets:string[], blocks:[{kind:\"text\"|\"bullet\"|\"subhead\",text:string,level?:number}], columns:[[string|{kind,text,level?}]], quote:{text,attribution?}, stat:{value,label?,context?}, image:{prompt?,kind?,alt?}, source:{headingLevel?:number,sectionPath?:string[]}, notes:string. ",
-    "Follow the deck plan. Do not flatten the document into a list. Each slide must express one clear message and cite its source through source.headingLevel and source.sectionPath. ",
+    "A slide may include: title:string, layout:string, sourceIds:string[], bullets:string[], blocks:[{kind:\"text\"|\"bullet\"|\"subhead\",text:string,level?:number}], columns:[[string|{kind,text,level?}]], quote:{text,attribution?}, stat:{value,label?,context?}, image:{prompt?,query?,entity?,role?,kind?,alt?,aspect?,style?,sourcePreference?,licenseStrictness?}, source:{headingLevel?:number,sectionPath?:string[]}, notes:string. ",
+    "Never output more than 32 slides. Use the slide count target as a soft target inside that hard limit. ",
+    "Optional master may include only deck-wide chrome policies for slideNumber, footer, or date, using enabled, includeOn(title/content/section), position(bottom-left/bottom-center/bottom-right), style(minimal/muted/accent/inverse), and short footer/date text. ",
+    "Follow the deck plan when provided; otherwise plan internally from the source map. Do not flatten the document into a list. Each slide must express one clear message and cite its source through source.headingLevel and source.sectionPath. ",
     "Use slide titles rewritten for presentation impact when useful, but keep them faithful to the source. ",
-    "Use \"section\" for major dividers, \"two-column\"/\"comparison\" for parallel ideas, \"stat\" for one important number, \"quote\" for a strong cited sentence, and \"image-focus\" only when an image prompt would materially help. ",
+    "Use \"section\" for major dividers, \"two-column\"/\"comparison\" for parallel ideas, \"stat\" for one important number, \"quote\" for a strong cited sentence, and \"image-focus\" only when an image asset would materially help. ",
+    "For image needs, output image intent only; do not embed URLs or base64. Prefer query/entity for stock or logo retrieval, prompt for generated fallback, role among cover/hero/support/logo/icon/background, aspect such as 16:9 or 4:3, sourcePreference among auto/stock/logo/generated/none, and licenseStrictness among presentation/open/internal-only. ",
+    "When the image policy asks to actively add visuals, do not reserve images only for cover or section slides. Also add ambient or supporting visual intent to spacious body slides, sparse quote/stat slides, and concept slides where an image would improve atmosphere or comprehension. ",
+    "For slides with multiple local topics, use blocks with explicit {kind:\"subhead\"} group labels followed by their related bullet/text blocks; never run separate subtopics together as one bullet list. Prefer splitting slides with more than three subhead groups. ",
     "Layout capacity rules: title slides need title plus at most two short support lines; content slides need at most seven short bullets; two-column/comparison slides need two balanced columns; stat slides need exactly one headline number; quote slides need one concise quotation; tables and code require short summaries when they would dominate the page. ",
     "Before finalizing each slide, perform a fit check: if text would overflow a slot, rewrite shorter or split into another slide instead of relying on tiny fonts. ",
-    "Speaker notes must be natural narration, 2-5 sentences, explaining transitions and context without merely reading slide text aloud. ",
+    "Speaker notes are optional; include them only when useful, at most 1-2 natural sentences. ",
     "Honor design options for layout direction, image policy, visual density, font preference, and margin preference. Use them to choose layout values and control how much text each slide carries. ",
     "Keep bullets short, avoid copying full source paragraphs, preserve the document language unless the user requests a target language, and never invent facts. ",
-    "Do not output colors, coordinates, font sizes, PptxGenJS options, or raw CSS."
+    "Do not output colors, coordinates, font sizes, font names, PptxGenJS options, OpenXML, placeholders, or raw CSS."
 );
 
 const SLIDE_MARKDOWN_DRAFT_SYSTEM: &str = concat!(
@@ -165,6 +173,47 @@ fn short_text(value: &str, max_chars: usize) -> String {
         out.push(ch);
     }
     out
+}
+
+fn first_usize(value: &str) -> Option<usize> {
+    let mut buf = String::new();
+    for ch in value.chars() {
+        if ch.is_ascii_digit() {
+            buf.push(ch);
+        } else if !buf.is_empty() {
+            break;
+        }
+    }
+    buf.parse().ok()
+}
+
+fn slide_count_hint_label(value: &Option<String>) -> Option<String> {
+    let raw = value.as_deref().map(str::trim).filter(|v| !v.is_empty())?;
+    let Some(requested) = first_usize(raw) else {
+        return Some(raw.to_string());
+    };
+    let capped = requested.min(SLIDES_MAX_COUNT);
+    if requested > SLIDES_MAX_COUNT {
+        Some(format!(
+            "{} slides requested, capped at hard limit {}",
+            requested, SLIDES_MAX_COUNT
+        ))
+    } else {
+        Some(format!("{} slides target", capped))
+    }
+}
+
+fn should_use_two_pass_slide_generation(
+    options: Option<&SlideGenerationOptions>,
+    source_section_count: usize,
+) -> bool {
+    let slide_count_hint = options
+        .and_then(|o| o.slide_count_hint.as_deref())
+        .and_then(first_usize)
+        .map(|n| n.min(SLIDES_MAX_COUNT))
+        .unwrap_or(0);
+    source_section_count >= SLIDES_TWO_PASS_SECTION_THRESHOLD
+        || slide_count_hint >= SLIDES_TWO_PASS_SLIDE_THRESHOLD
 }
 
 #[derive(Debug, Clone)]
@@ -507,7 +556,13 @@ fn slide_options_prompt(options: Option<&SlideGenerationOptions>) -> String {
     push_option_line(&mut lines, "Audience", &options.audience);
     push_option_line(&mut lines, "Tone", &options.tone);
     push_option_line(&mut lines, "Target language", &options.language);
-    push_option_line(&mut lines, "Slide count hint", &options.slide_count_hint);
+    if let Some(slide_count) = slide_count_hint_label(&options.slide_count_hint) {
+        lines.push(format!("- Slide count target: {}", slide_count));
+    }
+    lines.push(format!(
+        "- Hard slide limit: output no more than {} slides",
+        SLIDES_MAX_COUNT
+    ));
     push_option_line(&mut lines, "Draft purpose", &options.draft_purpose);
     push_option_line(&mut lines, "Draft structure", &options.draft_structure);
     push_option_line(&mut lines, "Draft detail level", &options.draft_depth);
@@ -712,6 +767,7 @@ async fn call_slides_llm(
                         model_id,
                         Some(system),
                         prompt,
+                        Some(max_tokens),
                     )
                     .await
                 }
@@ -721,7 +777,14 @@ async fn call_slides_llm(
                         .ok_or_else(|| {
                             "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string()
                         })?;
-                    llm::openai_api::generate_text(&key, model_id, Some(system), prompt).await
+                    llm::openai_api::generate_text(
+                        &key,
+                        model_id,
+                        Some(system),
+                        prompt,
+                        Some(max_tokens),
+                    )
+                    .await
                 }
             };
             Ok(result.map_err(err_to_string)?.text)
@@ -774,6 +837,7 @@ async fn call_slides_llm_with_progress(
     model: Option<&str>,
     system: &str,
     prompt: &str,
+    detail: Option<String>,
     max_tokens: u32,
 ) -> Result<String, String> {
     use std::sync::{
@@ -783,7 +847,13 @@ async fn call_slides_llm_with_progress(
     use std::time::{Duration, Instant};
 
     let model_info = Some(slide_model_info(company, auth, model));
-    emitter.emit_update_with_model(step_id, waiting_step, None, None, model_info.clone());
+    emitter.emit_update_with_model(
+        step_id,
+        waiting_step,
+        detail.clone(),
+        None,
+        model_info.clone(),
+    );
 
     let started = Instant::now();
     let stop = Arc::new(AtomicBool::new(false));
@@ -792,6 +862,7 @@ async fn call_slides_llm_with_progress(
     let heartbeat_step_id = step_id.to_string();
     let heartbeat_step = waiting_step.to_string();
     let heartbeat_model = model_info.clone();
+    let heartbeat_detail = detail.clone();
     let heartbeat = tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(5)).await;
@@ -802,7 +873,7 @@ async fn call_slides_llm_with_progress(
             heartbeat_emitter.emit_update_with_model(
                 heartbeat_step_id.clone(),
                 format!("{heartbeat_step} {elapsed}초"),
-                None,
+                heartbeat_detail.clone(),
                 None,
                 heartbeat_model.clone(),
             );
@@ -814,7 +885,7 @@ async fn call_slides_llm_with_progress(
     heartbeat.abort();
 
     if result.is_ok() {
-        emitter.emit_update_with_model(step_id, done_step, None, Some(1.0), model_info);
+        emitter.emit_update_with_model(step_id, done_step, detail, Some(1.0), model_info);
     }
     result
 }
@@ -841,41 +912,51 @@ pub async fn generate_slides_llm(
         "✅ 문서 구조 분석 완료",
         Some(format!("소스 섹션 {}개", source_sections.len())),
     );
-    let plan_prompt = format!(
-        "Plan a slide deck from this Markdown-derived source map. Respect export options, source hierarchy, and source IDs.\n\n{}\n\n{}\n\n{}",
-        opt_block,
-        outline_block,
-        source_map
-    );
-    emitter.emit(
-        "✅ 슬라이드 계획 요청 완료",
-        Some(format!("소스 섹션 {}개", source_sections.len())),
-    );
-    let plan_raw = call_slides_llm_with_progress(
-        &emitter,
-        "pptx-plan-llm",
-        "⏳ AI가 슬라이드 구조를 계획하는 중…",
-        "✅ 슬라이드 구조 계획 완료",
-        company,
-        auth,
-        model.as_deref(),
-        SLIDES_PLAN_SYSTEM,
-        &plan_prompt,
-        SLIDES_PLAN_MAX_TOKENS,
-    )
-    .await?;
-    let deck_plan = extract_json_object(&plan_raw);
+    let use_two_pass =
+        should_use_two_pass_slide_generation(options.as_ref(), source_sections.len());
 
-    let draft_prompt = format!(
-        "Generate final slides JSON from the approved deck plan. Use only grounded source content. If the plan has an unsupported or weak slide, repair it locally instead of rewriting the whole deck.\n\n{}\n\n<deck_plan>\n{}\n</deck_plan>\n\n{}",
-        opt_block,
-        deck_plan,
-        source_map
-    );
-    emitter.emit("✅ 최종 슬라이드 JSON 요청 준비 완료", None);
+    let draft_prompt = if use_two_pass {
+        let plan_prompt = format!(
+            "Plan a slide deck from this Markdown-derived source map. Respect export options, source hierarchy, and source IDs.\n\n{}\n\n{}\n\n{}",
+            opt_block,
+            outline_block,
+            source_map
+        );
+        emitter.emit("✅ 슬라이드 계획 요청 완료", None);
+        let plan_raw = call_slides_llm_with_progress(
+            &emitter,
+            "pptx-plan-llm",
+            "⏳ AI가 슬라이드 구조를 계획하는 중…",
+            "✅ 슬라이드 구조 계획 완료",
+            company,
+            auth,
+            model.as_deref(),
+            SLIDES_PLAN_SYSTEM,
+            &plan_prompt,
+            None,
+            SLIDES_PLAN_MAX_TOKENS,
+        )
+        .await?;
+        let deck_plan = extract_json_object(&plan_raw);
+        emitter.emit("✅ 슬라이드 구조 계획 응답 수신", None);
 
-    // 큰 덱(50장+)의 슬라이드 JSON 이 잘리면 프론트 파싱 실패 → 폴백.
-    // 출력 토큰은 생성한 만큼만 과금되므로 상한은 넉넉히(미사용 시 비용 0).
+        format!(
+            "Generate final slides JSON from the approved deck plan. Use only grounded source content. If the plan has an unsupported or weak slide, repair it locally instead of rewriting the whole deck.\n\n{}\n\n<deck_plan>\n{}\n</deck_plan>\n\n{}",
+            opt_block,
+            deck_plan,
+            source_map
+        )
+    } else {
+        format!(
+            "Generate final slides JSON directly from this Markdown-derived source map. Plan internally, but output only the final JSON. Respect export options, source hierarchy, and source IDs.\n\n{}\n\n{}\n\n{}",
+            opt_block,
+            outline_block,
+            source_map
+        )
+    };
+    emitter.emit("✅ 슬라이드 JSON 요청 준비 완료", None);
+
+    // 슬라이드 JSON이 잘리면 프론트 파싱 실패로 이어지므로 상한은 단순 고정값을 쓴다.
     let slides_raw = call_slides_llm_with_progress(
         &emitter,
         "pptx-slides-llm",
@@ -886,13 +967,15 @@ pub async fn generate_slides_llm(
         model.as_deref(),
         SLIDES_SYSTEM,
         &draft_prompt,
+        None,
         SLIDES_MAX_TOKENS,
     )
     .await?;
 
+    let cleaned = extract_json_object(&slides_raw);
     emitter.emit("✅ 슬라이드 JSON 정리 완료", None);
     emitter.emit("✅ AI 슬라이드 생성 완료", None);
-    Ok(extract_json_object(&slides_raw))
+    Ok(cleaned)
 }
 
 #[tauri::command]
@@ -920,13 +1003,13 @@ pub async fn generate_slide_markdown_draft(
 
     let prompt = if is_existing_draft {
         format!(
-            "Revise an existing MarkMind Markdown slide draft. The hidden `markmind:slide-draft` marker was detected, so this is a revision pass, not a new draft pass.\n\nPrimary source for this run:\n- Treat `<existing_slide_draft>` as the current deck manuscript.\n- Apply Draft revision mode and Extra instructions before considering broad regeneration.\n- Preserve useful user edits already present in the draft.\n\nRequired output contract:\n- Markdown only.\n- Return the full revised deck, not a patch and not a summary.\n- Preserve the existing slide separator convention: separate slides with a line containing only `---`.\n- Preserve slide order, slide count, headings, images, tables, code fences, and comments unless Draft revision mode, slide count hint, or Extra instructions clearly asks to change them.\n- Apply the user's detailed instruction strongly, especially emphasis, rewrite, tone, expansion, trimming, reordering, or comment requests.\n- If Draft revision mode says to preserve structure, make localized edits instead of rewriting the whole deck.\n- If Draft revision mode says to restructure, improve flow while keeping source facts and existing useful slide material.\n- Do not output slide JSON, speaker layout JSON, design tokens, implementation notes, or the hidden `markmind:slide-draft` marker.\n- Keep each slide focused on one message. Prefer short bullets over copied paragraphs.\n- Follow the Draft comments option. If comments are enabled, proactively add useful `> 코멘트:` / `> 검토 필요:` / `> 추가 정보 필요:` blockquotes for questions, assumptions, missing evidence, and suggested refinements. If comments are disabled, keep the draft clean and omit unsupported details instead of adding comments.\n\n{}\n\n<existing_slide_draft>\n{}\n</existing_slide_draft>",
+            "Revise an existing MarkMind Markdown slide draft. The hidden `markmind:slide-draft` marker was detected, so this is a revision pass, not a new draft pass.\n\nPrimary source for this run:\n- Treat `<existing_slide_draft>` as the current deck manuscript.\n- Apply Draft revision mode and Extra instructions before considering broad regeneration.\n- Preserve useful user edits already present in the draft.\n\nRequired output contract:\n- Markdown only.\n- Return the full revised deck, not a patch and not a summary.\n- Preserve the existing slide separator convention: separate slides with a line containing only `---`.\n- Preserve slide order, slide count, headings, images, tables, code fences, and comments unless Draft revision mode, slide count hint, or Extra instructions clearly asks to change them.\n- Apply the user's detailed instruction strongly, especially emphasis, rewrite, tone, expansion, trimming, reordering, or comment requests.\n- If Draft revision mode says to preserve structure, make localized edits instead of rewriting the whole deck.\n- If Draft revision mode says to restructure, improve flow while keeping source facts and existing useful slide material.\n- Do not output slide JSON, speaker layout JSON, design tokens, implementation notes, or the hidden `markmind:slide-draft` marker.\n- Keep each slide focused on one message. Prefer short bullets over copied paragraphs.\n- When a slide has multiple local topics, use Markdown subheadings (`###`) for each topic and separate groups with blank lines: subheading, related bullets/text, blank line, next subheading. Do not put different subtopics in one continuous bullet list.\n- Follow the Draft comments option. If comments are enabled, proactively add useful `> 코멘트:` / `> 검토 필요:` / `> 추가 정보 필요:` blockquotes for questions, assumptions, missing evidence, and suggested refinements. If comments are disabled, keep the draft clean and omit unsupported details instead of adding comments.\n\n{}\n\n<existing_slide_draft>\n{}\n</existing_slide_draft>",
             opt_block,
             markdown_body
         )
     } else {
         format!(
-            "Create a Markdown slide draft for MarkMind slideshow review mode. The user will review and edit this Markdown before exporting to PPTX.\n\nRequired output contract:\n- Markdown only.\n- Separate slides with a line containing only `---`.\n- Use standard Markdown blocks supported by the editor: headings, short paragraphs, bullet lists, tables, blockquotes, code fences, and images already present in the source.\n- Do not output slide JSON, speaker layout JSON, design tokens, implementation notes, or the hidden `markmind:slide-draft` marker.\n- Treat source IDs like S1, S2, and S3 as internal grounding IDs only. Do not print them and do not add visible `출처: S2` / `Source: S2` lines.\n- Convert the source into slide pages with a presentation narrative. Avoid one slide per source heading unless that is genuinely the best structure.\n- Keep each slide focused on one message. Prefer short bullets over copied paragraphs.\n- Follow the Draft comments option. If comments are enabled, proactively add useful `> 코멘트:` / `> 검토 필요:` / `> 추가 정보 필요:` blockquotes for questions, assumptions, missing evidence, and suggested refinements. If comments are disabled, keep the draft clean and omit unsupported details instead of adding comments.\n\n{}\n\n{}\n\n{}",
+            "Create a Markdown slide draft for MarkMind slideshow review mode. The user will review and edit this Markdown before exporting to PPTX.\n\nRequired output contract:\n- Markdown only.\n- Separate slides with a line containing only `---`.\n- Use standard Markdown blocks supported by the editor: headings, short paragraphs, bullet lists, tables, blockquotes, code fences, and images already present in the source.\n- Do not output slide JSON, speaker layout JSON, design tokens, implementation notes, or the hidden `markmind:slide-draft` marker.\n- Treat source IDs like S1, S2, and S3 as internal grounding IDs only. Do not print them and do not add visible `출처: S2` / `Source: S2` lines.\n- Convert the source into slide pages with a presentation narrative. Avoid one slide per source heading unless that is genuinely the best structure.\n- Keep each slide focused on one message. Prefer short bullets over copied paragraphs.\n- When a slide has multiple local topics, use Markdown subheadings (`###`) for each topic and separate groups with blank lines: subheading, related bullets/text, blank line, next subheading. Do not put different subtopics in one continuous bullet list.\n- Follow the Draft comments option. If comments are enabled, proactively add useful `> 코멘트:` / `> 검토 필요:` / `> 추가 정보 필요:` blockquotes for questions, assumptions, missing evidence, and suggested refinements. If comments are disabled, keep the draft clean and omit unsupported details instead of adding comments.\n\n{}\n\n{}\n\n{}",
             opt_block,
             outline_block,
             source_map
@@ -959,6 +1042,7 @@ pub async fn generate_slide_markdown_draft(
         model.as_deref(),
         SLIDE_MARKDOWN_DRAFT_SYSTEM,
         &prompt,
+        None,
         SLIDE_MARKDOWN_DRAFT_MAX_TOKENS,
     )
     .await?;
@@ -1035,6 +1119,7 @@ pub async fn ai_generate_codex(
         model_id,
         system.as_deref(),
         &prompt,
+        None,
     )
     .await
     .map(|r| r.text)
@@ -1069,7 +1154,7 @@ pub async fn ai_generate_openai(
     let key = get_key(Provider::Openai)
         .map_err(err_to_string)?
         .ok_or_else(|| "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
-    openai_api::generate_text(&key, &model, system.as_deref(), &prompt)
+    openai_api::generate_text(&key, &model, system.as_deref(), &prompt, None)
         .await
         .map(|r| r.text)
         .map_err(err_to_string)

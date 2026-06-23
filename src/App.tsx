@@ -14,6 +14,7 @@ import { GanttView } from './components/GanttView';
 import { SlideshowView } from './components/SlideshowView';
 import { getSlideshowSettings, setSlideshowSettings as persistSlideshowSettings, type SlideshowSettings } from './lib/slideSplit';
 import { applySlideDesignOptions, BUILTIN_SLIDE_THEMES, DEFAULT_SLIDE_THEME, getSlideTheme, type SlideExportOptions } from './lib/slideTheme';
+import { clampMarkdownSlideDraft, PPTX_MAX_SLIDES } from './lib/slideLimits';
 import { markMindPptxDesignRulesText } from './lib/pptxDesignSystem';
 import { Toolbar, EditableFileName, PaneHeader, ViewMode, PaneView, EDITABLE_VIEWS, isPaneView } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
@@ -528,8 +529,18 @@ function App() {
           extraInstructions: pptxOptions.extraInstructions?.trim() || null,
         },
       });
-      const next = draft.trim();
+      let next = draft.trim();
       if (!next) throw new Error('AI가 빈 슬라이드 초안을 반환했습니다.');
+      const clamped = clampMarkdownSlideDraft(next);
+      if (clamped.clamped) {
+        next = clamped.markdown;
+        pushPptxProgressStep(
+          jobId,
+          '✅ 슬라이드 장수 제한 적용',
+          `${clamped.originalCount}장 → ${PPTX_MAX_SLIDES}장`,
+          'slide-draft-limit',
+        );
+      }
       pushPptxProgressStep(jobId, '📝 문서에 반영 중...', undefined, 'slide-draft-apply');
       updateContent(withSlideDraftMarker(next, nextDraftVersion));
       setViewMode('slideshow');
@@ -557,13 +568,21 @@ function App() {
     const sel = getAIModelSelection();
     const baseName = (fileName || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '');
     try {
-      const [{ save }, { invoke }, { markdownToSlides, slidesFromLlmJson }, { buildPptx }, { normalizeSlidesForPptx, validateSlideDeck, summarizeSlideIssues }] =
+      const [
+        { save },
+        { invoke },
+        { markdownToSlides, slideDeckFromLlmJson },
+        { buildPptx },
+        { normalizeSlidesForPptx, validateSlideDeck, summarizeSlideIssues },
+        { resolveSlideAssets },
+      ] =
         await Promise.all([
           import('@tauri-apps/plugin-dialog'),
           import('@tauri-apps/api/core'),
           import('./lib/markdownToSlides'),
           import('./lib/buildPptx'),
           import('./lib/slideValidation'),
+          import('./services/slideAssets'),
         ]);
       const path = await save({
         defaultPath: `${baseName}.pptx`,
@@ -595,9 +614,10 @@ function App() {
         },
       });
       pushPptxProgressStep(jobId, '🔍 AI 응답 검증 중...', undefined, 'pptx-validate-response');
-      let slides = slidesFromLlmJson(raw);
+      const aiDeck = slideDeckFromLlmJson(raw);
+      let slides = aiDeck?.slides ?? null;
       console.log(
-        `[export_pptx] AI(${sel.company}/${sel.auth}) 응답 ${raw.length}자 → 슬라이드 ${slides?.length ?? 0}장`,
+        `[export_pptx] AI(${sel.company}/${sel.auth}) 응답 ${raw.length}자 → 슬라이드 ${slides?.length ?? 0}장, master ${aiDeck?.masterSpec ? 'yes' : 'no'}`,
       );
       if (!slides || slides.length === 0) {
         // 조용한 폴백 금지 — 사용자에게 알리고 원문 로깅(메모리: silent fallback 함정)
@@ -608,12 +628,27 @@ function App() {
 
       pushPptxProgressStep(jobId, '📊 슬라이드 레이아웃 검증 중...', undefined, 'pptx-layout-qa');
       slides = normalizeSlidesForPptx(slides);
+      if (slides.length > PPTX_MAX_SLIDES) {
+        const originalCount = slides.length;
+        slides = slides.slice(0, PPTX_MAX_SLIDES);
+        pushPptxProgressStep(
+          jobId,
+          '✅ 슬라이드 장수 제한 적용',
+          `${originalCount}장 → ${PPTX_MAX_SLIDES}장`,
+          'pptx-slide-limit',
+        );
+      }
       const report = validateSlideDeck(slides);
       const issueSummary = summarizeSlideIssues(report);
       if (issueSummary) console.warn('[export_pptx] slide QA warnings:\n' + issueSummary);
       const baseDir = filePath ? filePath.replace(/\/[^/]*$/, '') : undefined;
+      const assetResult = await resolveSlideAssets(slides, pptxOptions, {
+        theme: slideTheme,
+        onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
+      });
+      slides = assetResult.slides;
       pushPptxProgressStep(jobId, '💾 PPTX 파일 생성 중...', undefined, 'pptx-build');
-      const buf = await buildPptx(slides, { title: baseName, baseDir, theme: slideTheme });
+      const buf = await buildPptx(slides, { title: baseName, baseDir, theme: slideTheme, masterSpec: aiDeck?.masterSpec });
       pushPptxProgressStep(jobId, '💾 PPTX 저장 중...', undefined, 'pptx-save');
       await invoke('save_pptx', { path, data: Array.from(new Uint8Array(buf)) });
       pushPptxProgressStep(jobId, '✅ 파워포인트 생성 완료');

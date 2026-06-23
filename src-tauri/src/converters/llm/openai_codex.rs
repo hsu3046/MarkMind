@@ -17,7 +17,11 @@ pub async fn generate_text(
     model: &str,
     system: Option<&str>,
     prompt: &str,
+    _max_output_tokens: Option<u32>,
 ) -> ConverterResult<GenerateResult> {
+    // chatgpt.com Codex backend is not the public Responses API and currently rejects
+    // `max_output_tokens` with HTTP 400. Keep the argument for call-site parity, but do
+    // not send it on the subscription path.
     let body = serde_json::json!({
         "model": model,
         "instructions": system.unwrap_or(""),

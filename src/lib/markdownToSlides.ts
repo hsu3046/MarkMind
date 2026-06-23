@@ -13,6 +13,8 @@
 // 이 파서의 출력(Slide[])은 buildPptx.ts 와 LLM 스마트 레이아웃 경로가 공유하는
 // 단일 스키마다(경로 통일).
 
+import { normalizeSlideMasterSpec, type SlideMasterSpec } from './slideMaster';
+
 export interface InlineSpan {
   text: string;
   bold?: boolean;
@@ -39,6 +41,24 @@ export type SlideLayout =
   | 'comparison'
   | 'timeline';
 
+export type SlideImageRole = 'cover' | 'hero' | 'support' | 'logo' | 'icon' | 'background';
+export type SlideImageSourcePreference = 'auto' | 'stock' | 'logo' | 'generated' | 'none';
+export type SlideImageLicenseStrictness = 'presentation' | 'open' | 'internal-only';
+
+export interface SlideImageSpec {
+  src?: string;
+  alt?: string;
+  prompt?: string;
+  kind?: string;
+  role?: SlideImageRole;
+  query?: string;
+  entity?: string;
+  aspect?: string;
+  style?: string;
+  sourcePreference?: SlideImageSourcePreference;
+  licenseStrictness?: SlideImageLicenseStrictness;
+}
+
 export interface Slide {
   title: string;
   layout: SlideLayout;
@@ -53,7 +73,12 @@ export interface Slide {
   columns?: SlideBlock[][];
   quote?: { text: string; attribution?: string };
   stat?: { value: string; label?: string; context?: string };
-  image?: { src?: string; alt?: string; prompt?: string; kind?: string };
+  image?: SlideImageSpec;
+}
+
+export interface SlideDeck {
+  slides: Slide[];
+  masterSpec?: SlideMasterSpec;
 }
 
 const HEADING_RE = /^(#{1,6})\s+(.*)$/;
@@ -265,13 +290,29 @@ function imageFromUnknown(value: unknown): Slide['image'] | undefined {
   const o = value as Record<string, unknown>;
   const src = typeof o.src === 'string' && o.src.trim() ? o.src.trim() : undefined;
   const prompt = typeof o.prompt === 'string' && o.prompt.trim() ? o.prompt.trim() : undefined;
-  if (!src && !prompt) return undefined;
+  const query = typeof o.query === 'string' && o.query.trim() ? o.query.trim() : undefined;
+  const entity = typeof o.entity === 'string' && o.entity.trim() ? o.entity.trim() : undefined;
+  if (!src && !prompt && !query && !entity) return undefined;
+  const role = oneOf<SlideImageRole>(o.role, ['cover', 'hero', 'support', 'logo', 'icon', 'background']);
+  const sourcePreference = oneOf<SlideImageSourcePreference>(o.sourcePreference, ['auto', 'stock', 'logo', 'generated', 'none']);
+  const licenseStrictness = oneOf<SlideImageLicenseStrictness>(o.licenseStrictness, ['presentation', 'open', 'internal-only']);
   return {
     src,
     prompt,
+    query,
+    entity,
+    role,
+    sourcePreference,
+    licenseStrictness,
     alt: typeof o.alt === 'string' && o.alt.trim() ? o.alt.trim() : undefined,
+    aspect: typeof o.aspect === 'string' && o.aspect.trim() ? o.aspect.trim() : undefined,
+    style: typeof o.style === 'string' && o.style.trim() ? o.style.trim() : undefined,
     kind: typeof o.kind === 'string' && o.kind.trim() ? o.kind.trim() : undefined,
   };
+}
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
+  return typeof value === 'string' && allowed.includes(value as T) ? (value as T) : undefined;
 }
 
 /** LLM 슬라이드 객체 → Slide. 새 필드는 없으면 기존 bullets 기반으로 복구한다. */
@@ -354,7 +395,7 @@ function extractBalancedObjects(s: string): string[] {
  *    `"slides"` 배열에서 완성된 `{...}` 객체만 추출해 살린다(우아한 degradation).
  * 둘 다 실패하면 null(→ 호출부가 규칙 기반으로 폴백).
  */
-export function slidesFromLlmJson(raw: string): Slide[] | null {
+export function slideDeckFromLlmJson(raw: string): SlideDeck | null {
   // 1) strict
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');
@@ -363,7 +404,13 @@ export function slidesFromLlmJson(raw: string): Slide[] | null {
       const obj = JSON.parse(raw.slice(start, end + 1));
       const arr = Array.isArray(obj) ? obj : obj.slides;
       if (Array.isArray(arr) && arr.length > 0) {
-        return arr.map((s, i) => llmObjToSlide((s ?? {}) as Record<string, unknown>, i));
+        const masterSpec = Array.isArray(obj)
+          ? undefined
+          : normalizeSlideMasterSpec(obj.masterSpec) ?? normalizeSlideMasterSpec(obj.master);
+        return {
+          slides: arr.map((s, i) => llmObjToSlide((s ?? {}) as Record<string, unknown>, i)),
+          masterSpec,
+        };
       }
     } catch {
       /* 잘림 가능성 → 부분 복구로 진행 */
@@ -385,7 +432,11 @@ export function slidesFromLlmJson(raw: string): Slide[] | null {
       /* 마지막 잘린 객체는 무시 */
     }
   });
-  return slides.length > 0 ? slides : null;
+  return slides.length > 0 ? { slides } : null;
+}
+
+export function slidesFromLlmJson(raw: string): Slide[] | null {
+  return slideDeckFromLlmJson(raw)?.slides ?? null;
 }
 
 /** slide-level 산정 — 내용이 바로 뒤따르는 최상위(가장 작은 번호) 헤딩 레벨. */

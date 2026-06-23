@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { markdownToSlides, parseInline, slidesFromLlmJson } from './markdownToSlides';
+import { markdownToSlides, parseInline, slideDeckFromLlmJson, slidesFromLlmJson } from './markdownToSlides';
 
 describe('markdownToSlides — 분할 규칙', () => {
   it('수평선(---) 으로 슬라이드를 나눈다', () => {
@@ -168,6 +168,23 @@ describe('slidesFromLlmJson', () => {
     expect(slides?.[0].title).toBe('T');
   });
 
+  it('상위 master 사양을 슬라이드 덱 메타데이터로 보존', () => {
+    const raw = JSON.stringify({
+      master: {
+        slideNumber: { enabled: true, includeOn: ['content', 'section'], position: 'bottom-center' },
+        footer: { text: 'Confidential', includeOn: ['content'], position: 'bottom-left' },
+        date: { enabled: false, text: '2026-06-23' },
+      },
+      slides: [{ title: 'T', layout: 'content', bullets: ['x'] }],
+    });
+    const deck = slideDeckFromLlmJson(raw);
+    expect(deck?.slides.length).toBe(1);
+    expect(deck?.masterSpec?.slideNumber?.includeOn).toEqual(['content', 'section']);
+    expect(deck?.masterSpec?.footer?.text).toBe('Confidential');
+    expect(deck?.masterSpec?.date?.enabled).toBe(false);
+    expect(slidesFromLlmJson(raw)?.[0].title).toBe('T');
+  });
+
   it('잘린 JSON 에서 완성된 슬라이드만 부분 복구', () => {
     // 마지막 객체가 토큰 한도로 잘린 상황
     const raw =
@@ -203,6 +220,18 @@ describe('slidesFromLlmJson', () => {
           layout: 'quote',
           quote: { text: 'Design is a system.', attribution: 'Team note' },
         },
+        {
+          title: 'Visual',
+          layout: 'image-focus',
+          image: {
+            query: 'clean renewable energy infrastructure',
+            entity: 'renewable energy',
+            role: 'hero',
+            aspect: '16:9',
+            sourcePreference: 'auto',
+            licenseStrictness: 'open',
+          },
+        },
       ],
     });
     const slides = slidesFromLlmJson(raw);
@@ -214,6 +243,14 @@ describe('slidesFromLlmJson', () => {
     expect(slides?.[2].columns?.length).toBe(2);
     expect(slides?.[2].columns?.[1][0]).toMatchObject({ kind: 'subhead', level: 3 });
     expect(slides?.[3].quote?.attribution).toBe('Team note');
+    expect(slides?.[4].image).toMatchObject({
+      query: 'clean renewable energy infrastructure',
+      entity: 'renewable energy',
+      role: 'hero',
+      aspect: '16:9',
+      sourcePreference: 'auto',
+      licenseStrictness: 'open',
+    });
   });
 
   it('완전 비 JSON 은 null', () => {

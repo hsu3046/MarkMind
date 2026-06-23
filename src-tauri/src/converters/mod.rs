@@ -21,6 +21,7 @@ pub mod notes_pipeline;
 pub mod ocr_pipeline;
 pub mod pdf_extractor;
 pub mod progress;
+pub mod slide_assets;
 pub mod speaker_dedup;
 pub mod templates;
 pub mod vad;
