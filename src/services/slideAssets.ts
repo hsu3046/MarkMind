@@ -308,7 +308,6 @@ export function canResolveStockSearch(intent: SlideImageIntent): boolean {
 function canGenerate(intent: SlideImageIntent): boolean {
   return (
     intent.sourcePreference !== 'none' &&
-    intent.sourcePreference !== 'stock' &&
     intent.sourcePreference !== 'logo' &&
     intent.role !== 'logo'
   );

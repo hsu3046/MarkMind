@@ -33,6 +33,29 @@ describe('buildPptx', () => {
     expect(Math.max(...paragraphSpace)).toBeGreaterThanOrEqual(1200);
   });
 
+  it('renders all accepted three-column slide content', async () => {
+    const slides: Slide[] = [
+      {
+        title: 'Three Column',
+        layout: 'comparison',
+        body: [],
+        columns: [
+          [{ kind: 'bullet', spans: parseInline('First point'), indent: 0 }],
+          [{ kind: 'bullet', spans: parseInline('Second point'), indent: 0 }],
+          [{ kind: 'bullet', spans: parseInline('Third point'), indent: 0 }],
+        ],
+      },
+    ];
+
+    const pptx = await buildPptx(slides, { title: 'Three Column Regression' });
+    const zip = await JSZip.loadAsync(pptx);
+    const slideXml = await zip.file('ppt/slides/slide1.xml')?.async('string');
+
+    expect(slideXml).toContain('First point');
+    expect(slideXml).toContain('Second point');
+    expect(slideXml).toContain('Third point');
+  });
+
   it('renders deck-wide master chrome from SlideMasterSpec', async () => {
     const slides: Slide[] = [
       {

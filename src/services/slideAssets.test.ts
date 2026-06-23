@@ -82,4 +82,24 @@ describe('slideAssets', () => {
     expect(routeSlideImageIntent({ ...intent, sourcePreference: 'none' }, 'stockOnly')).toBeNull();
     expect(canResolveStockSearch({ ...intent, sourcePreference: 'none' })).toBe(false);
   });
+
+  it('생성만 모드는 stock 선호 일반 intent도 생성으로 라우팅', () => {
+    const intent: SlideImageIntent = {
+      slideIndex: 1,
+      slideId: 'S2',
+      title: 'AI adoption conditions',
+      role: 'support',
+      query: 'workplace collaboration training',
+      aspect: '16:9',
+      sourcePreference: 'stock',
+      licenseStrictness: 'presentation',
+      importance: 72,
+      imageScore: 69,
+    };
+
+    expect(routeSlideImageIntent(intent, 'generatedOnly')).toBe('generated');
+    expect(routeSlideImageIntent({ ...intent, role: 'logo' }, 'generatedOnly')).toBeNull();
+    expect(routeSlideImageIntent({ ...intent, sourcePreference: 'logo' }, 'generatedOnly')).toBeNull();
+    expect(routeSlideImageIntent({ ...intent, sourcePreference: 'none' }, 'generatedOnly')).toBeNull();
+  });
 });

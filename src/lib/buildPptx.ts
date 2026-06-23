@@ -867,7 +867,12 @@ async function renderTwoColumnSlide(pptx: Pptx, slide: Slide, theme: SlideTheme,
   const x = theme.spacing.marginX;
   const y = bodyTopFor(slide, theme);
   const w = PAGE_W - x * 2;
-  const columns = slide.columns?.length ? slide.columns : [slide.body.slice(0, Math.ceil(slide.body.length / 2)), slide.body.slice(Math.ceil(slide.body.length / 2))];
+  const rawColumns = slide.columns?.length
+    ? slide.columns
+    : [slide.body.slice(0, Math.ceil(slide.body.length / 2)), slide.body.slice(Math.ceil(slide.body.length / 2))];
+  const columnCount = Math.max(2, Math.min(3, rawColumns.length || 2));
+  const columns = rawColumns.slice(0, columnCount);
+  while (columns.length < columnCount) columns.push([]);
   const cardPadX = 0.22;
   const cardPadY = 0.18;
   const cardY = y - 0.06;
@@ -883,19 +888,18 @@ async function renderTwoColumnSlide(pptx: Pptx, slide: Slide, theme: SlideTheme,
   };
   const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'contain') : false;
   const contentW = imageAdded ? w - imageW - imageGap : w;
-  const gap = Math.max(0.34, theme.spacing.columnGap);
-  const colW = (contentW - gap) / 2;
-  const innerW = colW - cardPadX * 1.55;
+  const gap = Math.max(0.28, theme.spacing.columnGap * (columnCount === 3 ? 0.78 : 1));
+  const colW = (contentW - gap * (columnCount - 1)) / columnCount;
+  const innerW = Math.max(1.05, colW - cardPadX * 1.55);
   const maxInnerH = Math.max(0.9, maxCardH - cardPadY * 2);
-  const leftProfile = blockRenderProfile(columns[0] ?? [], theme, { w: innerW, h: maxInnerH });
-  const rightProfile = blockRenderProfile(columns[1] ?? [], theme, { w: innerW, h: maxInnerH });
-  const leftH = estimateBlocksHeight(columns[0] ?? [], theme, innerW, leftProfile);
-  const rightH = estimateBlocksHeight(columns[1] ?? [], theme, innerW, rightProfile);
-  const cardH = Math.min(maxCardH, Math.max(1.72, leftH, rightH) + cardPadY * 2 + 0.16);
-  const cardBoxes = [
-    { x, accent: theme.palette.accent },
-    { x: x + colW + gap, accent: theme.palette.accent2 },
-  ];
+  const columnProfiles = columns.map((column) => blockRenderProfile(column, theme, { w: innerW, h: maxInnerH }));
+  const columnHeights = columns.map((column, index) => estimateBlocksHeight(column, theme, innerW, columnProfiles[index]));
+  const cardH = Math.min(maxCardH, Math.max(1.72, ...columnHeights) + cardPadY * 2 + 0.16);
+  const accents = [theme.palette.accent, theme.palette.accent2, ...theme.palette.chart];
+  const cardBoxes = Array.from({ length: columnCount }, (_, index) => ({
+    x: x + index * (colW + gap),
+    accent: accents[index % accents.length],
+  }));
 
   for (const box of cardBoxes) {
     s.addShape(RECT_SHAPE, {
@@ -916,8 +920,15 @@ async function renderTwoColumnSlide(pptx: Pptx, slide: Slide, theme: SlideTheme,
     });
   }
 
-  await renderBlocks(s, columns[0] ?? [], theme, { x: x + cardPadX, y: y + cardPadY, w: innerW, h: cardH - cardPadY * 2 }, baseDir);
-  await renderBlocks(s, columns[1] ?? [], theme, { x: x + colW + gap + cardPadX, y: y + cardPadY, w: innerW, h: cardH - cardPadY * 2 }, baseDir);
+  for (let index = 0; index < columnCount; index += 1) {
+    await renderBlocks(
+      s,
+      columns[index] ?? [],
+      theme,
+      { x: x + index * (colW + gap) + cardPadX, y: y + cardPadY, w: innerW, h: cardH - cardPadY * 2 },
+      baseDir,
+    );
+  }
   if (slide.notes) s.addNotes(slide.notes);
 }
 
