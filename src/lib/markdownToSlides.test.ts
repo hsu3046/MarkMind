@@ -303,6 +303,20 @@ describe('slidesFromLlmJson', () => {
     expect(merged[1].image?.alt).toBe('chart');
   });
 
+  it('source-only PPTX 경로에서 리스트 안의 원본 이미지도 보강', () => {
+    const markdown = ['# Report', 'Intro paragraph.', '## Evidence', '- ![chart](assets/chart.png)', 'Details'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [{ title: 'Evidence', layout: 'content', sourceIds: ['S2'], bullets: ['Details'] }],
+      }),
+    );
+
+    const merged = preserveSourceImagesForPptx(aiSlides ?? [], markdown);
+
+    expect(merged[0].image?.src).toBe('assets/chart.png');
+    expect(merged[0].image?.alt).toBe('chart');
+  });
+
   it('완전 비 JSON 은 null', () => {
     expect(slidesFromLlmJson('sorry, I cannot do that')).toBeNull();
   });

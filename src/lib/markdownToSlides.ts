@@ -469,7 +469,7 @@ function firstSourceImage(slide: Slide): SlideImageSpec | undefined {
 }
 
 function sourceImageFromLine(line: string): SlideImageSpec | undefined {
-  const img = line.match(IMAGE_ONLY_RE);
+  const img = line.match(/!\[([^\]]*)\]\(([^)]+)\)/);
   if (!img) return undefined;
   return { src: img[2].trim(), alt: img[1], kind: 'source', role: 'support' };
 }
@@ -562,9 +562,11 @@ function sourceIndexFromId(id: string): number | undefined {
  */
 export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | string): Slide[] {
   const sourceSlides = typeof source === 'string' ? markdownToSlides(source) : source;
-  if (!sourceSlides.some(slideHasImageSrc)) return slides;
   const sourceImagesById = typeof source === 'string' ? sourceImageMapFromMarkdown(source) : new Map<string, SlideImageSpec>();
+  if (sourceImagesById.size === 0 && !sourceSlides.some(slideHasImageSrc)) return slides;
   const usedSourceIds = new Set<string>();
+  const sourceImageEntries = [...sourceImagesById.entries()];
+  let nextSourceImageIndex = 0;
   const usedSourceIndexes = new Set<number>();
   const takeSourceImage = (sourceId: string): SlideImageSpec | undefined => {
     const normalized = sourceId.trim().toUpperCase();
@@ -573,6 +575,15 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
     if (!image) return undefined;
     usedSourceIds.add(normalized);
     return image;
+  };
+  const takeNextSourceImage = (): SlideImageSpec | undefined => {
+    while (nextSourceImageIndex < sourceImageEntries.length) {
+      const [id, image] = sourceImageEntries[nextSourceImageIndex++];
+      if (usedSourceIds.has(id)) continue;
+      usedSourceIds.add(id);
+      return image;
+    }
+    return undefined;
   };
   const takeImage = (sourceIndex: number | undefined): SlideImageSpec | undefined => {
     if (sourceIndex === undefined || sourceIndex < 0 || sourceIndex >= sourceSlides.length || usedSourceIndexes.has(sourceIndex)) {
@@ -590,6 +601,9 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
     for (const sourceId of slide.sourceIds ?? []) {
       image = takeSourceImage(sourceId) ?? (sourceImagesById.size === 0 ? takeImage(sourceIndexFromId(sourceId)) : undefined);
       if (image) break;
+    }
+    if (!image && !slide.sourceIds?.length && sourceImagesById.size > 0) {
+      image = takeNextSourceImage();
     }
     if (!image && (!slide.sourceIds?.length || sourceImagesById.size === 0)) {
       image = takeImage(slideIndex);

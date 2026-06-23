@@ -344,13 +344,23 @@ async function addSlideImagePanel(
   box: { x: number; y: number; w: number; h: number },
   sizing: 'contain' | 'cover' = 'contain',
 ): Promise<boolean> {
+  const src = slideImageSrc(slide);
+  if (!src) return false;
+  const img = await resolveImage(src, baseDir);
+  if (!img) return false;
+
   s.addShape(RECT_SHAPE, {
     ...box,
     fill: { color: theme.palette.surfaceAlt, transparency: 0 },
     line: { color: theme.palette.border, transparency: 100 },
   });
-  const added = await addSlideImage(s, slide, baseDir, box, sizing);
-  if (!added) return false;
+  const { width: _width, height: _height, ...imgProps } = img;
+  const fitted = fitImageBox(img, box, sizing);
+  s.addImage({
+    ...imgProps,
+    ...fitted,
+    altText: slide.image?.alt || slide.title,
+  });
   s.addShape(RECT_SHAPE, {
     ...box,
     fill: { color: theme.palette.surface, transparency: 100 },

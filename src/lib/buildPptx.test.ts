@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
 import { buildPptx } from './buildPptx';
 import { parseInline, type Slide } from './markdownToSlides';
@@ -161,6 +161,41 @@ describe('buildPptx', () => {
 
     for (const xml of slideXml) {
       expect(xml).toContain('<p:pic>');
+    }
+  });
+
+  it('does not leave an empty special-layout image panel when image resolution fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const slides: Slide[] = [
+      {
+        title: 'Broken Quote Visual',
+        layout: 'quote',
+        body: [],
+        quote: { text: 'Text should use the full visual area.', attribution: 'MarkMind' },
+        image: { src: 'missing-quote-image.png', alt: 'missing visual', role: 'support' },
+      },
+      {
+        title: 'Broken Stat Visual',
+        layout: 'stat',
+        body: [],
+        stat: { value: '0', label: 'No visual should leave an empty panel' },
+        image: { src: 'missing-stat-image.png', alt: 'missing visual', role: 'support' },
+      },
+    ];
+
+    try {
+      const pptx = await buildPptx(slides, { title: 'Broken Special Layout Images' });
+      const zip = await JSZip.loadAsync(pptx);
+      const slideXml = await Promise.all(
+        [1, 2].map((n) => zip.file(`ppt/slides/slide${n}.xml`)?.async('string')),
+      );
+
+      for (const xml of slideXml) {
+        expect(xml).not.toContain('<p:pic>');
+        expect(xml).not.toContain('EAF1F7');
+      }
+    } finally {
+      warn.mockRestore();
     }
   });
 });
