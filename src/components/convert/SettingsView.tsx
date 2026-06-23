@@ -108,11 +108,33 @@ const KEY_SPECS: KeySpec[] = [
         issueUrl: 'https://dashboard.pyannote.ai',
         issueLabel: 'dashboard.pyannote.ai',
     },
+    {
+        provider: 'unsplash',
+        label: 'Unsplash Access Key',
+        placeholder: 'Unsplash access key',
+        issueUrl: 'https://unsplash.com/developers',
+        issueLabel: 'unsplash.com/developers',
+    },
+    {
+        provider: 'pexels',
+        label: 'Pexels API 키',
+        placeholder: 'Pexels API key',
+        issueUrl: 'https://www.pexels.com/api/',
+        issueLabel: 'pexels.com/api',
+    },
+    {
+        provider: 'brandfetch',
+        label: 'Brandfetch API 키',
+        placeholder: 'Brandfetch bearer token',
+        issueUrl: 'https://developers.brandfetch.com',
+        issueLabel: 'developers.brandfetch.com',
+    },
 ];
 
 type SettingsTab = 'basic' | 'ai' | 'viewer' | 'extra';
 /** AI 등록 탭에 노출할 API 키 (나머지 키는 추가 기능 탭). */
 const AI_PROVIDERS: Provider[] = ['gemini', 'claude', 'openai', 'grok'];
+const STOCK_IMAGE_PROVIDERS: Provider[] = ['unsplash', 'pexels', 'brandfetch'];
 
 function maskClientId(id: string): string {
     if (id.length <= 12) return id;
@@ -136,6 +158,9 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
         openai: '',
         grok: '',
         pyannoteai: '',
+        unsplash: '',
+        pexels: '',
+        brandfetch: '',
     });
     const [show, setShow] = useState<Record<Provider, boolean>>({
         gemini: false,
@@ -143,6 +168,9 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
         openai: false,
         grok: false,
         pyannoteai: false,
+        unsplash: false,
+        pexels: false,
+        brandfetch: false,
     });
     // lazy init — 첫 렌더부터 키 보유 반영(회사 버튼 disabled 깜빡임 방지). useEffect 가 재확인.
     const [stored, setStored] = useState<Record<Provider, boolean>>(() => ({
@@ -151,6 +179,9 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
         openai: hasKey('openai'),
         grok: hasKey('grok'),
         pyannoteai: hasKey('pyannoteai'),
+        unsplash: hasKey('unsplash'),
+        pexels: hasKey('pexels'),
+        brandfetch: hasKey('brandfetch'),
     }));
     const [validation, setValidation] = useState<Record<Provider | 'gdrive', ValidationResult | null>>({
         gemini: null,
@@ -158,6 +189,9 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
         openai: null,
         grok: null,
         pyannoteai: null,
+        unsplash: null,
+        pexels: null,
+        brandfetch: null,
         gdrive: null,
     });
     const [saving, setSaving] = useState(false);
@@ -204,6 +238,9 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
             openai: getKey('openai') || '',
             grok: getKey('grok') || '',
             pyannoteai: getKey('pyannoteai') || '',
+            unsplash: getKey('unsplash') || '',
+            pexels: getKey('pexels') || '',
+            brandfetch: getKey('brandfetch') || '',
         });
         setStored({
             gemini: hasKey('gemini'),
@@ -211,6 +248,9 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
             openai: hasKey('openai'),
             grok: hasKey('grok'),
             pyannoteai: hasKey('pyannoteai'),
+            unsplash: hasKey('unsplash'),
+            pexels: hasKey('pexels'),
+            brandfetch: hasKey('brandfetch'),
         });
         setValidation({
             gemini: getValidationStatus('gemini'),
@@ -218,6 +258,9 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
             openai: getValidationStatus('openai'),
             grok: getValidationStatus('grok'),
             pyannoteai: getValidationStatus('pyannoteai'),
+            unsplash: getValidationStatus('unsplash'),
+            pexels: getValidationStatus('pexels'),
+            brandfetch: getValidationStatus('brandfetch'),
             gdrive: getValidationStatus('gdrive'),
         });
         (async () => {
@@ -358,6 +401,9 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                 if (changedKeys.includes('openai')) payload.openai = values.openai.trim();
                 if (changedKeys.includes('grok')) payload.grok = values.grok.trim();
                 if (changedKeys.includes('pyannoteai')) payload.pyannoteai = values.pyannoteai.trim();
+                if (changedKeys.includes('unsplash')) payload.unsplash = values.unsplash.trim();
+                if (changedKeys.includes('pexels')) payload.pexels = values.pexels.trim();
+                if (changedKeys.includes('brandfetch')) payload.brandfetch = values.brandfetch.trim();
                 if (diarChanged) payload.diarPython = diarPython.trim();
                 if (driveBoth) {
                     payload.gdriveClientId = driveId;
@@ -955,7 +1001,18 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
 
             <hr className="settings-divider" />
 
-                    {KEY_SPECS.filter((s) => !AI_PROVIDERS.includes(s.provider)).map(renderKeySpec)}
+                    <section className="convert-settings-section">
+                        <label>Stock 이미지 API</label>
+                        <p className="convert-key-note">
+                            슬라이드 생성시 Stock 이미지 검색에 사용합니다.
+                        </p>
+                    </section>
+
+                    {KEY_SPECS.filter((s) => STOCK_IMAGE_PROVIDERS.includes(s.provider)).map(renderKeySpec)}
+
+            <hr className="settings-divider" />
+
+                    {KEY_SPECS.filter((s) => !AI_PROVIDERS.includes(s.provider) && !STOCK_IMAGE_PROVIDERS.includes(s.provider)).map(renderKeySpec)}
 
             {/* === pyannote.ai 로컬 설치 경로 === */}
             <section className="convert-settings-section">

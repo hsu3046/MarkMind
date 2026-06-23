@@ -18,6 +18,9 @@ export interface SecretsUserInputs {
     openai?: string;
     grok?: string;
     pyannoteai?: string;
+    unsplash?: string;
+    pexels?: string;
+    brandfetch?: string;
     /** 로컬 화자분리용 Python 경로 (pyannote.audio 설치). */
     diarPython?: string;
     gdriveClientId?: string;
@@ -32,6 +35,9 @@ function buildPayload(updates: SecretsUserInputs): Record<string, string> {
     if (updates.openai !== undefined) out.openai = updates.openai;
     if (updates.grok !== undefined) out.grok = updates.grok;
     if (updates.pyannoteai !== undefined) out.pyannoteai = updates.pyannoteai;
+    if (updates.unsplash !== undefined) out.unsplash = updates.unsplash;
+    if (updates.pexels !== undefined) out.pexels = updates.pexels;
+    if (updates.brandfetch !== undefined) out.brandfetch = updates.brandfetch;
     if (updates.diarPython !== undefined) out.diar_python = updates.diarPython;
     if (updates.gdriveClientId !== undefined) out.gdrive_client_id = updates.gdriveClientId;
     if (updates.gdriveClientSecret !== undefined) out.gdrive_client_secret = updates.gdriveClientSecret;

@@ -11,7 +11,7 @@ import { getImageAIModelSelection } from './aiModelConfig';
 import { generateImage, humanizeImageGenError, type ImageProvider } from './imageGen';
 import { isTauri } from './platform';
 
-type AssetProvider = 'openverse' | 'wikimedia' | 'openai' | 'gemini' | 'grok';
+type AssetProvider = 'openverse' | 'wikimedia' | 'unsplash' | 'pexels' | 'brandfetch' | 'openai' | 'gemini' | 'grok';
 type AssetSourceKind = 'stock' | 'generated';
 
 export interface SlideImageIntent {
@@ -591,9 +591,11 @@ export async function resolveSlideAssets(
   }
 
   const remainingGenerated = Math.max(0, generatedLimit - queues.generated.length);
-  const shouldGeneratedFallback = sourceMode !== 'generatedOnly' && sourceMode !== 'stockOnly' && remainingGenerated > 0;
+  const generatedFallbackCapacity =
+    remainingGenerated > 0 ? remainingGenerated : Math.min(3, Math.ceil(stockUnresolved.length / 2));
+  const shouldGeneratedFallback = sourceMode !== 'generatedOnly' && sourceMode !== 'stockOnly' && generatedFallbackCapacity > 0;
   if (shouldGeneratedFallback) {
-    const fallbackQueue = stockUnresolved.filter(canGenerate).slice(0, remainingGenerated);
+    const fallbackQueue = stockUnresolved.filter(canGenerate).slice(0, generatedFallbackCapacity);
     summary.skipped += stockUnresolved.length - fallbackQueue.length;
     const fallbackResults = await resolveGeneratedQueue(fallbackQueue, resolveOptions);
     for (const result of fallbackResults) {

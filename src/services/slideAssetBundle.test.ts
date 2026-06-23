@@ -36,4 +36,8 @@ describe('slideAssetBundle', () => {
   it('POSIX PPTX 경로 옆에 asset bundle 경로를 만든다', () => {
     expect(slideAssetBundleDir('/Users/me/Decks/demo.pptx')).toBe('/Users/me/Decks/demo.assets');
   });
+
+  it('HTML 슬라이드 경로 옆에도 같은 asset bundle 규칙을 쓴다', () => {
+    expect(slideAssetBundleDir('/Users/me/Decks/demo.html')).toBe('/Users/me/Decks/demo.assets');
+  });
 });

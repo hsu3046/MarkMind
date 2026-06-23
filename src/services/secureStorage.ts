@@ -11,7 +11,7 @@
 
 import { isTauri } from './platform';
 
-export type Provider = 'gemini' | 'claude' | 'openai' | 'grok' | 'pyannoteai';
+export type Provider = 'gemini' | 'claude' | 'openai' | 'grok' | 'pyannoteai' | 'unsplash' | 'pexels' | 'brandfetch';
 
 const LEGACY_LOCALSTORAGE_KEYS: Record<Provider, string> = {
     gemini: 'markmind-gemini-api-key',
@@ -19,6 +19,9 @@ const LEGACY_LOCALSTORAGE_KEYS: Record<Provider, string> = {
     openai: 'markmind-openai-api-key',
     grok: 'markmind-grok-api-key',
     pyannoteai: 'markmind-pyannoteai-api-key',
+    unsplash: 'markmind-unsplash-api-key',
+    pexels: 'markmind-pexels-api-key',
+    brandfetch: 'markmind-brandfetch-api-key',
 };
 
 const cache: Record<Provider, string | null> = {
@@ -27,6 +30,9 @@ const cache: Record<Provider, string | null> = {
     openai: null,
     grok: null,
     pyannoteai: null,
+    unsplash: null,
+    pexels: null,
+    brandfetch: null,
 };
 
 let initialized = false;
@@ -74,18 +80,24 @@ export async function initSecureStorage(): Promise<void> {
     initPromise = (async () => {
         if (isTauri()) {
             // Tauri keychain 우선 로드
-            const [gemini, claude, openai, grok, pyannoteai] = await Promise.all([
+            const [gemini, claude, openai, grok, pyannoteai, unsplash, pexels, brandfetch] = await Promise.all([
                 loadFromTauri('gemini'),
                 loadFromTauri('claude'),
                 loadFromTauri('openai'),
                 loadFromTauri('grok'),
                 loadFromTauri('pyannoteai'),
+                loadFromTauri('unsplash'),
+                loadFromTauri('pexels'),
+                loadFromTauri('brandfetch'),
             ]);
             cache.gemini = gemini;
             cache.claude = claude;
             cache.openai = openai;
             cache.grok = grok;
             cache.pyannoteai = pyannoteai;
+            cache.unsplash = unsplash;
+            cache.pexels = pexels;
+            cache.brandfetch = brandfetch;
             // legacy localStorage 마이그레이션
             await Promise.all([
                 migrateLegacy('gemini'),
@@ -104,6 +116,9 @@ export async function initSecureStorage(): Promise<void> {
             cache.openai = localStorage.getItem(LEGACY_LOCALSTORAGE_KEYS.openai);
             cache.grok = localStorage.getItem(LEGACY_LOCALSTORAGE_KEYS.grok);
             cache.pyannoteai = localStorage.getItem(LEGACY_LOCALSTORAGE_KEYS.pyannoteai);
+            cache.unsplash = localStorage.getItem(LEGACY_LOCALSTORAGE_KEYS.unsplash);
+            cache.pexels = localStorage.getItem(LEGACY_LOCALSTORAGE_KEYS.pexels);
+            cache.brandfetch = localStorage.getItem(LEGACY_LOCALSTORAGE_KEYS.brandfetch);
         }
         initialized = true;
     })();
@@ -153,7 +168,7 @@ export async function removeKey(provider: Provider): Promise<void> {
  * - 값 → 캐시 저장
  */
 export function updateCacheAfterBatch(updates: Partial<Record<Provider, string | null | undefined>>): void {
-    for (const provider of ['gemini', 'claude', 'openai', 'grok', 'pyannoteai'] as Provider[]) {
+    for (const provider of ['gemini', 'claude', 'openai', 'grok', 'pyannoteai', 'unsplash', 'pexels', 'brandfetch'] as Provider[]) {
         if (provider in updates) {
             const val = updates[provider];
             cache[provider] = val && val.trim() ? val.trim() : null;

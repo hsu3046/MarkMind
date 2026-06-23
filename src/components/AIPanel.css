@@ -300,6 +300,12 @@
     box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
 }
 
+.ai-pptx-theme-menu.inline {
+    position: static;
+    z-index: auto;
+    box-shadow: none;
+}
+
 .ai-pptx-theme-option {
     display: grid;
     grid-template-columns: 42px 1fr;

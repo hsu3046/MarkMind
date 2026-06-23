@@ -15,6 +15,9 @@ pub enum Provider {
     Openai,
     Grok,
     Pyannoteai,
+    Unsplash,
+    Pexels,
+    Brandfetch,
 }
 
 fn read_field(v: &crate::secrets::Vault, p: Provider) -> Option<String> {
@@ -24,6 +27,9 @@ fn read_field(v: &crate::secrets::Vault, p: Provider) -> Option<String> {
         Provider::Openai => v.openai.clone(),
         Provider::Grok => v.grok.clone(),
         Provider::Pyannoteai => v.pyannoteai.clone(),
+        Provider::Unsplash => v.unsplash.clone(),
+        Provider::Pexels => v.pexels.clone(),
+        Provider::Brandfetch => v.brandfetch.clone(),
     }
 }
 
@@ -40,6 +46,9 @@ fn write_field(v: &mut crate::secrets::Vault, p: Provider, val: Option<String>) 
         Provider::Openai => v.openai = val,
         Provider::Grok => v.grok = val,
         Provider::Pyannoteai => v.pyannoteai = val,
+        Provider::Unsplash => v.unsplash = val,
+        Provider::Pexels => v.pexels = val,
+        Provider::Brandfetch => v.brandfetch = val,
     }
 }
 

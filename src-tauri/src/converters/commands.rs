@@ -72,8 +72,9 @@ pub fn get_conversions_dir() -> String {
 // 반환은 프론트가 파싱하는 슬라이드 JSON 문자열:
 //   { "master"?: { deck-wide chrome }, "slides": [ { "title", "layout", "bullets"/"blocks"/"columns", "notes"? } ] }
 
-// 최종 슬라이드 JSON 출력 상한. 장수 추정으로 흔들지 않고 단순 고정값을 쓴다.
-const SLIDES_MAX_TOKENS: u32 = 16000;
+// 최종 슬라이드 JSON 출력 상한. 기본은 넉넉하게 두고, 하드캡은 무한 생성 방지용이다.
+const SLIDES_MAX_TOKENS: u32 = 32000;
+const SLIDES_HARD_MAX_TOKENS: u32 = 64000;
 const SLIDES_MAX_COUNT: usize = 32;
 const SLIDES_PLAN_MAX_TOKENS: u32 = 12000;
 const SLIDES_TWO_PASS_SECTION_THRESHOLD: usize = 28;
@@ -100,7 +101,7 @@ const SLIDES_SYSTEM: &str = concat!(
     "You are a slide manuscript agent, not a visual renderer. Convert a grounded source map or deck plan into final slide JSON. ",
     "Output STRICT minified JSON only (no prose, no code fences, no markdown) of the form: {\"master\":{...},\"slides\":[...]}. The top-level master object is optional. ",
     "Allowed layout values: \"title\", \"content\", \"section\", \"two-column\", \"image-focus\", \"quote\", \"stat\", \"comparison\", \"timeline\". ",
-    "A slide may include: title:string, layout:string, importance:number(0-100), importanceReason:string, sourceIds:string[], bullets:string[], blocks:[{kind:\"text\"|\"bullet\"|\"subhead\",text:string,level?:number}], columns:[[string|{kind,text,level?}]], quote:{text,attribution?}, stat:{value,label?,context?}, image:{src?,prompt?,query?,entity?,role?,kind?,alt?,aspect?,style?,sourcePreference?,licenseStrictness?}, source:{headingLevel?:number,sectionPath?:string[]}, notes:string. ",
+    "A slide may include: title:string, layout:string, htmlVariant:string, importance:number(0-100), importanceReason:string, sourceIds:string[], bullets:string[], blocks:[{kind:\"text\"|\"bullet\"|\"subhead\",text:string,level?:number}], columns:[[string|{kind,text,level?}]], quote:{text,attribution?}, stat:{value,label?,context?}, image:{src?,prompt?,query?,entity?,role?,kind?,alt?,aspect?,style?,sourcePreference?,licenseStrictness?}, source:{headingLevel?:number,sectionPath?:string[]}, notes:string. ",
     "Never output more than 32 slides. Use the slide count target as a soft target inside that hard limit. ",
     "Optional master may include only deck-wide chrome policies for slideNumber, footer, or date, using enabled, includeOn(title/content/section), position(bottom-left/bottom-center/bottom-right), style(minimal/muted/accent/inverse), and short footer/date text. ",
     "Follow the deck plan when provided; otherwise plan internally from the source map. Do not flatten the document into a list. Each slide must express one clear message and cite its source through source.headingLevel and source.sectionPath. ",
@@ -113,7 +114,7 @@ const SLIDES_SYSTEM: &str = concat!(
     "Layout capacity rules: title slides need title plus at most two short support lines; content slides need at most seven short bullets; two-column/comparison slides need two balanced columns; stat slides need exactly one headline number; quote slides need one concise quotation; tables and code require short summaries when they would dominate the page. ",
     "Before finalizing each slide, perform a fit check: if text would overflow a slot, rewrite shorter or split into another slide instead of relying on tiny fonts. ",
     "Speaker notes are optional; include them only when useful, at most 1-2 natural sentences. ",
-    "Honor design options for layout direction, image policy, image source mode, visual density, font preference, and margin preference. Use them to choose layout values and control how much text each slide carries. ",
+    "Honor design options for layout direction, image policy, image source mode, visual density, font preference, margin preference, and any HTML variant list supplied in design rules. Use them to choose layout/htmlVariant values and control how much text each slide carries. ",
     "Keep bullets short, avoid copying full source paragraphs, preserve the document language unless the user requests a target language, and never invent facts. ",
     "Do not output colors, coordinates, font sizes, font names, PptxGenJS options, OpenXML, placeholders, or raw CSS."
 );
@@ -156,6 +157,7 @@ pub struct SlideGenerationOptions {
     margin_preference: Option<String>,
     extra_instructions: Option<String>,
     design_rules: Option<String>,
+    max_output_tokens: Option<u32>,
     theme_name: Option<String>,
     #[serde(default)]
     theme_rules: Vec<String>,
@@ -1018,6 +1020,11 @@ pub async fn generate_slides_llm(
     emitter.emit("✅ 슬라이드 JSON 요청 준비 완료", None);
 
     // 슬라이드 JSON이 잘리면 프론트 파싱 실패로 이어지므로 상한은 단순 고정값을 쓴다.
+    let final_max_tokens = options
+        .as_ref()
+        .and_then(|o| o.max_output_tokens)
+        .unwrap_or(SLIDES_MAX_TOKENS)
+        .clamp(8000, SLIDES_HARD_MAX_TOKENS);
     let slides_raw = call_slides_llm_with_progress(
         &emitter,
         "pptx-slides-llm",
@@ -1029,7 +1036,7 @@ pub async fn generate_slides_llm(
         SLIDES_SYSTEM,
         &draft_prompt,
         None,
-        SLIDES_MAX_TOKENS,
+        final_max_tokens,
     )
     .await?;
 
