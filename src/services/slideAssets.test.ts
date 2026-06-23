@@ -3,6 +3,7 @@ import type { Slide } from '../lib/markdownToSlides';
 import { DEFAULT_SLIDE_THEME } from '../lib/slideTheme';
 import {
   buildGeneratedSlideImagePrompt,
+  canResolveStockSearch,
   routeSlideImageIntent,
   scoreSlideImageCandidate,
   type SlideImageIntent,
@@ -77,6 +78,8 @@ describe('slideAssets', () => {
     };
 
     expect(routeSlideImageIntent(intent, 'stockOnly')).toBe('stock');
+    expect(canResolveStockSearch(intent)).toBe(true);
     expect(routeSlideImageIntent({ ...intent, sourcePreference: 'none' }, 'stockOnly')).toBeNull();
+    expect(canResolveStockSearch({ ...intent, sourcePreference: 'none' })).toBe(false);
   });
 });

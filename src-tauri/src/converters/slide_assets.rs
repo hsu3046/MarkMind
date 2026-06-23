@@ -44,12 +44,7 @@ struct CandidateAsset {
 pub async fn resolve_stock_slide_asset(
     intent: StockSlideAssetIntent,
 ) -> Result<Option<ResolvedStockSlideAsset>, String> {
-    let source_preference = intent
-        .source_preference
-        .as_deref()
-        .unwrap_or("auto")
-        .to_ascii_lowercase();
-    if source_preference == "none" || source_preference == "generated" {
+    if !allows_stock_lookup(&intent) {
         return Ok(None);
     }
     let query = stock_query(&intent);
@@ -92,6 +87,14 @@ pub async fn resolve_stock_slide_asset(
     }
 
     Ok(None)
+}
+
+fn allows_stock_lookup(intent: &StockSlideAssetIntent) -> bool {
+    !intent
+        .source_preference
+        .as_deref()
+        .unwrap_or("auto")
+        .eq_ignore_ascii_case("none")
 }
 
 fn stock_query(intent: &StockSlideAssetIntent) -> String {
@@ -384,5 +387,35 @@ fn aspect_ratio(value: &str) -> Option<f64> {
         Some(w / h)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn intent(source_preference: Option<&str>) -> StockSlideAssetIntent {
+        StockSlideAssetIntent {
+            title: "AI adoption conditions".to_string(),
+            role: "support".to_string(),
+            query: Some("workplace collaboration training".to_string()),
+            entity: None,
+            aspect: Some("16:9".to_string()),
+            source_preference: source_preference.map(str::to_string),
+            license_strictness: Some("presentation".to_string()),
+        }
+    }
+
+    #[test]
+    fn generated_preference_still_allows_forced_stock_lookup() {
+        let item = intent(Some("generated"));
+
+        assert!(allows_stock_lookup(&item));
+        assert_eq!(stock_query(&item), "workplace collaboration training");
+    }
+
+    #[test]
+    fn none_preference_blocks_stock_lookup() {
+        assert!(!allows_stock_lookup(&intent(Some("none"))));
     }
 }

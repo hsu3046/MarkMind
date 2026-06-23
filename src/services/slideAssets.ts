@@ -301,7 +301,7 @@ function canSearchStock(intent: SlideImageIntent): boolean {
   return intent.sourcePreference !== 'none' && intent.sourcePreference !== 'generated' && Boolean(intent.query || intent.entity);
 }
 
-function canForceStockSearch(intent: SlideImageIntent): boolean {
+export function canResolveStockSearch(intent: SlideImageIntent): boolean {
   return intent.sourcePreference !== 'none' && Boolean(intent.query || intent.entity);
 }
 
@@ -327,7 +327,7 @@ function preferGeneratedForAuto(intent: SlideImageIntent): boolean {
 export function routeSlideImageIntent(intent: SlideImageIntent, mode: SlideImageSourceMode): AssetSourceKind | null {
   if (intent.sourcePreference === 'none') return null;
   if (mode === 'generatedOnly') return canGenerate(intent) ? 'generated' : null;
-  if (mode === 'stockOnly') return canForceStockSearch(intent) ? 'stock' : null;
+  if (mode === 'stockOnly') return canResolveStockSearch(intent) ? 'stock' : null;
   if (intent.sourcePreference === 'generated') return canGenerate(intent) ? 'generated' : null;
   if (intent.sourcePreference === 'stock' || intent.sourcePreference === 'logo' || intent.role === 'logo') {
     return canSearchStock(intent) ? 'stock' : null;
@@ -362,7 +362,7 @@ function splitQueues(
 }
 
 async function resolveStockAsset(intent: SlideImageIntent): Promise<ResolvedSlideAsset | null> {
-  if (!isTauri() || !canSearchStock(intent)) return null;
+  if (!isTauri() || !canResolveStockSearch(intent)) return null;
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<ResolvedSlideAsset | null>('resolve_stock_slide_asset', { intent });
 }
