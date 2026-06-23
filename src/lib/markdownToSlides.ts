@@ -64,6 +64,9 @@ export interface Slide {
   layout: SlideLayout;
   body: SlideBlock[];
   notes?: string;
+  /** 0-100 deck-level importance hint from the LLM. Renderer/pipeline may re-score deterministically. */
+  importance?: number;
+  importanceReason?: string;
   /** LLM path: source section IDs from the Rust source map, e.g. ["S2", "S5"]. */
   sourceIds?: string[];
   /** 원본 마크다운 헤딩 레벨(H1=1...). LLM 경로도 같은 힌트를 넣을 수 있다. */
@@ -285,6 +288,13 @@ function statFromUnknown(value: unknown): Slide['stat'] | undefined {
   };
 }
 
+function importanceFromUnknown(value: unknown): number | undefined {
+  const raw = typeof value === 'number' ? value : typeof value === 'string' ? Number.parseFloat(value) : NaN;
+  if (!Number.isFinite(raw) || raw <= 0) return undefined;
+  const normalized = raw <= 5 ? raw * 20 : raw;
+  return Math.max(0, Math.min(100, Math.round(normalized)));
+}
+
 function imageFromUnknown(value: unknown): Slide['image'] | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const o = value as Record<string, unknown>;
@@ -343,6 +353,8 @@ function llmObjToSlide(o: Record<string, unknown>, index: number): Slide {
     layout,
     body,
     notes,
+    importance: importanceFromUnknown(o.importance),
+    importanceReason: typeof o.importanceReason === 'string' && o.importanceReason.trim() ? o.importanceReason.trim() : undefined,
     sourceIds,
     sourceLevel: source.sourceLevel,
     sectionPath: source.sectionPath,

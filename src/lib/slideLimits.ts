@@ -19,6 +19,19 @@ export function slideImagePolicyMode(policy?: string): 'sourceOnly' | 'needed' |
   return 'needed';
 }
 
+export type SlideImageSourceMode = 'auto' | 'stockFirst' | 'generatedFirst' | 'stockOnly' | 'generatedOnly';
+
+export function slideImageSourceMode(value?: string): SlideImageSourceMode {
+  const p = (value ?? '').toLowerCase();
+  if (p.includes('stock photos and logos only') || p.includes('stock only') || p.includes('stock만')) return 'stockOnly';
+  if (p.includes('generated images only') || (p.includes('use generated') && p.includes('only')) || p.includes('생성만')) {
+    return 'generatedOnly';
+  }
+  if (p.includes('prefer generated') || p.includes('generated first') || p.includes('생성 우선')) return 'generatedFirst';
+  if (p.includes('prefer stock') || p.includes('stock first') || p.includes('stock 우선')) return 'stockFirst';
+  return 'auto';
+}
+
 export function stockImageLimitForPolicy(policy?: string): number {
   return PPTX_MAX_STOCK_IMAGE_ASSETS[slideImagePolicyMode(policy)];
 }

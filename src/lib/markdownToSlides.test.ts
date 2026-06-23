@@ -202,6 +202,8 @@ describe('slidesFromLlmJson', () => {
         {
           title: 'Why now',
           layout: 'stat',
+          importance: 92,
+          importanceReason: 'core evidence slide',
           sourceIds: ['S2', 'S3'],
           source: { headingLevel: 2, sectionPath: ['Market'] },
           stat: { value: '73%', label: 'teams need cleaner slides', context: 'Survey summary' },
@@ -236,6 +238,8 @@ describe('slidesFromLlmJson', () => {
     });
     const slides = slidesFromLlmJson(raw);
     expect(slides?.[1].layout).toBe('stat');
+    expect(slides?.[1].importance).toBe(92);
+    expect(slides?.[1].importanceReason).toBe('core evidence slide');
     expect(slides?.[1].sourceIds).toEqual(['S2', 'S3']);
     expect(slides?.[1].sourceLevel).toBe(2);
     expect(slides?.[1].sectionPath).toEqual(['Market']);

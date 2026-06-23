@@ -67,6 +67,14 @@ const IMAGE_POLICIES = [
   { value: 'actively add ambient and supporting visuals to spacious body slides as well as cover and section slides', label: '적극 추가' },
 ];
 
+const IMAGE_SOURCE_MODES = [
+  { value: 'auto choose stock photos, logos, or generated images based on slide intent', label: '자동' },
+  { value: 'prefer stock photos and logos, then generate only when stock fails', label: 'Stock 우선' },
+  { value: 'prefer generated images for concepts and ambient visuals, then use stock for factual subjects', label: '생성 우선' },
+  { value: 'use stock photos and logos only; do not generate images', label: 'Stock만' },
+  { value: 'use generated images only; do not search stock photos or logos', label: '생성만' },
+];
+
 const MARGIN_OPTIONS = [
   { value: 'wide margins with generous whitespace', label: '넓게' },
   { value: 'theme default balanced margins', label: '표준' },
@@ -403,6 +411,22 @@ export function SlideExportPanel({
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+
+          <div className="ai-pptx-field">
+            <span className="ai-pptx-label">이미지 소스</span>
+            <div className="ai-pptx-segments five">
+              {IMAGE_SOURCE_MODES.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  className={item.value === (options.imageSourceMode ?? 'auto choose stock photos, logos, or generated images based on slide intent') ? 'active' : ''}
+                  onClick={() => patch({ imageSourceMode: item.value })}
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
           </div>
 

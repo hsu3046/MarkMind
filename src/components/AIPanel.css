@@ -354,6 +354,10 @@
     grid-template-columns: repeat(3, 1fr);
 }
 
+.ai-pptx-segments.five {
+    grid-template-columns: repeat(5, 1fr);
+}
+
 .ai-pptx-segments button:hover {
     border-color: var(--accent, #3b82f6);
     color: var(--text-primary);

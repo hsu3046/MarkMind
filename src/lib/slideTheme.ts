@@ -66,6 +66,7 @@ export interface SlideExportOptions {
   designLayout?: string;
   visualDensity?: string;
   imagePolicy?: string;
+  imageSourceMode?: string;
   fontPreference?: string;
   fontFamily?: string;
   marginPreference?: string;

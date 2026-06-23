@@ -401,6 +401,7 @@ function App() {
     designLayout: 'auto content-aware layout mix with strong variety',
     visualDensity: 'balanced text density with readable slide capacity',
     imagePolicy: 'add image intent only when it materially improves the slide',
+    imageSourceMode: 'auto choose stock photos, logos, or generated images based on slide intent',
     fontPreference: 'free multilingual sans font pairing',
     marginPreference: 'theme default balanced margins',
   });
@@ -575,6 +576,7 @@ function App() {
         { buildPptx },
         { normalizeSlidesForPptx, validateSlideDeck, summarizeSlideIssues },
         { resolveSlideAssets },
+        { saveSlideAssetBundle },
       ] =
         await Promise.all([
           import('@tauri-apps/plugin-dialog'),
@@ -583,6 +585,7 @@ function App() {
           import('./lib/buildPptx'),
           import('./lib/slideValidation'),
           import('./services/slideAssets'),
+          import('./services/slideAssetBundle'),
         ]);
       const path = await save({
         defaultPath: `${baseName}.pptx`,
@@ -604,6 +607,7 @@ function App() {
           designLayout: pptxOptions.designLayout?.trim() || null,
           visualDensity: pptxOptions.visualDensity?.trim() || null,
           imagePolicy: pptxOptions.imagePolicy?.trim() || null,
+          imageSourceMode: pptxOptions.imageSourceMode?.trim() || null,
           fontPreference: pptxOptions.fontPreference?.trim() || null,
           fontFamily: pptxOptions.fontFamily?.trim() || null,
           marginPreference: pptxOptions.marginPreference?.trim() || null,
@@ -651,6 +655,18 @@ function App() {
       const buf = await buildPptx(slides, { title: baseName, baseDir, theme: slideTheme, masterSpec: aiDeck?.masterSpec });
       pushPptxProgressStep(jobId, '💾 PPTX 저장 중...', undefined, 'pptx-save');
       await invoke('save_pptx', { path, data: Array.from(new Uint8Array(buf)) });
+      if (assetResult.assets.length > 0) {
+        pushPptxProgressStep(jobId, '💾 이미지 에셋 저장 중...', `${assetResult.assets.length}개`, 'pptx-assets-save');
+        try {
+          const savedAssets = await saveSlideAssetBundle(path, assetResult.assets);
+          if (savedAssets) {
+            pushPptxProgressStep(jobId, '✅ 이미지 에셋 저장 완료', `${savedAssets.saved}개`, 'pptx-assets-save');
+          }
+        } catch (assetErr) {
+          console.warn('[export_pptx] 이미지 에셋 저장 실패:', assetErr);
+          pushPptxProgressStep(jobId, '⚠️ 이미지 에셋 저장 실패', undefined, 'pptx-assets-save');
+        }
+      }
       pushPptxProgressStep(jobId, '✅ 파워포인트 생성 완료');
     } catch (err) {
       console.error('[export_pptx] failed:', err);

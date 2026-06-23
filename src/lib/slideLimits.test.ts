@@ -4,6 +4,7 @@ import {
   clampSlideCountValue,
   generatedImageLimitForPolicy,
   PPTX_MAX_SLIDES,
+  slideImageSourceMode,
   stockImageLimitForPolicy,
 } from './slideLimits';
 
@@ -19,6 +20,14 @@ describe('slideLimits', () => {
     expect(stockImageLimitForPolicy('add image intent only when it materially improves the slide')).toBe(6);
     expect(stockImageLimitForPolicy('actively add ambient and supporting visuals to spacious body slides')).toBe(18);
     expect(generatedImageLimitForPolicy('actively add ambient and supporting visuals to spacious body slides')).toBe(8);
+  });
+
+  it('이미지 소스 모드를 해석', () => {
+    expect(slideImageSourceMode('auto choose stock photos, logos, or generated images')).toBe('auto');
+    expect(slideImageSourceMode('prefer stock photos and logos, then generate only when stock fails')).toBe('stockFirst');
+    expect(slideImageSourceMode('prefer generated images for concepts')).toBe('generatedFirst');
+    expect(slideImageSourceMode('use stock photos and logos only; do not generate images')).toBe('stockOnly');
+    expect(slideImageSourceMode('use generated images only; do not search stock photos or logos')).toBe('generatedOnly');
   });
 
   it('AI가 반환한 Markdown 초안을 slide separator 기준으로 clamp', () => {

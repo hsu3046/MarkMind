@@ -19,6 +19,7 @@ const PAGE_H = 7.5;
 
 type Pptx = InstanceType<typeof PptxGenJS>;
 type PptxSlide = ReturnType<Pptx['addSlide']>;
+type ResolvedImage = { data?: string; path?: string; width?: number; height?: number };
 
 const RECT_SHAPE = 'rect' as PptxGenJS.ShapeType;
 
@@ -212,8 +213,8 @@ function spansToRich(
 async function resolveImage(
   src: string,
   baseDir?: string,
-): Promise<{ data?: string; path?: string } | null> {
-  if (src.startsWith('data:')) return { data: src };
+): Promise<ResolvedImage | null> {
+  if (src.startsWith('data:')) return { data: src, ...imageDimensionsFromDataUrl(src) };
   if (/^https?:\/\//i.test(src)) return { path: src };
   try {
     const { readFile } = await import('@tauri-apps/plugin-fs');
@@ -224,11 +225,71 @@ async function resolveImage(
     let bin = '';
     for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
     const mime = MIME[ext(p)] ?? 'image/png';
-    return { data: `data:${mime};base64,${btoa(bin)}` };
+    const data = `data:${mime};base64,${btoa(bin)}`;
+    return { data, ...imageDimensionsFromBytes(bytes, mime) };
   } catch (e) {
     console.warn('[buildPptx] 이미지 로드 실패, 건너뜀:', src, e);
     return null;
   }
+}
+
+function bytesFromDataUrl(dataUrl: string): { bytes: Uint8Array; mime: string } | null {
+  const match = dataUrl.match(/^data:([^;,]+)(;base64)?,(.*)$/s);
+  if (!match) return null;
+  const raw = match[2] ? atob(match[3] || '') : decodeURIComponent(match[3] || '');
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return { bytes, mime: match[1] || 'image/png' };
+}
+
+function imageDimensionsFromDataUrl(dataUrl: string): { width?: number; height?: number } {
+  const parsed = bytesFromDataUrl(dataUrl);
+  return parsed ? imageDimensionsFromBytes(parsed.bytes, parsed.mime) : {};
+}
+
+function imageDimensionsFromBytes(bytes: Uint8Array, mime: string): { width?: number; height?: number } {
+  if (mime.includes('png') && bytes.length >= 24) {
+    const width = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
+    const height = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
+    if (width > 0 && height > 0) return { width, height };
+  }
+  if (mime.includes('jpeg') || mime.includes('jpg')) {
+    for (let i = 2; i + 9 < bytes.length;) {
+      if (bytes[i] !== 0xff) break;
+      const marker = bytes[i + 1];
+      const len = (bytes[i + 2] << 8) | bytes[i + 3];
+      if (len < 2) break;
+      if (marker >= 0xc0 && marker <= 0xc3) {
+        const height = (bytes[i + 5] << 8) | bytes[i + 6];
+        const width = (bytes[i + 7] << 8) | bytes[i + 8];
+        if (width > 0 && height > 0) return { width, height };
+      }
+      i += 2 + len;
+    }
+  }
+  if (mime.includes('svg')) {
+    const text = new TextDecoder().decode(bytes);
+    const viewBox = text.match(/viewBox=["']\s*[-.\d]+\s+[-.\d]+\s+([.\d]+)\s+([.\d]+)\s*["']/i);
+    if (viewBox) return { width: Number(viewBox[1]), height: Number(viewBox[2]) };
+    const width = text.match(/\bwidth=["']([.\d]+)(?:px)?["']/i);
+    const height = text.match(/\bheight=["']([.\d]+)(?:px)?["']/i);
+    if (width && height) return { width: Number(width[1]), height: Number(height[1]) };
+  }
+  return {};
+}
+
+function fitImageBox(
+  img: ResolvedImage,
+  box: { x: number; y: number; w: number; h: number },
+  mode: 'contain' | 'cover',
+): { x: number; y: number; w: number; h: number } {
+  if (!img.width || !img.height || img.width <= 0 || img.height <= 0) return box;
+  const imageRatio = img.width / img.height;
+  const boxRatio = box.w / box.h;
+  const fitByWidth = mode === 'contain' ? imageRatio >= boxRatio : imageRatio < boxRatio;
+  const w = fitByWidth ? box.w : box.h * imageRatio;
+  const h = fitByWidth ? box.w / imageRatio : box.h;
+  return { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h };
 }
 
 function slideImageSrc(slide: Slide): string | undefined {
@@ -246,10 +307,11 @@ async function addSlideImage(
   if (!src) return false;
   const img = await resolveImage(src, baseDir);
   if (!img) return false;
+  const { width: _width, height: _height, ...imgProps } = img;
+  const fitted = fitImageBox(img, box, sizing);
   s.addImage({
-    ...img,
-    ...box,
-    sizing: { type: sizing, w: box.w, h: box.h },
+    ...imgProps,
+    ...fitted,
     altText: slide.image?.alt || slide.title,
   });
   return true;
@@ -280,8 +342,13 @@ async function addSlideImagePanel(
   theme: SlideTheme,
   baseDir: string | undefined,
   box: { x: number; y: number; w: number; h: number },
-  sizing: 'contain' | 'cover' = 'cover',
+  sizing: 'contain' | 'cover' = 'contain',
 ): Promise<boolean> {
+  s.addShape(RECT_SHAPE, {
+    ...box,
+    fill: { color: theme.palette.surfaceAlt, transparency: 0 },
+    line: { color: theme.palette.border, transparency: 100 },
+  });
   const added = await addSlideImage(s, slide, baseDir, box, sizing);
   if (!added) return false;
   s.addShape(RECT_SHAPE, {
@@ -731,7 +798,9 @@ async function renderBlocks(
       const img = await resolveImage(b.src, baseDir);
       const h = Math.min(avail(), 3.15);
       if (img) {
-        s.addImage({ ...img, x: box.x, y, w: box.w, h, sizing: { type: 'contain', w: box.w, h }, altText: b.alt });
+        const { width: _width, height: _height, ...imgProps } = img;
+        const fitted = fitImageBox(img, { x: box.x, y, w: box.w, h }, 'contain');
+        s.addImage({ ...imgProps, ...fitted, altText: b.alt });
       } else {
         s.addText(`[이미지: ${b.alt || b.src}]`, {
           x: box.x,
@@ -802,7 +871,7 @@ async function renderTwoColumnSlide(pptx: Pptx, slide: Slide, theme: SlideTheme,
     w: imageW,
     h: maxCardH,
   };
-  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'cover') : false;
+  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'contain') : false;
   const contentW = imageAdded ? w - imageW - imageGap : w;
   const gap = Math.max(0.34, theme.spacing.columnGap);
   const colW = (contentW - gap) / 2;
@@ -854,7 +923,7 @@ async function renderQuoteSlide(pptx: Pptx, slide: Slide, theme: SlideTheme, bas
     w: imageW,
     h: 4.52,
   };
-  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'cover') : false;
+  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'contain') : false;
   const quoteX = theme.spacing.marginX + 0.55;
   const quoteW = imageAdded
     ? Math.max(5.4, imageBox.x - quoteX - Math.max(0.42, theme.spacing.columnGap))
@@ -909,7 +978,7 @@ async function renderStatSlide(pptx: Pptx, slide: Slide, theme: SlideTheme, base
     w: imageW,
     h: theme.spacing.bodyBottom - bodyTopFor(slide, theme),
   };
-  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'cover') : false;
+  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'contain') : false;
   const textX = theme.spacing.marginX;
   const textW = imageAdded
     ? Math.max(5.5, imageBox.x - textX - Math.max(0.46, theme.spacing.columnGap))
@@ -960,7 +1029,9 @@ async function renderImageFocusSlide(pptx: Pptx, slide: Slide, theme: SlideTheme
   const src = slide.image?.src || slide.body.find((b): b is Extract<SlideBlock, { kind: 'image' }> => b.kind === 'image')?.src;
   const img = src ? await resolveImage(src, baseDir) : null;
   if (img) {
-    s.addImage({ ...img, x: 0, y: 0, w: PAGE_W, h: PAGE_H, sizing: { type: 'cover', w: PAGE_W, h: PAGE_H }, altText: slide.image?.alt });
+    const { width: _width, height: _height, ...imgProps } = img;
+    const fitted = fitImageBox(img, { x: 0, y: 0, w: PAGE_W, h: PAGE_H }, 'cover');
+    s.addImage({ ...imgProps, ...fitted, altText: slide.image?.alt });
     s.addShape(RECT_SHAPE, { x: 0, y: 0, w: PAGE_W * 0.45, h: PAGE_H, fill: { color: theme.palette.title, transparency: 10 }, line: { color: theme.palette.title, transparency: 100 } });
     s.addText(slide.title, {
       x: 0.72,

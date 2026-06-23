@@ -6,6 +6,8 @@ import { parseInline, type Slide } from './markdownToSlides';
 describe('buildPptx', () => {
   const tinyPng =
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l0cZ1QAAAABJRU5ErkJggg==';
+  const widePng =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAJCAYAAAA7KqwyAAAAFklEQVR4nGOQm/D/PyWYYdSAUQOAGADaQ4DQ/rxYmwAAAABJRU5ErkJggg==';
 
   it('renders two-column slides without relying on static PptxGenJS ShapeType', async () => {
     const slides: Slide[] = [
@@ -101,6 +103,26 @@ describe('buildPptx', () => {
 
     expect(mediaPaths.length).toBeGreaterThan(0);
     expect(slideXml).toContain('Generated image should be visible');
+  });
+
+  it('preserves resolved image aspect ratio instead of stretching to the slot', async () => {
+    const slides: Slide[] = [
+      {
+        title: 'Wide Visual',
+        layout: 'content',
+        body: [{ kind: 'bullet', spans: parseInline('Wide image should keep its original ratio'), indent: 0 }],
+        image: { src: widePng, alt: 'wide visual', role: 'support' },
+      },
+    ];
+
+    const pptx = await buildPptx(slides, { title: 'Image Ratio' });
+    const zip = await JSZip.loadAsync(pptx);
+    const slideXml = await zip.file('ppt/slides/slide1.xml')?.async('string');
+    const pic = slideXml?.match(/<p:pic>[\s\S]*?<a:ext cx="(\d+)" cy="(\d+)"/);
+    expect(pic).toBeTruthy();
+    const ratio = Number(pic?.[1]) / Number(pic?.[2]);
+    expect(ratio).toBeGreaterThan(1.72);
+    expect(ratio).toBeLessThan(1.83);
   });
 
   it('renders resolved slide image assets on special visual layouts', async () => {
