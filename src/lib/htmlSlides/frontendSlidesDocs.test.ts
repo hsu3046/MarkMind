@@ -29,4 +29,11 @@ describe('frontendSlidesDocs', () => {
     expect(prompt).toContain('templates/signal/design.md');
     expect(prompt).toContain('Signal');
   });
+
+  it('can build native HTML rules without the JSON-only renderer constraint', () => {
+    const prompt = buildFrontendSlidesDesignRules('signal', 'html');
+
+    expect(prompt).toContain('output the final HTML/CSS/JS deck directly');
+    expect(prompt).not.toContain('Output JSON only. Do not output raw HTML/CSS');
+  });
 });

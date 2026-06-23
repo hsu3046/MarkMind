@@ -55,8 +55,14 @@ export function getFrontendSlidesTemplateDocs(themeId?: string): FrontendSlidesT
   return TEMPLATE_DOCS[(themeId as HtmlSlideThemeId) ?? 'blue-professional'] ?? TEMPLATE_DOCS['blue-professional'];
 }
 
-export function buildFrontendSlidesDesignRules(themeId?: string): string {
+export type FrontendSlidesOutputMode = 'json' | 'html';
+
+export function buildFrontendSlidesDesignRules(themeId?: string, outputMode: FrontendSlidesOutputMode = 'json'): string {
   const docs = getFrontendSlidesTemplateDocs(themeId);
+  const outputRule =
+    outputMode === 'html'
+      ? 'For HTML-native export, output the final HTML/CSS/JS deck directly and use the selected template design.md as executable visual grammar. Do not reduce it to MarkMind Slide[] JSON.'
+      : 'Output JSON only. Do not output raw HTML/CSS. The MarkMind HTML renderer will implement the style.';
   return [
     `Adopt the vendored frontend-slides template "${docs.name}" as the primary HTML slide design authority.`,
     `Source: ${docs.sourceUrl}`,
@@ -65,7 +71,7 @@ export function buildFrontendSlidesDesignRules(themeId?: string): string {
     'Infer the final deck art direction yourself, then apply it consistently across cover, section, content, evidence, quote, image, and closing slides.',
     'Use the fixed-stage browser slide model described by frontend-slides. Plan for a 1920x1080 canvas scaled to the viewport, not for editable PowerPoint placeholders.',
     'Prefer distinctive HTML-native slide structures: full-bleed or large media regions, poster-like grids, dense editorial panels, strong section dividers, and progressive visual hierarchy.',
-    'Output JSON only. Do not output raw HTML/CSS. The MarkMind HTML renderer will implement the style.',
+    outputRule,
     `<frontend-slides-html-template path="html-template.md">\n${htmlTemplateMd}\n</frontend-slides-html-template>`,
     `<frontend-slides-viewport-base path="viewport-base.css">\n${viewportBaseCss}\n</frontend-slides-viewport-base>`,
     `<frontend-slides-animation-patterns path="animation-patterns.md">\n${animationPatternsMd}\n</frontend-slides-animation-patterns>`,

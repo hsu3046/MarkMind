@@ -99,18 +99,6 @@ function createSlideProgressJobId(): string {
   return `slide-${uuid}`;
 }
 
-function isCompleteJsonObject(raw: string): boolean {
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start === -1 || end <= start) return false;
-  try {
-    const parsed = JSON.parse(raw.slice(start, end + 1)) as { slides?: unknown } | unknown[];
-    return Array.isArray(parsed) || Array.isArray((parsed as { slides?: unknown }).slides);
-  } catch {
-    return false;
-  }
-}
-
 function App() {
   const { theme, setThemeTransient, resetThemeToOS } = useTheme();
   const auth = useAuth();
@@ -712,9 +700,18 @@ function App() {
         { save },
         { writeTextFile },
         { invoke },
-        { markdownToSlides, preserveSourceImagesForPptx, slideDeckFromLlmJson },
+        { markdownToSlides, preserveSourceImagesForPptx },
         { buildHtmlSlides },
         { buildFrontendSlidesDesignRules },
+        {
+          applyHtmlNativeAssetRecords,
+          ensureHtmlNativeDocument,
+          htmlNativeDeckFromLlmHtml,
+          normalizeHtmlNativeAssetIntents,
+          slidesFromHtmlNativeAssetIntents,
+          summarizeHtmlNativeValidation,
+          validateHtmlNativeSlides,
+        },
         { normalizeSlidesForPptx, validateSlideDeck, summarizeSlideIssues },
         { resolveSlideAssets },
         { saveSlideAssetBundle },
@@ -725,6 +722,7 @@ function App() {
         import('./lib/markdownToSlides'),
         import('./lib/buildHtmlSlides'),
         import('./lib/htmlSlides/frontendSlidesDocs'),
+        import('./lib/htmlSlides/nativeHtmlSlides'),
         import('./lib/slideValidation'),
         import('./services/slideAssets'),
         import('./services/slideAssetBundle'),
@@ -748,29 +746,26 @@ function App() {
         imageSourceMode: pptxOptions.imageSourceMode?.trim() || 'prefer generated images for concepts and ambient visuals, then use stock for factual subjects',
       };
       const slideTheme = applySlideDesignOptions(getSlideTheme(pptxOptions.themeId), htmlExportOptions);
-      const frontendSlidesDesignRules = buildFrontendSlidesDesignRules(htmlTheme.id);
+      const frontendSlidesDesignRules = buildFrontendSlidesDesignRules(htmlTheme.id, 'html');
       const htmlDesignRules = [
         'Target renderer is fixed-stage HTML slides: 1920x1080 canvas scaled uniformly to viewport.',
         'Use browser-slide affordances more boldly than PPTX: full-bleed image panels, poster grids, large editorial type, asymmetric panels, strong section openers, and sparse text.',
         'Autonomous design mode: do not ask for style previews or user selection. Infer one visual thesis for the whole deck from the document, audience, tone, and selected template, then distribute slide roles and visual intensity yourself.',
-        'Before choosing individual slides, internally decide which pages are cover, section beat, core argument, evidence, contrast, quote, stat, image essay, and closing. Encode that decision through layout, htmlVariant, importance, image role, and concise content structure.',
-        'Choose slide layouts and text density for browser-based presentation, but output JSON only.',
+        'Before writing HTML, decide which pages are cover, section beat, core argument, evidence, contrast, quote, stat, image essay, and closing. Encode that decision in section classes, data-layout values, hierarchy, and image slots.',
+        'Output a complete HTML document directly. Do not output MarkMind Slide[] JSON, PptxGenJS options, or markdown.',
         `HTML template recipe: ${htmlTheme.name}. ${htmlTheme.description}`,
         frontendSlidesDesignRules,
         [
-          'HTML variant rule: choose htmlVariant for many slides, not only layout.',
-          'Allowed Blue Professional variants: blue.agenda-grid, blue.split-highlight, blue.timeline-steps, blue.metric-row, blue.bar-insight, blue.tension-resolution, blue.closing-circles, blue.editorial-photo, blue.photo-band.',
-          'Allowed Neo-Grid Bold variants: neo.section-ordinal, neo.poster-grid-6, neo.photo-strip, neo.stat-wall, neo.process-arrows, neo.matrix-table, neo.manifesto-grid, neo.image-billboard.',
-          'Allowed Signal variants: signal.timeline-spine, signal.briefing-cards, signal.editorial-split, signal.statement, signal.editorial-columns, signal.compare-hairline, signal.evidence-ledger, signal.photo-essay, signal.image-dossier.',
-          'Do not repeat the same htmlVariant on adjacent body slides. In decks with 7 or more slides, use at least 4 visibly different variants unless the source content is extremely short.',
-          'Use variants to avoid repeated title-plus-card slides. Match the selected HTML template prefix; do not invent unrelated variant names. Prefer template-specific variants over generic content when they fit.',
-          'For image-bearing body slides, prefer the template-specific image variants over ordinary content-with-image unless the slide is purely explanatory.',
+          'HTML-native structure rule: every <section class="slide ..."> must include data-layout with a meaningful template-specific layout name.',
+          'Use template-specific components instead of generic cards: Blue can use dashboard/detail/bar/metric/agenda layouts; Neo can use dense grid panels/process/matrix/poster layouts; Signal can use chapter/statement/split/stats/chart/pyramid/cycle/editorial layouts.',
+          'Do not repeat the same visual pattern on adjacent body slides. In decks with 7 or more slides, use at least 4 visibly different section data-layout values unless the source content is extremely short.',
+          'Plan image slots while designing each slide. Use {{markmind_asset:asset-id}} placeholders and the markmind-asset-intents JSON script for every stock/logo/generated visual.',
         ].join('\n'),
         sourceOnlyImages
           ? 'Image rule: preserve source image paths when they exist, but do not invent new image intents.'
-          : 'Image rule: add image intent to roughly 70-90 percent of slides. Every visual slide must include image.query or image.prompt plus role, aspect, sourcePreference, and alt. Prefer image-focus, section, quote, stat, and spacious body slides over generic bullet-only slides.',
-        'Keep JSON compact: no long notes, no implementation explanation, and no repeated source prose. Prefer short blocks and concise columns.',
-        'Do not output HTML, CSS, coordinates, or font sizes. The deterministic HTML renderer owns visual styling.',
+          : 'Image rule: add image placeholders to roughly 70-90 percent of slides. Prefer body slides with empty visual regions, section openers, quote/stat slides, cover, conclusion, and core argument slides over generic bullet-only slides.',
+        'Keep content concise: no long notes, no implementation explanation visible in the deck, and no repeated source prose.',
+        'Run a self-check for overflow, contrast, placeholder coverage, layout diversity, and fixed-stage behavior before returning HTML.',
       ].join('\n');
       const buildHtmlLlmOptions = (retryInstruction?: string) => ({
         designLayout: htmlExportOptions.designLayout?.trim() || 'HTML-first editorial layout mix with image-focus, section, stat, quote, grid, and asymmetric content slides',
@@ -786,11 +781,11 @@ function App() {
         themeName: htmlTheme.name,
         themeRules: [
           htmlTheme.description,
-          'Use the selected HTML template as a strong layout recipe. The renderer applies the actual CSS, but the slide JSON should choose image-heavy and editorial layout intent.',
+          'Use the selected HTML template as the actual HTML/CSS design system. Author template-specific sections, components, panels, charts, image regions, and deck controls directly.',
         ],
       });
 
-      let raw = await invoke<string>('generate_slides_llm', {
+      const raw = await invoke<string>('generate_html_slides_llm', {
         markdown: content,
         company: sel.company,
         auth: sel.auth,
@@ -798,78 +793,102 @@ function App() {
         jobId,
         options: buildHtmlLlmOptions(),
       });
-      pushPptxProgressStep(jobId, 'AI 응답 검증 중...', undefined, 'html-validate-response');
-      let responseComplete = isCompleteJsonObject(raw);
-      let aiDeck = slideDeckFromLlmJson(raw);
-      if (!responseComplete && aiDeck?.slides?.length) {
-        pushPptxProgressStep(jobId, 'AI 응답이 잘려 재요청 중...', '완성형 JSON으로 재시도', 'html-retry-complete-json');
-        const retryRaw = await invoke<string>('generate_slides_llm', {
-          markdown: content,
-          company: sel.company,
-          auth: sel.auth,
-          model: sel.model,
-          jobId,
-          options: buildHtmlLlmOptions(
-            'The previous response was truncated. Return one complete compact JSON object this time. Close every string, slide object, the slides array, and the top-level object. Omit speaker notes unless essential. Keep text shorter and preserve image intents.',
-          ),
-        });
-        raw = retryRaw;
-        responseComplete = isCompleteJsonObject(raw);
-        aiDeck = slideDeckFromLlmJson(raw);
-      }
-      let slides = aiDeck?.slides ?? null;
-      console.log(
-        `[export_html_slides] AI(${sel.company}/${sel.auth}) 응답 ${raw.length}자 → 슬라이드 ${slides?.length ?? 0}장, complete=${responseComplete}`,
-      );
-      if (!responseComplete && slides?.length) {
-        pushPptxProgressStep(jobId, 'AI 응답 일부 복구 사용', '완성된 슬라이드만 사용합니다', 'html-partial-json');
-      }
-      if (!slides || slides.length === 0) {
-        console.warn('[export_html_slides] AI 응답 파싱 실패, 규칙 기반 안전망으로 폴백. 원문:', raw);
-        alert('AI 응답을 해석하지 못해 기본 레이아웃으로 저장합니다.\n(개발자 콘솔에 원문이 로깅되었습니다)');
-        slides = markdownToSlides(content);
-      }
-      if (slideImagePolicyMode(htmlExportOptions.imagePolicy) === 'sourceOnly') {
-        slides = preserveSourceImagesForPptx(slides, content);
+      const baseDir = filePath ? filePath.replace(/\/[^/]*$/, '') : undefined;
+      pushPptxProgressStep(jobId, 'HTML 응답 검증 중...', undefined, 'html-validate-response');
+      const nativeDeck = htmlNativeDeckFromLlmHtml(raw);
+      let html: string | null = null;
+      let htmlAssetRecords: Awaited<ReturnType<typeof resolveSlideAssets>>['assets'] = [];
+      if (nativeDeck) {
+        const initialReport = validateHtmlNativeSlides(nativeDeck.html);
+        if (initialReport.errors.length > 0) {
+          console.warn('[export_html_slides] native HTML QA failed:\n' + summarizeHtmlNativeValidation(initialReport));
+          pushPptxProgressStep(jobId, 'HTML-native 검증 실패', '기존 렌더러 안전망으로 전환', 'html-native-qa');
+        } else {
+          if (initialReport.warnings.length > 0) {
+            console.warn('[export_html_slides] native HTML QA warnings:\n' + summarizeHtmlNativeValidation(initialReport));
+          }
+          const nativeIntents = normalizeHtmlNativeAssetIntents(nativeDeck.assetIntents);
+          pushPptxProgressStep(
+            jobId,
+            'HTML 이미지 슬롯 계획 완료',
+            `${nativeIntents.length}개`,
+            'html-native-asset-plan',
+          );
+          const intentSlides = slidesFromHtmlNativeAssetIntents(nativeIntents);
+          const assetResult = await resolveSlideAssets(intentSlides, htmlExportOptions, {
+            theme: slideTheme,
+            onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
+          });
+          const applied = applyHtmlNativeAssetRecords(nativeDeck.html, assetResult.assets);
+          html = ensureHtmlNativeDocument(applied.html, baseName);
+          const finalReport = validateHtmlNativeSlides(html);
+          if (finalReport.errors.length > 0) {
+            console.warn('[export_html_slides] native HTML final QA failed:\n' + summarizeHtmlNativeValidation(finalReport));
+            pushPptxProgressStep(jobId, 'HTML-native 최종 검증 실패', '기존 렌더러 안전망으로 전환', 'html-native-final-qa');
+            html = null;
+          } else {
+            if (finalReport.warnings.length > 0) {
+              console.warn('[export_html_slides] native HTML final QA warnings:\n' + summarizeHtmlNativeValidation(finalReport));
+            }
+            htmlAssetRecords = assetResult.assets.map((record) => ({
+              ...record,
+              inserted: applied.insertedIds.has(record.slideId),
+            }));
+            pushPptxProgressStep(
+              jobId,
+              'HTML-native 레이아웃 검증 완료',
+              `${finalReport.slideCount}장 · 레이아웃 ${finalReport.layoutCount || '확인 불가'}종`,
+              'html-native-final-qa',
+            );
+          }
+        }
+      } else {
+        console.warn('[export_html_slides] native HTML response parsing failed. Raw:', raw);
+        pushPptxProgressStep(jobId, 'HTML-native 응답 해석 실패', '기존 렌더러 안전망으로 전환', 'html-native-parse');
       }
 
-      pushPptxProgressStep(jobId, '슬라이드 레이아웃 검증 중...', undefined, 'html-layout-qa');
-      slides = normalizeSlidesForPptx(slides);
-      if (slides.length > PPTX_MAX_SLIDES) {
-        const originalCount = slides.length;
-        slides = slides.slice(0, PPTX_MAX_SLIDES);
-        pushPptxProgressStep(
-          jobId,
-          '슬라이드 장수 제한 적용',
-          `${originalCount}장 → ${PPTX_MAX_SLIDES}장`,
-          'html-slide-limit',
-        );
+      if (!html) {
+        let slides = markdownToSlides(content);
+        if (slideImagePolicyMode(htmlExportOptions.imagePolicy) === 'sourceOnly') {
+          slides = preserveSourceImagesForPptx(slides, content);
+        }
+        pushPptxProgressStep(jobId, '기존 HTML 렌더러 안전망 실행 중...', undefined, 'html-fallback');
+        slides = normalizeSlidesForPptx(slides);
+        if (slides.length > PPTX_MAX_SLIDES) {
+          const originalCount = slides.length;
+          slides = slides.slice(0, PPTX_MAX_SLIDES);
+          pushPptxProgressStep(
+            jobId,
+            '슬라이드 장수 제한 적용',
+            `${originalCount}장 → ${PPTX_MAX_SLIDES}장`,
+            'html-slide-limit',
+          );
+        }
+        const report = validateSlideDeck(slides);
+        const issueSummary = summarizeSlideIssues(report);
+        if (issueSummary) console.warn('[export_html_slides] fallback slide QA warnings:\n' + issueSummary);
+        const fallbackAssetResult = await resolveSlideAssets(slides, htmlExportOptions, {
+          theme: slideTheme,
+          onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
+        });
+        htmlAssetRecords = fallbackAssetResult.assets;
+        html = await buildHtmlSlides(fallbackAssetResult.slides, {
+          title: baseName,
+          baseDir,
+          theme: htmlTheme,
+          fontFamily: htmlExportOptions.fontFamily,
+          transition: htmlExportOptions.htmlTransition,
+          editable: true,
+        });
       }
-      const report = validateSlideDeck(slides);
-      const issueSummary = summarizeSlideIssues(report);
-      if (issueSummary) console.warn('[export_html_slides] slide QA warnings:\n' + issueSummary);
-      const baseDir = filePath ? filePath.replace(/\/[^/]*$/, '') : undefined;
-      const assetResult = await resolveSlideAssets(slides, htmlExportOptions, {
-        theme: slideTheme,
-        onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
-      });
-      slides = assetResult.slides;
 
       pushPptxProgressStep(jobId, 'HTML 파일 생성 중...', undefined, 'html-build');
-      const html = await buildHtmlSlides(slides, {
-        title: baseName,
-        baseDir,
-        theme: htmlTheme,
-        fontFamily: htmlExportOptions.fontFamily,
-        transition: htmlExportOptions.htmlTransition,
-        editable: true,
-      });
       pushPptxProgressStep(jobId, 'HTML 저장 중...', undefined, 'html-save');
       await writeTextFile(path, html);
-      if (assetResult.assets.length > 0) {
-        pushPptxProgressStep(jobId, '이미지 에셋 저장 중...', `${assetResult.assets.length}개`, 'html-assets-save');
+      if (htmlAssetRecords.length > 0) {
+        pushPptxProgressStep(jobId, '이미지 에셋 저장 중...', `${htmlAssetRecords.length}개`, 'html-assets-save');
         try {
-          const savedAssets = await saveSlideAssetBundle(path, assetResult.assets);
+          const savedAssets = await saveSlideAssetBundle(path, htmlAssetRecords);
           if (savedAssets) {
             pushPptxProgressStep(jobId, '이미지 에셋 저장 완료', `${savedAssets.saved}개`, 'html-assets-save');
           }

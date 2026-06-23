@@ -119,6 +119,21 @@ const SLIDES_SYSTEM: &str = concat!(
     "Do not output colors, coordinates, font sizes, font names, PptxGenJS options, OpenXML, placeholders, or raw CSS."
 );
 
+const HTML_SLIDES_SYSTEM: &str = concat!(
+    "You are a senior frontend presentation designer. Create a complete self-contained HTML slide deck, not PPTX JSON and not a manuscript. ",
+    "Output raw HTML only: no prose, no markdown fence, no JSON wrapper. ",
+    "Every deck must be a single HTML document with inline CSS and inline JavaScript only. No npm, no build tools, no external scripts, no iframe/object/embed, and no remote image URLs. ",
+    "Use a fixed 1920x1080 .deck-stage scaled uniformly to the viewport. Do not reflow slides responsively. Each slide must be a <section class=\"slide ...\" data-layout=\"...\">. ",
+    "Apply the selected frontend-slides / beautiful-html-templates design.md as the actual visual grammar, not as a loose inspiration: preserve its typography roles, color discipline, spacing rhythm, component vocabulary, panel grammar, and distinctive decorative motifs. ",
+    "Design HTML-native slides directly: use editorial grids, dashboards, charts, matrices, timelines, section dividers, image essays, pull quotes, poster layouts, and template-specific components when the content calls for them. Avoid a chain of title-plus-bullets cards. ",
+    "Images must be planned before final layout. For every image slot, put a placeholder URL exactly like {{markmind_asset:asset-id}} in img src or CSS url(), and add a matching intent object inside <script type=\"application/json\" id=\"markmind-asset-intents\">[...]</script>. ",
+    "Each asset intent must include id, slideIndex, slideTitle, role(cover/hero/support/logo/icon/background), query or prompt, aspect, sourcePreference(auto/stock/logo/generated/none), licenseStrictness(presentation/open/internal-only), importance, and optional style/textSummary. ",
+    "Use stock/logo intents for factual subjects, companies, products, real places, and logos. Use generated-image prompts for abstract concepts, atmosphere, section backgrounds, and emotional metaphors. Prompts must describe composition, mood, style, and constraints; search queries must stay short. ",
+    "Do not use placeholders without matching asset intents. Do not include base64 images. Do not invent factual claims, numbers, citations, people, or logos. Preserve the document language unless export options ask otherwise. ",
+    "Include keyboard navigation, page count/progress, fullscreen behavior, and presentation-safe controls. Hide controls in fullscreen unless user interaction reveals them. ",
+    "Before output, perform a visual QA pass: check slide fit, text overflow risk, layout diversity, image placeholder coverage, fixed-stage rules, contrast, and template fidelity. Repair the HTML yourself before returning it."
+);
+
 const SLIDE_MARKDOWN_DRAFT_SYSTEM: &str = concat!(
     "You are a slide manuscript agent for a Markdown-first editor. ",
     "Create a reviewable slide draft, not a PowerPoint file and not JSON. ",
@@ -1043,6 +1058,57 @@ pub async fn generate_slides_llm(
     let cleaned = extract_json_object(&slides_raw);
     emitter.emit("✅ 슬라이드 JSON 정리 완료", None);
     emitter.emit("✅ AI 슬라이드 생성 완료", None);
+    Ok(cleaned)
+}
+
+#[tauri::command]
+pub async fn generate_html_slides_llm(
+    app: AppHandle,
+    markdown: String,
+    company: crate::subscription_auth::AICompany,
+    auth: crate::subscription_auth::ClaudeAuthMode,
+    model: Option<String>,
+    options: Option<SlideGenerationOptions>,
+    job_id: Option<String>,
+) -> Result<String, String> {
+    let emitter = new_emitter(app, job_id);
+    let opt_block = slide_options_prompt(options.as_ref());
+    let (outline_block, source_sections, source_map) = slide_generation_source_context(&markdown);
+    emitter.emit(
+        "✅ 문서 구조 분석 완료",
+        Some(format!("소스 섹션 {}개", source_sections.len())),
+    );
+
+    let prompt = format!(
+        "Create the final HTML slide deck directly from this Markdown-derived source map. Do not return MarkMind Slide[] JSON. The selected template documentation, export options, and asset rules are provided below.\n\n{}\n\n{}\n\n{}",
+        opt_block,
+        outline_block,
+        source_map
+    );
+    emitter.emit("✅ HTML 설계 요청 준비 완료", None);
+    let max_tokens = options
+        .as_ref()
+        .and_then(|o| o.max_output_tokens)
+        .unwrap_or(SLIDES_HARD_MAX_TOKENS)
+        .clamp(16000, SLIDES_HARD_MAX_TOKENS);
+    let raw = call_slides_llm_with_progress(
+        &emitter,
+        "html-native-llm",
+        "⏳ AI가 HTML 슬라이드를 작성하는 중…",
+        "✅ HTML 슬라이드 작성 완료",
+        company,
+        auth,
+        model.as_deref(),
+        HTML_SLIDES_SYSTEM,
+        &prompt,
+        None,
+        max_tokens,
+    )
+    .await?;
+
+    let cleaned = strip_outer_markdown_fence(&raw);
+    emitter.emit("✅ HTML 응답 정리 완료", None);
+    emitter.emit("✅ AI HTML 생성 완료", None);
     Ok(cleaned)
 }
 

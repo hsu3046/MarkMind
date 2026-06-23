@@ -346,6 +346,7 @@ pub fn run() {
             converters::commands::run_notes_job,
             converters::commands::get_conversions_dir,
             converters::commands::generate_slides_llm,
+            converters::commands::generate_html_slides_llm,
             converters::commands::generate_slide_markdown_draft,
             converters::commands::ai_generate_claude,
             converters::commands::ai_generate_codex,
