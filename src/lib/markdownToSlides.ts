@@ -468,43 +468,43 @@ function firstSourceImage(slide: Slide): SlideImageSpec | undefined {
   return block?.src.trim() ? { src: block.src.trim(), alt: block.alt, kind: 'source', role: 'support' } : undefined;
 }
 
-function sourceImageFromLine(line: string): SlideImageSpec | undefined {
-  const img = line.match(/!\[([^\]]*)\]\(([^)]+)\)/);
-  if (!img) return undefined;
-  return { src: img[2].trim(), alt: img[1], kind: 'source', role: 'support' };
+function sourceImagesFromLine(line: string): SlideImageSpec[] {
+  return [...line.matchAll(/!\[([^\]]*)\]\(([^)]+)\)/g)]
+    .map((img) => ({ src: img[2].trim(), alt: img[1], kind: 'source' as const, role: 'support' as const }))
+    .filter((image) => image.src.length > 0);
 }
 
-function sourceImageMapFromMarkdown(markdown: string): Map<string, SlideImageSpec> {
+function sourceImageMapFromMarkdown(markdown: string): Map<string, SlideImageSpec[]> {
   const lines = stripSlideDraftMarker(markdown).split('\n');
-  const images = new Map<string, SlideImageSpec>();
+  const images = new Map<string, SlideImageSpec[]>();
   let inFrontmatter = false;
   let inFence = false;
   let fenceMarker = '';
   let nextId = 1;
   let currentId: string | undefined;
-  let currentImage: SlideImageSpec | undefined;
+  let currentImages: SlideImageSpec[] = [];
   let preludeHasContent = false;
-  let preludeImage: SlideImageSpec | undefined;
+  let preludeImages: SlideImageSpec[] = [];
 
   const rememberImage = (line: string) => {
-    const image = sourceImageFromLine(line);
-    if (!image) return;
-    if (currentId) currentImage ??= image;
-    else preludeImage ??= image;
+    const lineImages = sourceImagesFromLine(line);
+    if (lineImages.length === 0) return;
+    if (currentId) currentImages.push(...lineImages);
+    else preludeImages.push(...lineImages);
   };
 
   const closeCurrent = () => {
-    if (currentId && currentImage) images.set(currentId, currentImage);
+    if (currentId && currentImages.length > 0) images.set(currentId, currentImages);
     currentId = undefined;
-    currentImage = undefined;
+    currentImages = [];
   };
 
   const closePrelude = () => {
     if (!preludeHasContent) return;
     const id = `S${nextId++}`;
-    if (preludeImage) images.set(id, preludeImage);
+    if (preludeImages.length > 0) images.set(id, preludeImages);
     preludeHasContent = false;
-    preludeImage = undefined;
+    preludeImages = [];
   };
 
   lines.forEach((line, lineIndex) => {
@@ -562,25 +562,29 @@ function sourceIndexFromId(id: string): number | undefined {
  */
 export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | string): Slide[] {
   const sourceSlides = typeof source === 'string' ? markdownToSlides(source) : source;
-  const sourceImagesById = typeof source === 'string' ? sourceImageMapFromMarkdown(source) : new Map<string, SlideImageSpec>();
+  const sourceImagesById = typeof source === 'string' ? sourceImageMapFromMarkdown(source) : new Map<string, SlideImageSpec[]>();
   if (sourceImagesById.size === 0 && !sourceSlides.some(slideHasImageSrc)) return slides;
-  const usedSourceIds = new Set<string>();
-  const sourceImageEntries = [...sourceImagesById.entries()];
+  const sourceImageOffsets = new Map<string, number>();
+  const sourceImageEntries = [...sourceImagesById.entries()].flatMap(([id, images]) =>
+    images.map((image, imageIndex) => ({ id, image, imageIndex })),
+  );
   let nextSourceImageIndex = 0;
   const usedSourceIndexes = new Set<number>();
   const takeSourceImage = (sourceId: string): SlideImageSpec | undefined => {
     const normalized = sourceId.trim().toUpperCase();
-    if (usedSourceIds.has(normalized)) return undefined;
-    const image = sourceImagesById.get(normalized);
+    const images = sourceImagesById.get(normalized);
+    const offset = sourceImageOffsets.get(normalized) ?? 0;
+    const image = images?.[offset];
     if (!image) return undefined;
-    usedSourceIds.add(normalized);
+    sourceImageOffsets.set(normalized, offset + 1);
     return image;
   };
   const takeNextSourceImage = (): SlideImageSpec | undefined => {
     while (nextSourceImageIndex < sourceImageEntries.length) {
-      const [id, image] = sourceImageEntries[nextSourceImageIndex++];
-      if (usedSourceIds.has(id)) continue;
-      usedSourceIds.add(id);
+      const { id, image, imageIndex } = sourceImageEntries[nextSourceImageIndex++];
+      const offset = sourceImageOffsets.get(id) ?? 0;
+      if (imageIndex !== offset) continue;
+      sourceImageOffsets.set(id, offset + 1);
       return image;
     }
     return undefined;

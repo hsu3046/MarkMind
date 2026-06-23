@@ -113,6 +113,7 @@ function splitSlide(slide: Slide): Slide[] {
     title: chunkIndex === 0 ? slide.title : `${slide.title || 'Continued'} (${chunkIndex + 1}/${chunks.length})`,
     layout: 'content',
     body,
+    image: chunkIndex === 0 ? slide.image : undefined,
     notes: chunkIndex === 0 ? slide.notes : undefined,
   }));
 }

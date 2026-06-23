@@ -26,6 +26,22 @@ describe('slideValidation', () => {
     expect(normalized.flatMap((s) => s.body).filter((b) => b.kind === 'bullet')).toHaveLength(14);
   });
 
+  it('keeps image intent only on the first split slide', () => {
+    const slide: Slide = {
+      title: 'Dense visual plan',
+      layout: 'content',
+      body: bullets(14),
+      sourceIds: ['S1'],
+      image: { query: 'team workshop', sourcePreference: 'generated', role: 'support' },
+    };
+
+    const normalized = normalizeSlidesForPptx([slide]);
+
+    expect(normalized).toHaveLength(2);
+    expect(normalized[0].image?.query).toBe('team workshop');
+    expect(normalized[1].image).toBeUndefined();
+  });
+
   it('demotes invalid stat slides to content', () => {
     const slide: Slide = {
       title: 'Metric without metric',

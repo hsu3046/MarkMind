@@ -317,6 +317,23 @@ describe('slidesFromLlmJson', () => {
     expect(merged[0].image?.alt).toBe('chart');
   });
 
+  it('source-only PPTX 경로에서 같은 sourceId의 원본 이미지를 순서대로 소비', () => {
+    const markdown = ['# Report', '## Evidence', '![first](assets/first.png)', '![second](assets/second.png)'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          { title: 'First evidence', layout: 'content', sourceIds: ['S2'], bullets: ['first'] },
+          { title: 'Second evidence', layout: 'content', sourceIds: ['S2'], bullets: ['second'] },
+        ],
+      }),
+    );
+
+    const merged = preserveSourceImagesForPptx(aiSlides ?? [], markdown);
+
+    expect(merged[0].image?.src).toBe('assets/first.png');
+    expect(merged[1].image?.src).toBe('assets/second.png');
+  });
+
   it('완전 비 JSON 은 null', () => {
     expect(slidesFromLlmJson('sorry, I cannot do that')).toBeNull();
   });
