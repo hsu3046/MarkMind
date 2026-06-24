@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { buildFrontendSlidesDesignRules, getFrontendSlidesTemplateDocs } from './frontendSlidesDocs';
+import {
+  buildFrontendSlidesDesignRules,
+  getFrontendSlidesTemplateDocs,
+  getHtmlSlideRuntimeFilesForHtml,
+  getHtmlSlideTemplateCatalogForPrompt,
+} from './frontendSlidesDocs';
 
 describe('frontendSlidesDocs', () => {
-  it('loads the selected frontend-slides template docs', () => {
-    const docs = getFrontendSlidesTemplateDocs('neo-grid-bold');
+  it('loads the selected beautiful-html-templates docs', async () => {
+    const docs = await getFrontendSlidesTemplateDocs('neo-grid-bold');
 
     expect(docs.id).toBe('neo-grid-bold');
     expect(docs.previewPath).toContain('neo-grid-bold/preview.md');
@@ -15,19 +20,27 @@ describe('frontendSlidesDocs', () => {
     expect(docs.designMd.length).toBeGreaterThan(10_000);
   });
 
-  it('falls back to Blue Professional for unknown theme ids', () => {
-    const docs = getFrontendSlidesTemplateDocs('unknown-template');
+  it('falls back to Blue Professional for unknown theme ids', async () => {
+    const docs = await getFrontendSlidesTemplateDocs('unknown-template');
 
     expect(docs.id).toBe('blue-professional');
-    expect(docs.designMd).toContain('Blue Professional');
+    expect(docs.beautifulDesignMd).toContain('Blue Professional');
   });
 
-  it('builds an HTML slide prompt from common docs and the selected design.md', () => {
-    const prompt = buildFrontendSlidesDesignRules('signal');
+  it('exposes a compact template catalog for automatic selection', () => {
+    const catalog = getHtmlSlideTemplateCatalogForPrompt();
+    const parsed = JSON.parse(catalog) as Array<{ slug: string }>;
+
+    expect(parsed.length).toBeGreaterThan(20);
+    expect(parsed.some((item) => item.slug === 'signal')).toBe(true);
+    expect(catalog).toContain('"best_for"');
+  });
+
+  it('builds an HTML slide prompt from selected template docs', async () => {
+    const prompt = await buildFrontendSlidesDesignRules('signal');
 
     expect(prompt).toContain('beautiful-html-templates AGENTS.md');
     expect(prompt).toContain('AGENTS.md');
-    expect(prompt).toContain('index.json');
     expect(prompt).toContain('template.json');
     expect(prompt).toContain('templates/signal/design.md');
     expect(prompt).toContain('templates/signal/template.html');
@@ -37,8 +50,8 @@ describe('frontendSlidesDocs', () => {
     expect(prompt).toContain('deck-stage.js');
   });
 
-  it('can build native HTML rules without the JSON-only renderer constraint', () => {
-    const prompt = buildFrontendSlidesDesignRules('signal', 'html');
+  it('can build native HTML rules without the JSON-only renderer constraint', async () => {
+    const prompt = await buildFrontendSlidesDesignRules('signal', 'html');
 
     expect(prompt).toContain('output one complete HTML document directly');
     expect(prompt).toContain('<!DOCTYPE html>');
@@ -48,10 +61,10 @@ describe('frontendSlidesDocs', () => {
     expect(prompt).not.toContain('Output JSON only. Do not output raw HTML/CSS');
   });
 
-  it('detects local template runtime files referenced by generated HTML', async () => {
-    const { getHtmlSlideRuntimeFilesForHtml } = await import('./frontendSlidesDocs');
+  it('detects local template runtime files referenced by generated HTML', () => {
     const files = getHtmlSlideRuntimeFilesForHtml(
       '<html><head><script src="./deck-stage.js"></script><script src=deck-stage.js></script></head></html>',
+      'neo-grid-bold',
     );
 
     expect(files).toHaveLength(1);

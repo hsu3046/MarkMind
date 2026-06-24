@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, FileText, Loader2, Sparkles } from 'lucide-react';
-import { HTML_SLIDE_THEMES } from '../../lib/htmlSlideTheme';
+import { HTML_SLIDE_THEME_OPTIONS, getHtmlSlideTheme } from '../../lib/htmlSlideTheme';
 import type { SlideExportOptions, SlideTheme } from '../../lib/slideTheme';
 import { isTauri } from '../../services/platform';
 
@@ -154,8 +154,7 @@ export function SlideExportPanel({
       ...FALLBACK_FONT_FAMILIES,
     ]),
   );
-  const selectedHtmlTheme =
-    HTML_SLIDE_THEMES.find((theme) => theme.id === options.htmlThemeId) ?? HTML_SLIDE_THEMES[0];
+  const selectedHtmlTheme = getHtmlSlideTheme(options.htmlThemeId);
   const actionLabel = isDraft ? draftButtonLabel : isHtml ? 'HTML 생성' : '파워포인트 생성';
   const actionTitle = actionLabel;
   const runAction = isDraft ? onGenerateDraft : isHtml ? onExportHtml : onExportDirect;
@@ -294,7 +293,7 @@ export function SlideExportPanel({
             <>
               <div className="ai-pptx-backdrop" onClick={() => setHtmlThemeOpen(false)} aria-hidden="true" />
               <div className="ai-pptx-theme-menu">
-                {HTML_SLIDE_THEMES.map((theme) => (
+                {HTML_SLIDE_THEME_OPTIONS.map((theme) => (
                   <button
                     key={theme.id}
                     type="button"
@@ -312,7 +311,17 @@ export function SlideExportPanel({
                     </span>
                     <span>
                       <strong>{theme.name}</strong>
-                      <small>{theme.description}</small>
+                      <small>
+                        {[
+                          theme.description,
+                          theme.density ? `밀도 ${theme.density}` : '',
+                          theme.formality ? `격식 ${theme.formality}` : '',
+                          theme.scheme ? theme.scheme : '',
+                          ...(theme.tone?.slice(0, 2) ?? []),
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </small>
                     </span>
                   </button>
                 ))}

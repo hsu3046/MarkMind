@@ -293,6 +293,8 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    max-height: min(420px, 70vh);
+    overflow-y: auto;
     padding: 6px;
     border: 1px solid var(--border-primary);
     border-radius: 8px;

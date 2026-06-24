@@ -133,6 +133,9 @@ describe('nativeHtmlSlides', () => {
     const localRuntime = validateHtmlNativeSlides(
       '<!DOCTYPE html><html><head><script src=deck-stage.js></script></head><body><section class="slide"></section></body></html>',
     );
+    const templateChartRuntime = validateHtmlNativeSlides(
+      '<!DOCTYPE html><html><head><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script></head><body><section class="slide"></section></body></html>',
+    );
     const unknownRuntime = validateHtmlNativeSlides(
       '<!DOCTYPE html><html><head><script src="custom.js"></script></head><body><section class="slide"></section></body></html>',
     );
@@ -141,6 +144,7 @@ describe('nativeHtmlSlides', () => {
     );
 
     expect(localRuntime.errors).toEqual([]);
+    expect(templateChartRuntime.errors).toEqual([]);
     expect(unknownRuntime.errors.join('\n')).toContain('지원하지 않는 script src');
     expect(remoteRuntime.errors.join('\n')).toContain('지원하지 않는 script src');
   });

@@ -90,9 +90,11 @@ function scriptSrcs(html: string): string[] {
     .filter((src): src is string => Boolean(src));
 }
 
-function isAllowedLocalRuntimeScript(src: string): boolean {
+function isAllowedTemplateRuntimeScript(src: string): boolean {
   const clean = src.split(/[?#]/, 1)[0]?.trim().replace(/\\/g, '/') ?? '';
-  if (!clean || /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(clean)) return false;
+  if (!clean) return false;
+  if (/^https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:@[\w.-]+)?(?:\/[^?#]*)?$/i.test(clean)) return true;
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(clean)) return false;
   if (clean.split('/').includes('..')) return false;
   return /(?:^|\/)deck-stage\.js$/i.test(clean);
 }
@@ -258,7 +260,7 @@ export function sanitizeHtmlNativeSlides(html: string): string {
   return html
     .replace(/<script\b(?=[^>]*\bsrc\s*=)[^>]*>[\s\S]*?<\/script>/gi, (script) => {
       const src = scriptSrcs(script)[0];
-      return src && isAllowedLocalRuntimeScript(src) ? script : '';
+      return src && isAllowedTemplateRuntimeScript(src) ? script : '';
     })
     .replace(/<\s*(iframe|object|embed|applet)\b[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
     .replace(/<\s*(iframe|object|embed|applet)\b[^>]*\/?>/gi, '')
@@ -302,7 +304,7 @@ export function validateHtmlNativeSlides(html: string): HtmlNativeValidationRepo
   const sectionOpenCount = html.match(/<section\b/gi)?.length ?? 0;
   const sectionCloseCount = html.match(/<\/section>/gi)?.length ?? 0;
   if (sectionOpenCount > 0 && sectionCloseCount < sectionOpenCount) errors.push('일부 slide section이 닫히지 않았습니다.');
-  const blockedScriptSrcs = scriptSrcs(html).filter((src) => !isAllowedLocalRuntimeScript(src));
+  const blockedScriptSrcs = scriptSrcs(html).filter((src) => !isAllowedTemplateRuntimeScript(src));
   if (blockedScriptSrcs.length > 0) {
     errors.push(`지원하지 않는 script src가 있습니다: ${blockedScriptSrcs.join(', ')}`);
   }
