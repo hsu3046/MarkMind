@@ -96,6 +96,38 @@ describe('slideAssets', () => {
     expect(canResolveStockSearch({ ...intent, sourcePreference: 'none' })).toBe(false);
   });
 
+  it('Stock만 모드는 생성 이미지 예산이 있어도 AI 이미지 생성을 호출하지 않는다', async () => {
+    generateImageMock.mockClear();
+    const slides: Slide[] = [
+      {
+        title: 'Stock-only visual',
+        layout: 'content',
+        sourceIds: ['stock-only-visual'],
+        body: [{ kind: 'text', spans: [{ text: 'Stock 검색만 허용되는 슬라이드' }] }],
+        image: {
+          query: 'presentation stock workplace collaboration',
+          prompt: 'abstract generated concept that must not be used',
+          sourcePreference: 'generated',
+          role: 'support',
+        },
+      },
+    ];
+
+    const result = await resolveSlideAssets(
+      slides,
+      {
+        themeId: DEFAULT_SLIDE_THEME.id,
+        imagePolicy: 'actively add ambient and supporting visuals to spacious body slides',
+        imageSourceMode: 'prefer stock photos and logos, then generate only when stock fails',
+      },
+      { generatedLimitOverride: 5 },
+    );
+
+    expect(generateImageMock).not.toHaveBeenCalled();
+    expect(result.summary.generatedResolved).toBe(0);
+    expect(result.assets.filter((asset) => asset.sourceMode === 'generated')).toHaveLength(0);
+  });
+
   it('생성만 모드는 stock 선호 일반 intent도 생성으로 라우팅', () => {
     const intent: SlideImageIntent = {
       slideIndex: 1,

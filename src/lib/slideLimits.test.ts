@@ -24,7 +24,8 @@ describe('slideLimits', () => {
 
   it('이미지 소스 모드를 해석', () => {
     expect(slideImageSourceMode('auto choose stock photos, logos, or generated images')).toBe('auto');
-    expect(slideImageSourceMode('prefer stock photos and logos, then generate only when stock fails')).toBe('stockFirst');
+    expect(slideImageSourceMode('prefer stock photos and logos, then generate only when stock fails')).toBe('stockOnly');
+    expect(slideImageSourceMode('stock first')).toBe('stockFirst');
     expect(slideImageSourceMode('prefer generated images for concepts')).toBe('generatedFirst');
     expect(slideImageSourceMode('use stock photos and logos only; do not generate images')).toBe('stockOnly');
     expect(slideImageSourceMode('use generated images only; do not search stock photos or logos')).toBe('generatedOnly');

@@ -78,7 +78,7 @@ const HTML_IMAGE_POLICIES = [
 
 const IMAGE_SOURCE_MODES = [
   { value: 'auto choose stock photos, logos, or generated images based on slide intent', label: '자동' },
-  { value: 'prefer stock photos and logos, then generate only when stock fails', label: 'Stock' },
+  { value: 'use stock photos and logos only; do not generate images', label: 'Stock만' },
   { value: 'prefer generated images for concepts and ambient visuals, then use stock for factual subjects', label: '생성 이미지' },
 ];
 

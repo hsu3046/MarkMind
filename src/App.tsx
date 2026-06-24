@@ -11,11 +11,12 @@ import { MindmapView } from './components/MindmapView';
 import { FlowchartView } from './components/FlowchartView';
 import { SearchBar } from './components/SearchBar';
 import { GanttView } from './components/GanttView';
+import { KanbanView } from './components/KanbanView';
 import { SlideshowView } from './components/SlideshowView';
 import { getSlideshowSettings, setSlideshowSettings as persistSlideshowSettings, type SlideshowSettings } from './lib/slideSplit';
 import { applySlideDesignOptions, BUILTIN_SLIDE_THEMES, DEFAULT_SLIDE_THEME, getSlideTheme, type SlideExportOptions } from './lib/slideTheme';
 import { DEFAULT_HTML_SLIDE_THEME, getHtmlSlideTheme } from './lib/htmlSlideTheme';
-import { clampMarkdownSlideDraft, PPTX_MAX_SLIDES, slideImagePolicyMode } from './lib/slideLimits';
+import { clampMarkdownSlideDraft, PPTX_MAX_SLIDES, slideImagePolicyMode, slideImageSourceMode } from './lib/slideLimits';
 import { markMindPptxDesignRulesText } from './lib/pptxDesignSystem';
 import { Toolbar, EditableFileName, PaneHeader, ViewMode, PaneView, EDITABLE_VIEWS, isPaneView } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
@@ -305,6 +306,8 @@ function App() {
   const [flowchartPanelOpen, setFlowchartPanelOpen] = useState(false);
   // 간트 차트 생성 — 메인 툴바 버튼이 GanttPanel 모달을 연다(플로우차트와 동형).
   const [ganttPanelOpen, setGanttPanelOpen] = useState(false);
+  // 칸반 보드 생성 — 메인 툴바 버튼이 KanbanPanel 모달을 연다(간트와 동형).
+  const [kanbanPanelOpen, setKanbanPanelOpen] = useState(false);
   // 시각 뷰 PDF 생성 진행 — 저장 다이얼로그 후 캡처/PDF 가 무거워 진행 오버레이를 띄운다.
   const [pdfExporting, setPdfExporting] = useState(false);
   // macOS full screen 시 툴바 숨김 — Tauri 윈도우 fullscreen 상태 추적(진입/해제는 resize 동반)
@@ -358,8 +361,8 @@ function App() {
   const handleExportPdf = useCallback(async () => {
     const defaultName = (fileName || 'Untitled').replace(/\.md$/i, '') + '.pdf';
 
-    // 시각 뷰(간트/마인드맵/플로우차트) — 캡처 경로. 다이얼로그 → 진행표시 → 생성 → 저장.
-    if (viewMode === 'gantt' || viewMode === 'mindmap' || viewMode === 'flowchart') {
+    // 시각 뷰(간트/마인드맵/플로우차트/칸반) — 캡처 경로. 다이얼로그 → 진행표시 → 생성 → 저장.
+    if (viewMode === 'gantt' || viewMode === 'mindmap' || viewMode === 'flowchart' || viewMode === 'kanban') {
       const { hasVisualContent, buildVisualViewPdf, writePdfBlob } = await import('./lib/pdf/exportVisualPdf');
       const { save, message } = await import('@tauri-apps/plugin-dialog');
       if (!hasVisualContent(viewMode)) {
@@ -825,13 +828,18 @@ function App() {
 
       const jobId = beginPptxProgress('HTML 생성 중…');
       const sourceOnlyImages = slideImagePolicyMode(pptxOptions.imagePolicy) === 'sourceOnly';
+      const htmlImageSourceMode = slideImageSourceMode(pptxOptions.imageSourceMode);
+      const stockOnlyImages = htmlImageSourceMode === 'stockOnly';
+      const effectiveHtmlImageSourceMode = stockOnlyImages
+        ? 'use stock photos and logos only; do not generate images'
+        : pptxOptions.imageSourceMode?.trim() || 'prefer generated images for concepts and ambient visuals, then use stock for factual subjects';
       const htmlExportOptions: SlideExportOptions = {
         ...pptxOptions,
         visualDensity: pptxOptions.visualDensity?.trim() || 'minimal-to-balanced text density with strong whitespace and visual hierarchy',
         imagePolicy: sourceOnlyImages
           ? (pptxOptions.imagePolicy?.trim() || 'use source images only; do not add new image intent')
           : 'actively add ambient, editorial, and supporting visual intent to most HTML slides, including spacious body slides, cover, section, quote, stat, conclusion, and core argument slides',
-        imageSourceMode: pptxOptions.imageSourceMode?.trim() || 'prefer generated images for concepts and ambient visuals, then use stock for factual subjects',
+        imageSourceMode: effectiveHtmlImageSourceMode,
       };
       const htmlTheme = getHtmlSlideTheme(pptxOptions.htmlThemeId);
       const slideTheme = applySlideDesignOptions(getSlideTheme(pptxOptions.themeId), htmlExportOptions);
@@ -854,6 +862,8 @@ function App() {
         ].join('\n'),
         sourceOnlyImages
           ? 'Image rule: reuse existing Markdown image paths for source images when they exist, but do not invent new image intents. MarkMind will copy and rebase local source image files next to the exported HTML.'
+          : stockOnlyImages
+            ? 'Image rule: add stock/logo image placeholders only. Do not request generated images, do not create prompt-only asset intents, and set each markmind asset intent sourcePreference to stock or logo with a concrete query/entity.'
           : 'Image rule: add image placeholders to roughly 70-90 percent of slides. Prefer body slides with empty visual regions, section openers, quote/stat slides, cover, conclusion, and core argument slides over generic bullet-only slides.',
         'Keep content concise: no long notes, no implementation explanation visible in the deck, and no repeated source prose.',
         'Run a self-check for overflow, contrast, placeholder coverage, layout diversity, runtime behavior, and template fidelity before returning HTML.',
@@ -991,8 +1001,20 @@ function App() {
             console.warn('[export_html_slides] native HTML QA warnings:\n' + summarizeHtmlNativeValidation(initialReport));
           }
           const nativeIntents = normalizeHtmlNativeAssetIntents(nativeDeck.assetIntents);
-          const assetIntents = sourceOnlyImages ? [] : nativeIntents.slice(0, HTML_NATIVE_MAX_IMAGE_ASSETS);
-          const cappedAssetIntents = sourceOnlyImages ? nativeIntents : nativeIntents.slice(HTML_NATIVE_MAX_IMAGE_ASSETS);
+          const sourceConstrainedIntents = stockOnlyImages
+            ? nativeIntents.map((intent) => ({
+                ...intent,
+                sourcePreference: intent.role === 'logo' ? ('logo' as const) : ('stock' as const),
+                query: intent.query || intent.entity || intent.textSummary || intent.title,
+                prompt: undefined,
+              }))
+            : nativeIntents;
+          const assetIntents = sourceOnlyImages
+            ? []
+            : sourceConstrainedIntents.slice(0, HTML_NATIVE_MAX_IMAGE_ASSETS);
+          const cappedAssetIntents = sourceOnlyImages
+            ? sourceConstrainedIntents
+            : sourceConstrainedIntents.slice(HTML_NATIVE_MAX_IMAGE_ASSETS);
           let htmlWithBudgetedPlaceholders = nativeDeck.html;
           if (cappedAssetIntents.length > 0) {
             htmlWithBudgetedPlaceholders = replaceHtmlNativeAssetPlaceholders(
@@ -1019,7 +1041,7 @@ function App() {
             onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
             isCancelled: () => pptxCancelRequestedRef.current || pptxProgressJobIdRef.current !== jobId,
             stockLimitOverride: assetIntents.length,
-            generatedLimitOverride: assetIntents.length,
+            generatedLimitOverride: stockOnlyImages ? 0 : assetIntents.length,
           });
           ensurePptxJobActive(jobId);
           const applied = applyHtmlNativeAssetRecords(htmlWithBudgetedPlaceholders, assetResult.assets);
@@ -1133,10 +1155,10 @@ function App() {
 
   // AI
   const ai = useAI();
-  // AI 결과(InlineDiff)는 에디터 페인에서만 보이므로, 마인드맵이 active 면 editor 로 전환해 diff 노출(#64).
-  // solo mindmap → editor, split 의 active mindmap 패인 → editor.
+  // AI 결과(InlineDiff)는 에디터 페인에서만 보이므로, 보드/맵 뷰가 active 면 editor 로 전환해 diff 노출(#64, #93).
+  // solo mindmap/kanban → editor, split 의 active mindmap/kanban 패인 → editor.
   useEffect(() => {
-    if (ai.response && !ai.isLoading && activeView === 'mindmap') {
+    if (ai.response && !ai.isLoading && (activeView === 'mindmap' || activeView === 'kanban')) {
       if (viewMode === 'split') {
         if (activePane === 'left') setSplitLeft('editor');
         else setSplitRight('editor');
@@ -2076,7 +2098,7 @@ function App() {
             newFile();
             break;
           case 'f':
-            // 검색은 텍스트 뷰(editor/preview)가 active 일 때만 — mindmap/flowchart/gantt 는 무의미(#64).
+            // 검색은 텍스트 뷰(editor/preview)가 active 일 때만 — mindmap/flowchart/gantt/kanban 는 무의미(#64).
             if (activeView === 'editor' || activeView === 'preview') {
               e.preventDefault();
               toggleSearch();
@@ -2104,9 +2126,17 @@ function App() {
             break;
           case '6':
             e.preventDefault();
-            setViewMode('split');
+            setViewMode('kanban');
             break;
           case '7':
+            e.preventDefault();
+            // Reserved for a future view mode.
+            break;
+          case '8':
+            e.preventDefault();
+            setViewMode('split');
+            break;
+          case '9':
             e.preventDefault();
             setViewMode('slideshow');
             break;
@@ -2374,9 +2404,9 @@ function App() {
     );
   };
 
-  // 패인 1개 렌더 — 6개 뷰 통합. mcpBanner 는 각 뷰 상단(preview 는 banner prop).
+  // 패인 1개 렌더 — 7개 뷰 통합. mcpBanner 는 각 뷰 상단(preview 는 banner prop).
   // 미러(editable=false)는 read-only: editor=editable.of(false), preview=onChange 미전달,
-  // mindmap=readOnly, flowchart/gantt 는 본래 read-only.
+  // mindmap/kanban=readOnly, flowchart/gantt 는 본래 read-only.
   const renderPaneView = (view: PaneView, side: 'left' | 'right' | 'solo') => {
     const editable = paneEditable(view, side);
     switch (view) {
@@ -2414,6 +2444,8 @@ function App() {
         return <>{mcpBanner}<FlowchartView content={content} fileName={fileName} onChange={updateContent} flowchartPanelOpen={flowchartPanelOpen} onCloseFlowchartPanel={() => setFlowchartPanelOpen(false)} /></>;
       case 'gantt':
         return <>{mcpBanner}<GanttView content={content} fileName={fileName} onJumpToSource={handleJumpToSource} onChange={updateContent} ganttPanelOpen={ganttPanelOpen} onCloseGanttPanel={() => setGanttPanelOpen(false)} /></>;
+      case 'kanban':
+        return <>{mcpBanner}<KanbanView content={content} fileName={fileName} onChange={editable ? updateContent : undefined} readOnly={!editable} kanbanPanelOpen={kanbanPanelOpen} onCloseKanbanPanel={() => setKanbanPanelOpen(false)} /></>;
     }
   };
 
@@ -2479,6 +2511,7 @@ function App() {
         onOpenFramework={() => setFrameworkOpen(true)}
         onGenerateFlowchart={() => setFlowchartPanelOpen(true)}
         onGenerateGantt={() => setGanttPanelOpen(true)}
+        onGenerateKanban={() => setKanbanPanelOpen(true)}
         showRecent={isTauri()}
         aiPanelVisible={ai.panelVisible}
         nativeMenu={isTauri()}

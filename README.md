@@ -4,42 +4,44 @@
 
 # MarkMind
 
+Current version: **0.9.8**
+
 ## Tagline-en
 
-While Markdown is the document format that AI understands best, it’s not always the most comfortable for humans to read raw.
-MarkMind renders AI-generated Markdown documents into a beautifully structured, highly readable format. Integrate all your various AI document workflows into a single place with MarkMind, and manage everything from translation and summarization to editing easily and smartly with the power of AI.
+Markdown is the best source of truth for AI work, but it should not stay trapped as raw text.
+MarkMind turns one Markdown document into an editor, reader, AI workspace, visual board, timeline, and slide deck without breaking the original file.
 
 ## Tagline-ko
 
-마크다운은 AI가 가장 잘 이해하는 문서 형식이지만, 인간이 그대로 읽기엔 조금 불편하죠.
-MarkMind는 AI가 생성한 마크다운 문서를 사람이 읽기 가장 편하고 아름다운 형태로 표시합니다.
-다양한 형태의 AI 문서 작업을 MarkMind 한 곳에 통합하고, AI를 활용해 번역, 요약, 수정까지 한 번에 쉽고 똑똑하게 관리해 보세요.
+AI에게는 마크다운이 가장 다루기 좋은 원본이지만, 사람에게는 그대로 읽고 정리하기 불편할 때가 많습니다.
+MarkMind는 하나의 마크다운 문서를 편집기, 리더, AI 작업실, 마인드맵, 플로우차트, 간트, 칸반, 슬라이드로 바꿔 보여줍니다.
+원본 파일은 유지하면서 읽고, 고치고, 생성하고, 발표 자료까지 이어가는 macOS용 AI 문서 도구입니다.
 
 
 ## Tagline-ja
 
-マークダウンはAIが最も理解しやすい文書形式ですが、人間がそのまま読むには少し読みづらいですよね。
-MarkMindは、AIが生成したマークダウン文書を、人間にとって最も読みやすく美しい形で表示します。さまざまな形のAI文書作業をMarkMindに統合し、AIを活用した翻訳、要約、修正まで、すべてを一度に簡単かつスマートに管理してみましょう。
+MarkdownはAIにとって扱いやすい原本ですが、人がそのまま読み、整理し、発表に使うには少し不便です。
+MarkMindはひとつのMarkdownを、エディタ、読みやすいプレビュー、AI作業スペース、マインドマップ、フローチャート、ガント、カンバン、スライドへと切り替えて扱えるmacOS向けドキュメントツールです。
 
 ---
 
 ## Summary-en
 
-MarkMind consolidates scattered, unstructured data—such as handwritten notes, voice recordings, and scanned PDFs—into a highly readable document environment. It instantly transforms large media assets, including audio recordings up to 4 hours long, into editable text data. Through seamless inline AI editing, tasks like translation, summarization, and proofreading are handled in real time within the same editor, ensuring an uninterrupted workflow. In addition to providing a macOS-optimized experience, all user-specific security credentials for AI integration are encrypted and stored inside the native macOS Keychain, ensuring absolute peace of mind in security-critical business and professional environments.
+AI work often starts as a messy pile: meeting audio, screenshots, PDFs, bullets, pasted research, and half-written drafts. MarkMind keeps Markdown as the single source of truth, then layers useful views on top of it: rich preview, slideshow, mindmap, flowchart, Gantt, and Kanban. You can ask AI to proofread, translate, improve, make meeting notes, generate slide drafts, export PPTX or HTML slides, and keep working inside the same document. API keys stay in macOS Keychain, and provider selection is unified across Gemini, Claude, OpenAI, and Grok.
 
 ## Summary-ko
 
-MarkMind는 손글씨 메모, 음성 녹음, 스캔된 PDF 등 파편화된 비정형 자료를 가독성 높은 문서 환경으로 통합 변환합니다. 최대 4시간 분량의 대용량 오디오와 미디어 자산을 즉각 편집 가능한 텍스트 데이터로 자산화하며, 작업 흐름의 단절이 없는 인라인 AI 편집을 통해 동일 에디터 내에서 번역·요약·교정 작업을 실시간으로 처리합니다. Mac 환경에 최적화된 워크플로우를 제공함은 물론, AI 연동을 위한 사용자 고유의 보안 정보는 macOS 자체 안전 시스템(Keychain)에 암호화되어 보관되므로 보안이 중요한 비즈니스 및 전문 작업 환경에서도 안심하고 사용할 수 있습니다.
+AI 작업은 회의 음성, 스크린샷, PDF, 조사 메모, 불릿 초안처럼 흩어진 자료에서 시작되는 경우가 많습니다. MarkMind는 그 결과를 하나의 마크다운 원본으로 묶고, 같은 문서를 읽기 모드, 슬라이드쇼, 마인드맵, 플로우차트, 간트, 칸반으로 바꿔 보게 합니다. 문법 교정, 번역, 문서 개선, 회의록, 이미지 생성, PPTX/HTML 슬라이드 생성까지 한 흐름 안에서 이어지고, 칸반 카드 편집과 드래그 정렬도 실제 마크다운 마커에 반영됩니다. AI 키는 macOS Keychain에 저장되고, Gemini·Claude·OpenAI·Grok 선택은 한 설정 화면에서 관리합니다.
 
 ## Summary-ja
 
-MarkMindは、手書きのメモ、音声録音、スキャンされたPDFなど、散在する非構造化データを視認性の高い文書環境へと統合・変換します。最大4時間に及ぶ大容量の音声やメディア資産を即座に編集可能なテキストデータへと変換。ワークフローを中断させることのないインラインAI編集により、同一エディタ内で翻訳・要約・校正作業をリアルタイムに処理します。Mac環境に最適化されたワークフローを提供するだけでなく、AI連携のためのユーザー固有のセキュリティ情報はmacOS標準のセキュリティシステム（Keychain）に暗号化されて保管されるため、機密性が重視されるビジネスやプロフェッショナルな作業環境でも安心してお使いいただけます。
+AIで作った文章は、録音、画像、PDF、メモ、箇条書きが混ざった状態から始まることがよくあります。MarkMindはMarkdownを唯一の原本として保ち、その上にプレビュー、スライドショー、マインドマップ、フローチャート、ガント、カンバンを重ねます。校正、翻訳、改善、議事録作成、画像生成、PPTX/HTMLスライド生成まで同じ流れで進められ、カンバンのカード編集や並び替えもMarkdownのマーカーに反映されます。AIキーはmacOS Keychainに保存され、Gemini、Claude、OpenAI、Grokを統一された設定で切り替えられます。
 
 ---
 
 ## ✨ What It Does
 
-### AI Agent (⌘I)
+### AI Agent (⌘⇧I)
 
 One side panel with eight modes — speech recognition, image OCR, meeting notes, slides, image generation, plus three text-editing modes. Switch the AI model **inline per mode** (a dropdown that shows only available key/subscription models, each with its company logo), or set the default in Settings (company / auth / model).
 
@@ -47,7 +49,7 @@ One side panel with eight modes — speech recognition, image OCR, meeting notes
 - **Translates seamlessly** — Korean ↔ English ↔ Japanese with paragraph-by-paragraph before/after diffs.
 - **Improves entire documents** — Free-form prompt with Gemini 3.1 Pro for deep rewrites.
 - **Generates meeting notes** — Full document as transcript → structured Markdown notes via Claude Sonnet 4.6 or Gemini 3.1 Pro. Built-in templates (general / detailed / team-sync) + user-defined templates.
-- **Generates slide decks** — Export the current document as a `.pptx` with an AI-planned layout (Claude or Gemini).
+- **Generates slide decks** — Turn the current document into editable slide drafts, `.pptx`, or self-contained HTML decks with template-aware design rules.
 - **Generates images** — Text-to-image (plus reference images) via Gemini (Nano Banana), ChatGPT (GPT Image 2), or Grok (Grok Imagine); insert into the document or save to file. Works with an API key **or a subscription**.
 - **Pops up an AI bar on selection** — Highlight any text in the editor and a floating action bar appears instantly.
 - **Streams AI responses live** — Watch the rewrite appear in real time, then review the smart diff.
@@ -62,10 +64,13 @@ One side panel with eight modes — speech recognition, image OCR, meeting notes
 
 ### Visualization
 
-- **Mindmap (⌘4)** — Render the document's heading/bullet hierarchy as an interactive node graph; edit nodes to update the document.
-- **Flowchart (⌘5)** — AI generates a BPMN-lite flow diagram from the document or a topic (an empty-state guide is shown before generation).
-- **Gantt (⌘6)** — AI breaks the document or a topic into a scheduled Gantt chart.
-- **AI generation (auto-generate modal)** — Flowchart/Gantt/Mindmap each open a generate modal: pick the **source** (*auto-analyze* the current document, or *direct input* of a topic — the current document is still passed as background context) and the **write mode** (*append to* or *replace* the document).
+- **Mindmap (⌘3)** — Render the document's heading/bullet hierarchy as an interactive node graph; edit nodes to update the document.
+- **Flowchart (⌘4)** — AI generates a BPMN-lite flow diagram from the document or a topic (an empty-state guide is shown before generation).
+- **Gantt (⌘5)** — AI breaks the document or a topic into a scheduled Gantt chart.
+- **Kanban (⌘6)** — AI creates a Kanban board from the document or a topic, groups checkbox, `@status`, and Gantt-compatible task markers into Todo / Doing / Review / Blocked / Done columns, and lets you edit card labels, priority, dates, progress, and drag order directly.
+- **AI generation (auto-generate modal)** — Mindmap/Flowchart/Gantt/Kanban each open a generate modal: pick the **source** (*auto-analyze* the current document, or *direct input* of a topic — the current document is still passed as background context) and the **write mode** (*append to* or *replace* the document).
+
+Kanban edits keep Markdown as the source of truth. A card is stored as one Markdown line, and edits update inline markers such as `@status(doing)`, `@priority(high)`, `@start(2026-07-01)`, `@due(2026-07-10)`, `@progress(40)`, and Kanban-only `@order(1000)`. Gantt-compatible date/progress markers remain usable in the Gantt view, while `@order(...)` only controls Kanban visual ordering.
 
 ### Editor Experience
 
@@ -98,6 +103,7 @@ One side panel with eight modes — speech recognition, image OCR, meeting notes
 
 - **Google Drive sync** — Bring-your-own OAuth client; saved files auto-upload to a `MarkMind` Drive folder, and you can browse/open documents from Drive across machines.
 - **PDF export** — Native macOS WKWebView print pipeline (`NSPrintInfo`) → PDF of the rendered document.
+- **PPTX / HTML slide export** — Generate AI-planned decks as PowerPoint files or standalone HTML. Image sourcing can use source-only assets, stock/logos only, generated images, or automatic selection depending on the export options.
 
 ---
 
@@ -109,12 +115,12 @@ One side panel with eight modes — speech recognition, image OCR, meeting notes
 | Frontend | React 19 + TypeScript 5.8 (strict) |
 | Editor | CodeMirror 6 (Korean i18n phrases) |
 | Markdown | react-markdown + remark-gfm + remark-frontmatter + rehype-highlight |
-| AI (LLM) | Google Gemini SDK · Anthropic Claude REST · OpenAI |
+| AI (LLM) | Google Gemini SDK · Anthropic Claude REST · OpenAI · Grok/xAI |
 | AI (Audio) | **Silero VAD v5** ([ort](https://crates.io/crates/ort) 2.0) + **ffmpeg-sidecar** auto-download |
 | AI (Diarization) | **pyannote** — local (`pyannote.audio` Python sidecar) or [pyannote.ai](https://pyannote.ai) cloud |
 | AI (PDF fallback) | [pdfium-render](https://crates.io/crates/pdfium-render) |
 | MCP server | [rmcp](https://crates.io/crates/rmcp) 1.7 (Streamable HTTP) + [axum](https://crates.io/crates/axum) 0.8 |
-| Cloud / Export | Google Drive API (OAuth) · macOS WKWebView print → PDF |
+| Cloud / Export | Google Drive API (OAuth) · macOS WKWebView print → PDF · PptxGenJS · HTML slide templates |
 | Secrets | macOS Keychain via [keyring](https://crates.io/crates/keyring) crate |
 | Icons | Lucide React |
 | Build | Vite 7 + Tauri CLI |
@@ -181,14 +187,17 @@ npm run dev
 | Find | `⌘F` |
 | Markdown (Editor) | `⌘1` |
 | Rich Text (Preview) | `⌘2` |
-| Split View | `⌘3` |
-| Mindmap | `⌘4` |
-| Flowchart | `⌘5` |
-| Gantt | `⌘6` |
+| Mindmap | `⌘3` |
+| Flowchart | `⌘4` |
+| Gantt | `⌘5` |
+| Kanban | `⌘6` |
+| Reserved | `⌘7` |
+| Split View | `⌘8` |
+| Slideshow | `⌘9` |
 | Zoom In | `⌘+` |
 | Zoom Out | `⌘-` |
 | Reset Zoom | `⌘0` |
-| AI Agent | `⌘I` |
+| AI Agent | `⌘⇧I` |
 
 ---
 
@@ -220,6 +229,7 @@ markmind/
 │   │   ├── InlineDiffView.tsx              # Block-level accept/reject diff
 │   │   ├── McpProposalView.tsx             # MCP propose_edit diff preview (accept/reject)
 │   │   ├── DriveBrowser.tsx                # Google Drive open/save browser
+│   │   ├── KanbanView.tsx                  # Kanban board view + inline card editing
 │   │   ├── BackgroundPicker.tsx            # Custom editor background color
 │   │   ├── TableBubbleMenu.tsx             # Inline table editing menu
 │   │   ├── FloatingAIBar.tsx               # Selection popup for AI actions
@@ -234,10 +244,16 @@ markmind/
 │   │   └── useRecentFiles.ts               # Persisted recent files
 │   ├── services/
 │   │   ├── aiService.ts                    # Gemini SDK calls
+│   │   ├── slideAssets.ts                  # Stock/logo/generated slide asset resolution
 │   │   ├── secureStorage.ts                # Keychain wrapper + localStorage fallback
 │   │   ├── platform.ts                     # isTauri() detection
 │   │   └── knowaiAuth.ts                   # KnowAI SSO (login button)
-│   └── types/                              # AI modes, converter types
+│   ├── lib/
+│   │   ├── kanban-parser.ts                # Markdown marker → Kanban cards
+│   │   ├── kanbanEdit.ts                   # Single-line Markdown patches for card edits
+│   │   ├── htmlSlides/                     # HTML slide templates and render pipeline
+│   │   └── pptx-export.ts                  # PPTX slide renderer
+│   └── types/                              # AI modes, converter, Kanban, slide types
 ├── src-tauri/                              # Rust backend
 │   ├── src/
 │   │   ├── lib.rs                          # Window mgmt + invoke handlers + MCP wiring
@@ -287,10 +303,11 @@ markmind/
 - [x] **Phase 4**: Multimodal — Speech-to-text with VAD, image/PDF OCR, meeting notes (Claude/Gemini)
 - [x] **Phase 4.5**: Integration — Unified settings, Keychain storage, multi-LLM selector (Gemini/Claude/OpenAI)
 - [x] **Phase 5**: Speaker diarization — verified pyannote (local/cloud), speaker rename/merge
-- [x] **Phase 6 (partial)**: Export — PDF (native WKWebView print). Google Docs / PPTX still planned.
+- [x] **Phase 6 (partial)**: Export — PDF (native WKWebView print), AI-planned PPTX, and template-based HTML slides. Google Docs still planned.
 - [x] **Phase 7 (partial)**: Cloud sync — Google Drive (auto-upload + browse). Share links still planned.
 - [x] **Phase 8**: Claude integration — in-process MCP server (read + edit open documents, diff-gated proposals)
-- [x] **Phase 9**: Generation & visualization — slide (`.pptx`) export, AI image generation (Gemini / ChatGPT, API key or subscription), mindmap / flowchart / Gantt views
+- [x] **Phase 9**: Generation & visualization — slide (`.pptx` / `.html`) export, AI image generation (Gemini / ChatGPT / Grok, API key or subscription), mindmap / flowchart / Gantt / Kanban views and auto-generation
+- [x] **Phase 9.5**: Kanban editing — full-color cards, inline card editing, date-range picker, progress slider, drag/drop column moves, and persisted `@order(...)` card ordering
 - [x] **Phase 10**: Subscription OAuth — reuse Claude (Max) / ChatGPT (Plus) / Gemini (agy) / Grok logins for text & image generation
 - [x] **Phase 11**: Grok (xAI) integration — text (grok-4.3) + image (Grok Imagine), API key & subscription; inline per-mode model dropdown with company logos
 - [ ] **Next**: Google Docs export, share links

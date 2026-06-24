@@ -1,5 +1,5 @@
 /**
- * 시각 뷰(간트·마인드맵·플로우차트) PDF export — 하이브리드 전략의 "시각 = 캡처" 경로.
+ * 시각 뷰(간트·마인드맵·플로우차트·칸반) PDF export — 하이브리드 전략의 "시각 = 캡처" 경로.
  * 텍스트(rich text)는 별도 NSPrint(@media print) 경로(App.handleExportPdf).
  *
  * 핵심 설계:
@@ -20,7 +20,7 @@ const SCALE = 2;
 const MARGIN_MM = 6;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-export type VisualViewMode = 'gantt' | 'mindmap' | 'flowchart';
+export type VisualViewMode = 'gantt' | 'mindmap' | 'flowchart' | 'kanban';
 
 export interface CapturedImage {
     dataUrl: string;
@@ -32,6 +32,7 @@ export interface CapturedImage {
 /** 시각 뷰에 캡처할 내용이 있는지(빈 뷰면 다이얼로그를 안 띄우고 안내). */
 export function hasVisualContent(viewMode: VisualViewMode): boolean {
     if (viewMode === 'gantt') return !!document.querySelector('.gantt-view .gantt-svg');
+    if (viewMode === 'kanban') return !!document.querySelector('.kanban-view .kanban-card');
     const sel = viewMode === 'mindmap' ? '.mindmap-view' : '.flowchart-view';
     return !!document.querySelector(`${sel} .react-flow__node`);
 }
@@ -205,6 +206,34 @@ async function captureFlowView(viewMode: 'mindmap' | 'flowchart'): Promise<Captu
     return withLightTheme(container, () => captureReactFlow(viewport, bounds));
 }
 
+// ─── 칸반(HTML board) ───────────────────────────────────────────────────────
+
+async function captureHtmlElement(el: HTMLElement): Promise<CapturedImage> {
+    const rect = el.getBoundingClientRect();
+    const w = Math.ceil(Math.max(el.scrollWidth, rect.width));
+    const h = Math.ceil(Math.max(el.scrollHeight, rect.height));
+    const { toPng } = await import('html-to-image');
+    const dataUrl = await toPng(el, {
+        backgroundColor: '#ffffff',
+        width: w,
+        height: h,
+        pixelRatio: SCALE,
+        style: {
+            width: `${w}px`,
+            height: `${h}px`,
+            overflow: 'visible',
+        },
+        cacheBust: true,
+    });
+    return { dataUrl, width: w, height: h };
+}
+
+async function captureKanban(): Promise<CapturedImage | null> {
+    const board = document.querySelector('.kanban-view .kanban-board') as HTMLElement | null;
+    if (!board) return null;
+    return withLightTheme(board, () => captureHtmlElement(board));
+}
+
 // ─── 공통: PDF 조립 / 저장 ────────────────────────────────────────────────────
 
 /** 콘텐츠 비율에 맞춘 단일 커스텀 페이지 PDF(잘림 0, orientation 자동). jsPDF 지연 로드. */
@@ -222,7 +251,11 @@ async function imageToPdfBlob(img: CapturedImage, marginMm = MARGIN_MM): Promise
 
 /** 현재 시각 뷰를 PDF blob 으로(빈 뷰면 null). 캡처+PDF(무거움) — 다이얼로그/진행표시는 호출부. */
 export async function buildVisualViewPdf(viewMode: VisualViewMode): Promise<Blob | null> {
-    const img = viewMode === 'gantt' ? await captureGantt() : await captureFlowView(viewMode);
+    const img = viewMode === 'gantt'
+        ? await captureGantt()
+        : viewMode === 'kanban'
+            ? await captureKanban()
+            : await captureFlowView(viewMode);
     if (!img) return null;
     return imageToPdfBlob(img);
 }
