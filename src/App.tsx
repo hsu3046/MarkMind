@@ -11,6 +11,7 @@ import { MindmapView } from './components/MindmapView';
 import { FlowchartView } from './components/FlowchartView';
 import { SearchBar } from './components/SearchBar';
 import { GanttView } from './components/GanttView';
+import { KanbanView } from './components/KanbanView';
 import { SlideshowView } from './components/SlideshowView';
 import { getSlideshowSettings, setSlideshowSettings as persistSlideshowSettings, type SlideshowSettings } from './lib/slideSplit';
 import { applySlideDesignOptions, BUILTIN_SLIDE_THEMES, DEFAULT_SLIDE_THEME, getSlideTheme, type SlideExportOptions } from './lib/slideTheme';
@@ -305,6 +306,8 @@ function App() {
   const [flowchartPanelOpen, setFlowchartPanelOpen] = useState(false);
   // 간트 차트 생성 — 메인 툴바 버튼이 GanttPanel 모달을 연다(플로우차트와 동형).
   const [ganttPanelOpen, setGanttPanelOpen] = useState(false);
+  // 칸반 보드 생성 — 메인 툴바 버튼이 KanbanPanel 모달을 연다(간트와 동형).
+  const [kanbanPanelOpen, setKanbanPanelOpen] = useState(false);
   // 시각 뷰 PDF 생성 진행 — 저장 다이얼로그 후 캡처/PDF 가 무거워 진행 오버레이를 띄운다.
   const [pdfExporting, setPdfExporting] = useState(false);
   // macOS full screen 시 툴바 숨김 — Tauri 윈도우 fullscreen 상태 추적(진입/해제는 resize 동반)
@@ -358,8 +361,8 @@ function App() {
   const handleExportPdf = useCallback(async () => {
     const defaultName = (fileName || 'Untitled').replace(/\.md$/i, '') + '.pdf';
 
-    // 시각 뷰(간트/마인드맵/플로우차트) — 캡처 경로. 다이얼로그 → 진행표시 → 생성 → 저장.
-    if (viewMode === 'gantt' || viewMode === 'mindmap' || viewMode === 'flowchart') {
+    // 시각 뷰(간트/마인드맵/플로우차트/칸반) — 캡처 경로. 다이얼로그 → 진행표시 → 생성 → 저장.
+    if (viewMode === 'gantt' || viewMode === 'mindmap' || viewMode === 'flowchart' || viewMode === 'kanban') {
       const { hasVisualContent, buildVisualViewPdf, writePdfBlob } = await import('./lib/pdf/exportVisualPdf');
       const { save, message } = await import('@tauri-apps/plugin-dialog');
       if (!hasVisualContent(viewMode)) {
@@ -2076,7 +2079,7 @@ function App() {
             newFile();
             break;
           case 'f':
-            // 검색은 텍스트 뷰(editor/preview)가 active 일 때만 — mindmap/flowchart/gantt 는 무의미(#64).
+            // 검색은 텍스트 뷰(editor/preview)가 active 일 때만 — mindmap/flowchart/gantt/kanban 는 무의미(#64).
             if (activeView === 'editor' || activeView === 'preview') {
               e.preventDefault();
               toggleSearch();
@@ -2104,9 +2107,17 @@ function App() {
             break;
           case '6':
             e.preventDefault();
-            setViewMode('split');
+            setViewMode('kanban');
             break;
           case '7':
+            e.preventDefault();
+            // Reserved for a future view mode.
+            break;
+          case '8':
+            e.preventDefault();
+            setViewMode('split');
+            break;
+          case '9':
             e.preventDefault();
             setViewMode('slideshow');
             break;
@@ -2374,9 +2385,9 @@ function App() {
     );
   };
 
-  // 패인 1개 렌더 — 6개 뷰 통합. mcpBanner 는 각 뷰 상단(preview 는 banner prop).
+  // 패인 1개 렌더 — 7개 뷰 통합. mcpBanner 는 각 뷰 상단(preview 는 banner prop).
   // 미러(editable=false)는 read-only: editor=editable.of(false), preview=onChange 미전달,
-  // mindmap=readOnly, flowchart/gantt 는 본래 read-only.
+  // mindmap=readOnly, flowchart/gantt/kanban 는 본래 read-only.
   const renderPaneView = (view: PaneView, side: 'left' | 'right' | 'solo') => {
     const editable = paneEditable(view, side);
     switch (view) {
@@ -2414,6 +2425,8 @@ function App() {
         return <>{mcpBanner}<FlowchartView content={content} fileName={fileName} onChange={updateContent} flowchartPanelOpen={flowchartPanelOpen} onCloseFlowchartPanel={() => setFlowchartPanelOpen(false)} /></>;
       case 'gantt':
         return <>{mcpBanner}<GanttView content={content} fileName={fileName} onJumpToSource={handleJumpToSource} onChange={updateContent} ganttPanelOpen={ganttPanelOpen} onCloseGanttPanel={() => setGanttPanelOpen(false)} /></>;
+      case 'kanban':
+        return <>{mcpBanner}<KanbanView content={content} fileName={fileName} onJumpToSource={handleJumpToSource} onChange={updateContent} kanbanPanelOpen={kanbanPanelOpen} onCloseKanbanPanel={() => setKanbanPanelOpen(false)} /></>;
     }
   };
 
@@ -2479,6 +2492,7 @@ function App() {
         onOpenFramework={() => setFrameworkOpen(true)}
         onGenerateFlowchart={() => setFlowchartPanelOpen(true)}
         onGenerateGantt={() => setGanttPanelOpen(true)}
+        onGenerateKanban={() => setKanbanPanelOpen(true)}
         showRecent={isTauri()}
         aiPanelVisible={ai.panelVisible}
         nativeMenu={isTauri()}

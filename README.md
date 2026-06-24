@@ -39,7 +39,7 @@ MarkMindは、手書きのメモ、音声録音、スキャンされたPDFなど
 
 ## ✨ What It Does
 
-### AI Agent (⌘I)
+### AI Agent (⌘⇧I)
 
 One side panel with eight modes — speech recognition, image OCR, meeting notes, slides, image generation, plus three text-editing modes. Switch the AI model **inline per mode** (a dropdown that shows only available key/subscription models, each with its company logo), or set the default in Settings (company / auth / model).
 
@@ -62,10 +62,11 @@ One side panel with eight modes — speech recognition, image OCR, meeting notes
 
 ### Visualization
 
-- **Mindmap (⌘4)** — Render the document's heading/bullet hierarchy as an interactive node graph; edit nodes to update the document.
-- **Flowchart (⌘5)** — AI generates a BPMN-lite flow diagram from the document or a topic (an empty-state guide is shown before generation).
-- **Gantt (⌘6)** — AI breaks the document or a topic into a scheduled Gantt chart.
-- **AI generation (auto-generate modal)** — Flowchart/Gantt/Mindmap each open a generate modal: pick the **source** (*auto-analyze* the current document, or *direct input* of a topic — the current document is still passed as background context) and the **write mode** (*append to* or *replace* the document).
+- **Mindmap (⌘3)** — Render the document's heading/bullet hierarchy as an interactive node graph; edit nodes to update the document.
+- **Flowchart (⌘4)** — AI generates a BPMN-lite flow diagram from the document or a topic (an empty-state guide is shown before generation).
+- **Gantt (⌘5)** — AI breaks the document or a topic into a scheduled Gantt chart.
+- **Kanban (⌘6)** — AI creates a Kanban board from the document or a topic, and groups checkbox, `@status`, and Gantt-compatible task markers into Todo / Doing / Review / Blocked / Done columns.
+- **AI generation (auto-generate modal)** — Mindmap/Flowchart/Gantt/Kanban each open a generate modal: pick the **source** (*auto-analyze* the current document, or *direct input* of a topic — the current document is still passed as background context) and the **write mode** (*append to* or *replace* the document).
 
 ### Editor Experience
 
@@ -181,14 +182,16 @@ npm run dev
 | Find | `⌘F` |
 | Markdown (Editor) | `⌘1` |
 | Rich Text (Preview) | `⌘2` |
-| Split View | `⌘3` |
-| Mindmap | `⌘4` |
-| Flowchart | `⌘5` |
-| Gantt | `⌘6` |
+| Mindmap | `⌘3` |
+| Flowchart | `⌘4` |
+| Gantt | `⌘5` |
+| Kanban | `⌘6` |
+| Split View | `⌘8` |
+| Slideshow | `⌘9` |
 | Zoom In | `⌘+` |
 | Zoom Out | `⌘-` |
 | Reset Zoom | `⌘0` |
-| AI Agent | `⌘I` |
+| AI Agent | `⌘⇧I` |
 
 ---
 
@@ -290,7 +293,7 @@ markmind/
 - [x] **Phase 6 (partial)**: Export — PDF (native WKWebView print). Google Docs / PPTX still planned.
 - [x] **Phase 7 (partial)**: Cloud sync — Google Drive (auto-upload + browse). Share links still planned.
 - [x] **Phase 8**: Claude integration — in-process MCP server (read + edit open documents, diff-gated proposals)
-- [x] **Phase 9**: Generation & visualization — slide (`.pptx`) export, AI image generation (Gemini / ChatGPT, API key or subscription), mindmap / flowchart / Gantt views
+- [x] **Phase 9**: Generation & visualization — slide (`.pptx`) export, AI image generation (Gemini / ChatGPT, API key or subscription), mindmap / flowchart / Gantt / Kanban views and auto-generation
 - [x] **Phase 10**: Subscription OAuth — reuse Claude (Max) / ChatGPT (Plus) / Gemini (agy) / Grok logins for text & image generation
 - [x] **Phase 11**: Grok (xAI) integration — text (grok-4.3) + image (Grok Imagine), API key & subscription; inline per-mode model dropdown with company logos
 - [ ] **Next**: Google Docs export, share links

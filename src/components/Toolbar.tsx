@@ -6,20 +6,20 @@ import {
     Search, ChevronRight, ChevronDown, Sparkles, Check, X,
     Settings, Bot,
     FileCode, FileText,
-    Network, Share2, ChartBarStacked, Presentation, type LucideIcon,
+    Network, Share2, ChartBarStacked, WalletCards, Presentation, type LucideIcon,
 } from 'lucide-react';
 import * as gdriveService from '../services/gdriveService';
 import type { RecentFile } from '../hooks/useRecentFiles';
 
-export type ViewMode = 'split' | 'editor' | 'preview' | 'mindmap' | 'flowchart' | 'gantt' | 'slideshow';
+export type ViewMode = 'split' | 'editor' | 'preview' | 'mindmap' | 'flowchart' | 'gantt' | 'kanban' | 'slideshow';
 
 /** 패인 하나에 담길 수 있는 뷰 — split(컨테이너)·slideshow(전체화면)는 패인 뷰가 될 수 없음. */
 export type PaneView = Exclude<ViewMode, 'split' | 'slideshow'>;
 
 /** 패인 뷰 전체 목록 — localStorage 복원 검증 등에 사용. */
-export const PANE_VIEWS: PaneView[] = ['editor', 'preview', 'mindmap', 'flowchart', 'gantt'];
+export const PANE_VIEWS: PaneView[] = ['editor', 'preview', 'mindmap', 'flowchart', 'gantt', 'kanban'];
 
-/** 편집(양방향) 가능한 뷰. flowchart(LLM 생성)·gantt(read-only)는 미포함 → 항상 미러. */
+/** 편집(양방향) 가능한 뷰. flowchart/gantt/kanban(read-only)는 미포함 → 항상 미러. */
 export const EDITABLE_VIEWS = new Set<PaneView>(['editor', 'preview', 'mindmap']);
 
 /** localStorage 등 외부 문자열을 PaneView 로 안전 검증. */
@@ -34,8 +34,9 @@ const VIEW_MODES: { mode: ViewMode; label: string; shortcut: string; Icon: Lucid
     { mode: 'mindmap', label: 'Mindmap', shortcut: '⌘3', Icon: Share2 },
     { mode: 'flowchart', label: 'Flowchart', shortcut: '⌘4', Icon: Network },
     { mode: 'gantt', label: 'Gantt', shortcut: '⌘5', Icon: ChartBarStacked },
-    { mode: 'split', label: 'Split View', shortcut: '⌘6', Icon: Columns2 },
-    { mode: 'slideshow', label: 'Slideshow', shortcut: '⌘7', Icon: Presentation },
+    { mode: 'kanban', label: 'Kanban', shortcut: '⌘6', Icon: WalletCards },
+    { mode: 'split', label: 'Split View', shortcut: '⌘8', Icon: Columns2 },
+    { mode: 'slideshow', label: 'Slideshow', shortcut: '⌘9', Icon: Presentation },
 ];
 
 /** 최근 파일 날짜 표시 — 오늘이면 시각, 아니면 YYYY.MM.DD. */
@@ -193,6 +194,8 @@ interface ToolbarProps {
     onGenerateFlowchart?: () => void;
     /** 간트 뷰 액션 — 간트 차트 AI 생성. viewMode==='gantt' 일 때만 노출. */
     onGenerateGantt?: () => void;
+    /** 칸반 뷰 액션 — 칸반 보드 AI 생성. viewMode==='kanban' 일 때만 노출. */
+    onGenerateKanban?: () => void;
 }
 
 export function Toolbar({
@@ -217,6 +220,7 @@ export function Toolbar({
     onOpenFramework,
     onGenerateFlowchart,
     onGenerateGantt,
+    onGenerateKanban,
     showRecent,
     aiPanelVisible,
     nativeMenu,
@@ -539,6 +543,16 @@ export function Toolbar({
                         className="toolbar-text-btn outlined"
                         onClick={onGenerateGantt}
                         title="문서·주제를 프로젝트 일정(간트 차트)으로 AI 생성"
+                    >
+                        <Sparkles size={14} strokeWidth={1.5} />
+                        <span>자동 생성</span>
+                    </button>
+                )}
+                {viewMode === 'kanban' && (
+                    <button
+                        className="toolbar-text-btn outlined"
+                        onClick={onGenerateKanban}
+                        title="문서·주제를 칸반 보드로 AI 생성"
                     >
                         <Sparkles size={14} strokeWidth={1.5} />
                         <span>자동 생성</span>
