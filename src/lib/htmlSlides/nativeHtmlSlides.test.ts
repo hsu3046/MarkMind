@@ -81,7 +81,16 @@ describe('nativeHtmlSlides', () => {
   });
 
   it('sanitizes dangerous tags while preserving supported local runtime scripts', () => {
-    const dirty = `${nativeHtml}<script src="./deck-stage.js"></script><script src="https://example.com/x.js"></script><iframe src="https://example.com"></iframe><a onclick="x()" href="javascript:alert(1)">x</a><img onerror=alert(1) src=javascript:alert(2)>`;
+    const dirty = [
+      nativeHtml,
+      '<script src="./deck-stage.js"></script>',
+      '<script src="https://example.com/x.js"></script>',
+      '<iframe src="https://example.com"></iframe>',
+      '<a onclick="x()" href="javascript:alert(1)">x</a>',
+      '<img onerror=alert(1) src=javascript:alert(2)>',
+      '<a href="jav&#x61;script:alert(3)">encoded</a>',
+      '<button formaction="java&Tab;script&colon;alert(4)">encoded</button>',
+    ].join('');
     const clean = ensureHtmlNativeDocument(sanitizeHtmlNativeSlides(dirty));
     const report = validateHtmlNativeSlides(clean);
 
@@ -91,6 +100,10 @@ describe('nativeHtmlSlides', () => {
     expect(clean).not.toContain('onclick=');
     expect(clean).not.toContain('onerror=');
     expect(clean).not.toContain('javascript:');
+    expect(clean).not.toContain('jav&#x61;script');
+    expect(clean).not.toContain('java&Tab;script');
+    expect(clean).toContain('href="#"');
+    expect(clean).toContain('formaction="#"');
     expect(report.errors).toEqual([]);
     expect(report.slideCount).toBe(2);
   });
@@ -101,6 +114,22 @@ describe('nativeHtmlSlides', () => {
     );
 
     expect(report.errors.join('\n')).toContain('inline on* 이벤트 핸들러');
+    expect(report.errors.join('\n')).toContain('javascript: URL');
+  });
+
+  it('rejects entity-encoded dangerous URL schemes before browser decoding', () => {
+    const html = [
+      '<!DOCTYPE html><html><head>',
+      '<script src="jav&#x61;script:alert(3)"></script>',
+      '</head><body><section class="slide">',
+      '<a href="jav&#97;script:alert(1)">x</a>',
+      '<button formaction="java&Tab;script&colon;alert(2)">go</button>',
+      '</section></body></html>',
+    ].join('');
+
+    const report = validateHtmlNativeSlides(html);
+
+    expect(report.errors.join('\n')).toContain('지원하지 않는 script src');
     expect(report.errors.join('\n')).toContain('javascript: URL');
   });
 
