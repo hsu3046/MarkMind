@@ -89,6 +89,23 @@ describe('kanbanToMarkdown', () => {
         expect(cards[1].priority).toBeNull();
     });
 
+    it('normalizes Korean status aliases with spaces from generated JSON', () => {
+        const md = kanbanToMarkdown({
+            cards: [
+                { name: '진행 카드', status: '진행 중' },
+                { name: '검토 카드', status: '검토 중' },
+                { name: '대기 카드', status: '대기 중' },
+                { name: '완료 카드', status: '완료 됨' },
+            ],
+        });
+        expect(md).toContain('진행 카드 @status(doing)');
+        expect(md).toContain('검토 카드 @status(review)');
+        expect(md).toContain('대기 카드 @status(blocked)');
+        expect(md).toContain('- [x] 완료 카드 @status(done)');
+        const { cards } = parseKanban(md);
+        expect(cards.map((c) => c.status)).toEqual(['doing', 'review', 'blocked', 'done']);
+    });
+
     it('treats due-before-start as no due date', () => {
         const md = kanbanToMarkdown({
             cards: [{ name: '일정 오류', status: 'todo', start: '2026-07-10', due: '2026-07-01' }],

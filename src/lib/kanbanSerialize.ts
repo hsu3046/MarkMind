@@ -52,15 +52,19 @@ const STATUS_ALIASES: Record<string, KanbanStatus> = {
     started: 'doing',
     wip: 'doing',
     작업중: 'doing',
+    '작업-중': 'doing',
     진행: 'doing',
     진행중: 'doing',
+    '진행-중': 'doing',
 
     check: 'review',
     qa: 'review',
     review: 'review',
     reviewing: 'review',
     검토: 'review',
+    '검토-중': 'review',
     리뷰: 'review',
+    '리뷰-중': 'review',
 
     block: 'blocked',
     blocked: 'blocked',
@@ -68,7 +72,9 @@ const STATUS_ALIASES: Record<string, KanbanStatus> = {
     paused: 'blocked',
     waiting: 'blocked',
     대기중: 'blocked',
+    '대기-중': 'blocked',
     보류: 'blocked',
+    '보류-중': 'blocked',
     차단: 'blocked',
 
     closed: 'done',
@@ -79,6 +85,8 @@ const STATUS_ALIASES: Record<string, KanbanStatus> = {
     finished: 'done',
     shipped: 'done',
     완료: 'done',
+    완료됨: 'done',
+    '완료-됨': 'done',
 };
 
 const PRIORITY_ALIASES: Record<string, KanbanPriority> = {
@@ -132,11 +140,15 @@ const STATUS_SECTION_TOKENS = new Set([
     '검토중',
     '검토-중',
     '리뷰',
+    '리뷰-중',
     'blocked',
     'block',
     'hold',
     'waiting',
     '보류',
+    '보류-중',
+    '대기중',
+    '대기-중',
     '차단',
     '막힘',
     'done',
@@ -145,6 +157,8 @@ const STATUS_SECTION_TOKENS = new Set([
     'closed',
     'finished',
     '완료',
+    '완료됨',
+    '완료-됨',
 ]);
 
 function cleanToken(value: string): string {
