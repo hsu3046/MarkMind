@@ -1,6 +1,6 @@
 [package]
 name = "markmind"
-version = "0.9.7"
+version = "0.9.8"
 description = "Minimal Markdown Editor for macOS"
 authors = ["you"]
 edition = "2021"

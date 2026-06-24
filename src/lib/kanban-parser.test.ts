@@ -19,6 +19,7 @@ describe('parseKanban', () => {
         expect(cards[0].section).toBe('개발');
         expect(cards[0].status).toBe('doing');
         expect(cards[0].priority).toBe('high');
+        expect(cards[0].order).toBeNull();
         expect(cards[0].progress).toBe(40);
         expect(ymd(cards[0].start)).toBe('2026-07-01');
         expect(ymd(cards[0].due)).toBe('2026-07-10');
@@ -76,5 +77,14 @@ title: x
         const { cards } = parseKanban(md);
         expect(cards[0].status).toBe('todo');
         expect(cards[0].due).toBeNull();
+    });
+
+    it('parses Kanban-only order markers without keeping them in labels', () => {
+        const md = `# Plan
+- [ ] 두 번째 @status(todo) @order(2000)
+`;
+        const { cards } = parseKanban(md);
+        expect(cards[0].label).toBe('두 번째');
+        expect(cards[0].order).toBe(2000);
     });
 });

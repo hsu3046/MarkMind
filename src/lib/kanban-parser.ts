@@ -17,6 +17,7 @@ const START_RE = /@start\(\s*(\d{4})-(\d{1,2})-(\d{1,2})\s*\)/i;
 const DUE_RE = /@(?:due|end)\(\s*(\d{4})-(\d{1,2})-(\d{1,2})\s*\)/i;
 const PROGRESS_RE = /@progress\(\s*(\d{1,3})\s*\)/i;
 const PRIORITY_RE = /@priority\(\s*([^)]+?)\s*\)/i;
+const ORDER_RE = /@order\(\s*(\d+)\s*\)/i;
 const CHECKBOX_RE = /^\[([ xX])\]\s*/;
 const MARKER_RE = /@\w+\([^)]*\)/g;
 
@@ -174,6 +175,7 @@ export function parseKanban(fullMd: string, fileName?: string): KanbanData {
                 const progress = parseProgress(node.label);
                 const { status, rawStatus } = inferStatus(node.label, progress);
                 const priorityMatch = node.label.match(PRIORITY_RE);
+                const orderMatch = node.label.match(ORDER_RE);
                 cards.push({
                     id: node.id,
                     label,
@@ -184,6 +186,7 @@ export function parseKanban(fullMd: string, fileName?: string): KanbanData {
                     due: parseDate(node.label, DUE_RE),
                     progress,
                     priority: priorityMatch ? normalizePriority(priorityMatch[1]) : null,
+                    order: orderMatch ? Math.max(0, parseInt(orderMatch[1], 10)) : null,
                     mdLine: node.mdLine,
                     color: colorFor(section),
                 });

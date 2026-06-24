@@ -23,7 +23,15 @@ export type SlideImageSourceMode = 'auto' | 'stockFirst' | 'generatedFirst' | 's
 
 export function slideImageSourceMode(value?: string): SlideImageSourceMode {
   const p = (value ?? '').toLowerCase();
-  if (p.includes('stock photos and logos only') || p.includes('stock only') || p.includes('stock만')) return 'stockOnly';
+  if (
+    p.includes('stock photos and logos only') ||
+    p.includes('stock only') ||
+    p.includes('stock만') ||
+    p.includes('do not generate images') ||
+    p.includes('then generate only when stock fails')
+  ) {
+    return 'stockOnly';
+  }
   if (p.includes('generated images only') || (p.includes('use generated') && p.includes('only')) || p.includes('생성만')) {
     return 'generatedOnly';
   }

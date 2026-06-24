@@ -48,6 +48,8 @@ export interface KanbanCard {
     progress: number | null;
     /** Optional priority from `@priority(...)`. */
     priority: KanbanPriority | null;
+    /** Optional persisted sort key for Kanban-only drag ordering. */
+    order: number | null;
     /** 1-based source line in the full document. */
     mdLine?: number;
     /** Palette colour for this card's section. */

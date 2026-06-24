@@ -6,8 +6,8 @@
  * surrounding Markdown structure.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Kanban, ListChecks, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { CalendarDays, ChevronLeft, ChevronRight, GripVertical, Kanban, ListChecks, X } from 'lucide-react';
 import { parseKanban } from '../lib/kanban-parser';
 import { updateKanbanCardLine, type KanbanCardPatch } from '../lib/kanbanEdit';
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanPriority, type KanbanStatus } from '../types/kanban';
@@ -29,7 +29,26 @@ interface MouseDragCandidate {
     card: KanbanCard;
     startX: number;
     startY: number;
+    offsetX: number;
+    offsetY: number;
+    width: number;
+    height: number;
     active: boolean;
+}
+
+interface KanbanDragOverlayState {
+    card: KanbanCard;
+    x: number;
+    y: number;
+    offsetX: number;
+    offsetY: number;
+    width: number;
+    height: number;
+}
+
+interface KanbanDropIndicatorState {
+    status: KanbanStatus;
+    beforeCardId: string | null;
 }
 
 function staticEditableKanbanCardTarget(target: EventTarget | null): HTMLElement | null {
@@ -43,19 +62,34 @@ function clearTextSelection(): void {
     if (selection && selection.rangeCount > 0) selection.removeAllRanges();
 }
 
+function setKanbanDragSelectionBlock(enabled: boolean): void {
+    document.body.classList.toggle('kanban-drag-select-block', enabled);
+    document.documentElement.classList.toggle('kanban-drag-select-block', enabled);
+}
+
 export function KanbanView({ content, fileName, onChange, readOnly = false, kanbanPanelOpen, onCloseKanbanPanel }: KanbanViewProps) {
     const data = useMemo(() => parseKanban(content, fileName), [content, fileName]);
     const editable = !!onChange && !readOnly;
     const [draggingId, setDraggingId] = useState<string | null>(null);
     const [dropStatus, setDropStatus] = useState<KanbanStatus | null>(null);
+    const [dropIndicator, setDropIndicator] = useState<KanbanDropIndicatorState | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [dragOverlay, setDragOverlay] = useState<KanbanDragOverlayState | null>(null);
     const dragCandidateRef = useRef<MouseDragCandidate | null>(null);
-    const dropStatusRef = useRef<KanbanStatus | null>(null);
+    const dropIndicatorRef = useRef<KanbanDropIndicatorState | null>(null);
+    const cardIndex = useMemo(() => new Map(data.cards.map((card, index) => [card.id, index])), [data.cards]);
     const byStatus = useMemo(() => {
         const grouped = Object.fromEntries(KANBAN_COLUMNS.map((col) => [col.id, [] as KanbanCard[]]));
         for (const card of data.cards) grouped[card.status].push(card);
+        for (const cards of Object.values(grouped)) {
+            cards.sort((a, b) => {
+                const aOrder = a.order ?? ((cardIndex.get(a.id) ?? 0) + 1) * 1000;
+                const bOrder = b.order ?? ((cardIndex.get(b.id) ?? 0) + 1) * 1000;
+                return aOrder - bOrder || (cardIndex.get(a.id) ?? 0) - (cardIndex.get(b.id) ?? 0);
+            });
+        }
         return grouped;
-    }, [data.cards]);
+    }, [cardIndex, data.cards]);
 
     useEffect(() => {
         if (editingId && !data.cards.some((card) => card.id === editingId)) setEditingId(null);
@@ -85,41 +119,83 @@ export function KanbanView({ content, fileName, onChange, readOnly = false, kanb
     }, [content, editable, onChange]);
 
     const setActiveDropStatus = useCallback((status: KanbanStatus | null) => {
-        dropStatusRef.current = status;
         setDropStatus(status);
     }, []);
 
-    const statusFromPoint = useCallback((x: number, y: number): KanbanStatus | null => {
-        const target = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-kanban-status]');
-        const status = target?.dataset.kanbanStatus;
-        return KANBAN_COLUMNS.some((col) => col.id === status) ? status as KanbanStatus : null;
+    const setActiveDropIndicator = useCallback((indicator: KanbanDropIndicatorState | null) => {
+        dropIndicatorRef.current = indicator;
+        setDropIndicator(indicator);
+        setActiveDropStatus(indicator?.status ?? null);
+    }, [setActiveDropStatus]);
+
+    const dropIndicatorFromPoint = useCallback((x: number, y: number, draggingCardId: string): KanbanDropIndicatorState | null => {
+        const column = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-kanban-status]');
+        const status = column?.dataset.kanbanStatus;
+        if (!column || !KANBAN_COLUMNS.some((col) => col.id === status)) return null;
+        const cards = Array.from(column.querySelectorAll<HTMLElement>('[data-kanban-card-id]'))
+            .filter((el) => el.dataset.kanbanCardId !== draggingCardId);
+        for (const cardEl of cards) {
+            const rect = cardEl.getBoundingClientRect();
+            if (y < rect.top + rect.height / 2) {
+                return { status: status as KanbanStatus, beforeCardId: cardEl.dataset.kanbanCardId ?? null };
+            }
+        }
+        return { status: status as KanbanStatus, beforeCardId: null };
     }, []);
 
     const startMouseDrag = useCallback((card: KanbanCard, e: ReactMouseEvent<HTMLElement>) => {
         if (!editable || typeof card.mdLine !== 'number' || e.button !== 0) return;
         if ((e.target as HTMLElement).closest('input, select, button, textarea, .kanban-date-modal-root')) return;
+        const rect = e.currentTarget.getBoundingClientRect();
         e.preventDefault();
         clearTextSelection();
-        document.body.classList.add('kanban-drag-select-block');
+        setKanbanDragSelectionBlock(true);
         dragCandidateRef.current = {
             card,
             startX: e.clientX,
             startY: e.clientY,
+            offsetX: e.clientX - rect.left,
+            offsetY: e.clientY - rect.top,
+            width: rect.width,
+            height: rect.height,
             active: false,
         };
     }, [editable]);
+
+    const applyCardDrop = useCallback((card: KanbanCard, indicator: KanbanDropIndicatorState) => {
+        if (!editable || typeof card.mdLine !== 'number') return;
+        const targetCards = byStatus[indicator.status].filter((item) => item.id !== card.id);
+        const insertAt = indicator.beforeCardId
+            ? Math.max(0, targetCards.findIndex((item) => item.id === indicator.beforeCardId))
+            : targetCards.length;
+        const orderedCards = [...targetCards];
+        orderedCards.splice(insertAt < 0 ? targetCards.length : insertAt, 0, { ...card, status: indicator.status });
+
+        let next = content;
+        for (const [index, item] of orderedCards.entries()) {
+            if (typeof item.mdLine !== 'number') continue;
+            const patch: KanbanCardPatch = { order: (index + 1) * 1000 };
+            if (item.id === card.id) patch.status = indicator.status;
+            next = updateKanbanCardLine(next, item.mdLine, patch);
+        }
+        if (next !== content) onChange?.(next);
+    }, [byStatus, content, editable, onChange]);
 
     useEffect(() => {
         const resetDrag = () => {
             dragCandidateRef.current = null;
             setDraggingId(null);
-            setActiveDropStatus(null);
-            document.body.classList.remove('kanban-drag-select-block');
+            setDragOverlay(null);
+            setActiveDropIndicator(null);
+            setKanbanDragSelectionBlock(false);
+            clearTextSelection();
         };
 
         const onMouseMove = (e: MouseEvent) => {
             const drag = dragCandidateRef.current;
             if (!drag) return;
+            e.preventDefault();
+            clearTextSelection();
             const dx = e.clientX - drag.startX;
             const dy = e.clientY - drag.startY;
             if (!drag.active && Math.hypot(dx, dy) < 6) return;
@@ -129,15 +205,23 @@ export function KanbanView({ content, fileName, onChange, readOnly = false, kanb
                 setEditingId((current) => current === drag.card.id ? null : current);
                 setDraggingId(drag.card.id);
             }
-            setActiveDropStatus(statusFromPoint(e.clientX, e.clientY));
-            e.preventDefault();
+            setDragOverlay({
+                card: drag.card,
+                x: e.clientX,
+                y: e.clientY,
+                offsetX: drag.offsetX,
+                offsetY: drag.offsetY,
+                width: drag.width,
+                height: drag.height,
+            });
+            setActiveDropIndicator(dropIndicatorFromPoint(e.clientX, e.clientY, drag.card.id));
         };
 
         const onMouseUp = (e: MouseEvent) => {
             const drag = dragCandidateRef.current;
             if (!drag) return;
             const wasActive = drag.active;
-            const status = dropStatusRef.current;
+            const indicator = dropIndicatorRef.current;
             resetDrag();
 
             if (!wasActive) {
@@ -145,20 +229,40 @@ export function KanbanView({ content, fileName, onChange, readOnly = false, kanb
                 e.preventDefault();
                 return;
             }
-            if (status && status !== drag.card.status) applyCardPatch(drag.card, { status });
+            if (indicator) applyCardDrop(drag.card, indicator);
             e.preventDefault();
+        };
+
+        const onSelectStart = (e: Event) => {
+            if (!dragCandidateRef.current) return;
+            e.preventDefault();
+            clearTextSelection();
+        };
+        const onSelectionChange = () => {
+            if (dragCandidateRef.current) clearTextSelection();
+        };
+        const onDragStart = (e: DragEvent) => {
+            if (!dragCandidateRef.current) return;
+            e.preventDefault();
+            clearTextSelection();
         };
 
         window.addEventListener('mousemove', onMouseMove, { capture: true });
         window.addEventListener('mouseup', onMouseUp, { capture: true });
         window.addEventListener('blur', resetDrag);
+        document.addEventListener('selectstart', onSelectStart, true);
+        document.addEventListener('selectionchange', onSelectionChange);
+        document.addEventListener('dragstart', onDragStart, true);
         return () => {
             window.removeEventListener('mousemove', onMouseMove, { capture: true });
             window.removeEventListener('mouseup', onMouseUp, { capture: true });
             window.removeEventListener('blur', resetDrag);
-            document.body.classList.remove('kanban-drag-select-block');
+            document.removeEventListener('selectstart', onSelectStart, true);
+            document.removeEventListener('selectionchange', onSelectionChange);
+            document.removeEventListener('dragstart', onDragStart, true);
+            setKanbanDragSelectionBlock(false);
         };
-    }, [applyCardPatch, setActiveDropStatus, statusFromPoint]);
+    }, [applyCardDrop, dropIndicatorFromPoint, setActiveDropIndicator]);
 
     const panel = kanbanPanelOpen && onChange ? (
         <KanbanPanel
@@ -195,7 +299,7 @@ export function KanbanView({ content, fileName, onChange, readOnly = false, kanb
 
     return (
         <div className="kanban-view">
-            <div className="kanban-board" role="list" aria-label="칸반 보드">
+            <div className={`kanban-board${draggingId ? ' is-dragging' : ''}`} role="list" aria-label="칸반 보드">
                 {KANBAN_COLUMNS.map((col) => {
                     const cards = byStatus[col.id];
                     return (
@@ -217,25 +321,83 @@ export function KanbanView({ content, fileName, onChange, readOnly = false, kanb
                                     <div className="kanban-column-empty">없음</div>
                                 ) : (
                                     cards.map((card) => (
-                                        <KanbanCardView
+                                        <FragmentWithDropIndicator
                                             key={card.id}
-                                            card={card}
-                                            editable={editable && typeof card.mdLine === 'number'}
-                                            editing={editingId === card.id}
-                                            dragging={draggingId === card.id}
-                                            onFinishEdit={() => setEditingId((current) => current === card.id ? null : current)}
-                                            onPatch={(patch) => applyCardPatch(card, patch)}
-                                            onMouseDown={(e) => startMouseDrag(card, e)}
-                                        />
+                                            showIndicator={dropIndicator?.status === col.id && dropIndicator.beforeCardId === card.id}
+                                        >
+                                            <KanbanCardView
+                                                card={card}
+                                                editable={editable && typeof card.mdLine === 'number'}
+                                                editing={editingId === card.id}
+                                                dragging={draggingId === card.id}
+                                                onFinishEdit={() => setEditingId((current) => current === card.id ? null : current)}
+                                                onPatch={(patch) => applyCardPatch(card, patch)}
+                                                onMouseDown={(e) => startMouseDrag(card, e)}
+                                            />
+                                        </FragmentWithDropIndicator>
                                     ))
+                                )}
+                                {dropIndicator?.status === col.id && dropIndicator.beforeCardId === null && (
+                                    <div className="kanban-drop-insert-line" aria-hidden="true" />
                                 )}
                             </div>
                         </section>
                     );
                 })}
             </div>
+            {dragOverlay && <KanbanDragOverlay overlay={dragOverlay} />}
             {panel}
         </div>
+    );
+}
+
+function FragmentWithDropIndicator({ children, showIndicator }: { children: ReactNode; showIndicator: boolean }) {
+    return (
+        <>
+            {showIndicator && <div className="kanban-drop-insert-line" aria-hidden="true" />}
+            {children}
+        </>
+    );
+}
+
+function KanbanDragOverlay({ overlay }: { overlay: KanbanDragOverlayState }) {
+    const { card } = overlay;
+    return (
+        <article
+            aria-hidden="true"
+            className={`kanban-card kanban-card--${card.status} kanban-drag-overlay`}
+            style={{
+                left: overlay.x - overlay.offsetX,
+                top: overlay.y - overlay.offsetY,
+                width: overlay.width,
+                minHeight: overlay.height,
+            }}
+        >
+            <div className="kanban-card-topline">
+                <div className="kanban-card-section-wrap">
+                    <GripVertical className="kanban-drag-handle" size={15} strokeWidth={2.1} aria-hidden="true" />
+                    {card.section && <span className="kanban-card-section">{card.section}</span>}
+                </div>
+                {card.priority && <span className={`kanban-priority kanban-priority--${card.priority}`}>{priorityLabel(card.priority)}</span>}
+            </div>
+            <span className="kanban-card-title">{card.label}</span>
+            {(card.start || card.due || card.progress !== null) && (
+                <div className="kanban-card-meta">
+                    {(card.start || card.due) && (
+                        <span className="kanban-meta-chip">
+                            <CalendarDays size={12} strokeWidth={1.7} />
+                            <span>{dateRangeLabel(card.start, card.due)}</span>
+                        </span>
+                    )}
+                    {card.progress !== null && (
+                        <span className="kanban-meta-chip">
+                            <ListChecks size={12} strokeWidth={1.7} />
+                            <span>{card.progress}%</span>
+                        </span>
+                    )}
+                </div>
+            )}
+        </article>
     );
 }
 
@@ -334,6 +496,7 @@ function KanbanCardView({ card, editable, editing, dragging, onFinishEdit, onPat
         <article
             ref={cardRef}
             className={`kanban-card kanban-card--${card.status}${editable ? ' kanban-card--editable' : ''}${editing ? ' is-editing' : ''}${dragging ? ' is-dragging' : ''}`}
+            data-kanban-card-id={card.id}
             title={title}
             onDoubleClick={finishOnDoubleClick}
             onMouseDown={editable && !editing ? onMouseDown : undefined}
@@ -342,6 +505,9 @@ function KanbanCardView({ card, editable, editing, dragging, onFinishEdit, onPat
         >
             <div className="kanban-card-topline">
                 <div className="kanban-card-section-wrap">
+                    {editable && !editing && (
+                        <GripVertical className="kanban-drag-handle" size={15} strokeWidth={2.1} aria-hidden="true" />
+                    )}
                     {card.section && <span className="kanban-card-section">{card.section}</span>}
                 </div>
                 {editing ? (

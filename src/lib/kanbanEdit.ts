@@ -15,13 +15,14 @@ export interface KanbanCardPatch {
     start?: string | null;
     due?: string | null;
     progress?: number | null;
+    order?: number | null;
 }
 
 const LIST_PREFIX_RE = /^(\s*(?:[-*+]|\d+[.)])\s+)(.*)$/;
 const HEADING_PREFIX_RE = /^(\s*#{1,6}\s+)(.*)$/;
 const CHECKBOX_RE = /^(\[[ xX]\]\s*)(.*)$/;
 const MARKER_RE = /@([A-Za-z]\w*)\([^)]*\)/g;
-const KNOWN_MARKERS = new Set(['status', 'priority', 'start', 'due', 'end', 'progress']);
+const KNOWN_MARKERS = new Set(['status', 'priority', 'start', 'due', 'end', 'progress', 'order']);
 const DATE_RE = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
 
 interface ParsedLine {
@@ -34,6 +35,7 @@ interface ParsedLine {
     start: string | null;
     due: string | null;
     progress: number | null;
+    order: number | null;
 }
 
 function splitLine(line: string): { prefix: string; body: string } {
@@ -69,6 +71,11 @@ function normalizeProgress(value: number | null | undefined): number | null {
     return Math.min(100, Math.max(0, Math.round(value)));
 }
 
+function normalizeOrder(value: number | null | undefined): number | null {
+    if (value === null || value === undefined || !Number.isFinite(value)) return null;
+    return Math.max(0, Math.round(value));
+}
+
 function parseLine(line: string): ParsedLine {
     const { prefix, body } = splitLine(line);
     const box = body.match(CHECKBOX_RE);
@@ -79,6 +86,7 @@ function parseLine(line: string): ParsedLine {
     let start: string | null = null;
     let due: string | null = null;
     let progress: number | null = null;
+    let order: number | null = null;
     const preservedMarkers: Array<{ name: string; marker: string }> = [];
 
     for (const match of content.matchAll(MARKER_RE)) {
@@ -104,6 +112,9 @@ function parseLine(line: string): ParsedLine {
         } else if (name === 'progress') {
             progress = normalizeProgress(Number(value));
             if (progress === null) preservedMarkers.push({ name, marker });
+        } else if (name === 'order') {
+            order = normalizeOrder(Number(value));
+            if (order === null) preservedMarkers.push({ name, marker });
         }
     }
 
@@ -117,6 +128,7 @@ function parseLine(line: string): ParsedLine {
         start,
         due,
         progress,
+        order,
     };
 }
 
@@ -135,6 +147,7 @@ function buildLine(parsed: ParsedLine, patch: KanbanCardPatch): string {
     const start = patch.start !== undefined ? normalizeDate(patch.start) : parsed.start;
     let due = patch.due !== undefined ? normalizeDate(patch.due) : parsed.due;
     const progress = patch.progress !== undefined ? normalizeProgress(patch.progress) : parsed.progress;
+    const order = patch.order !== undefined ? normalizeOrder(patch.order) : parsed.order;
     if (start && due && due < start) due = null;
 
     const markers: string[] = [];
@@ -143,6 +156,7 @@ function buildLine(parsed: ParsedLine, patch: KanbanCardPatch): string {
     if (start) markers.push(`@start(${start})`);
     if (due) markers.push(`@due(${due})`);
     if (progress !== null && progress > 0 && status !== 'done') markers.push(`@progress(${progress})`);
+    if (order !== null) markers.push(`@order(${order})`);
     const replaced = new Set<string>();
     if (patch.status !== undefined) replaced.add('status');
     if (patch.priority !== undefined) replaced.add('priority');
@@ -152,6 +166,7 @@ function buildLine(parsed: ParsedLine, patch: KanbanCardPatch): string {
         replaced.add('end');
     }
     if (patch.progress !== undefined) replaced.add('progress');
+    if (patch.order !== undefined) replaced.add('order');
     markers.push(...parsed.preservedMarkers.filter((m) => !replaced.has(m.name)).map((m) => m.marker));
 
     const shouldCheck = status === 'done';

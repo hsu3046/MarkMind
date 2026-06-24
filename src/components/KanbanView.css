@@ -28,6 +28,8 @@
     flex-direction: column;
     gap: 10px;
     padding-top: 10px;
+    border-radius: 10px;
+    transition: background 120ms ease, box-shadow 120ms ease;
 }
 
 .kanban-column::before {
@@ -44,6 +46,15 @@
 .kanban-column.is-drop-target::before {
     height: 8px;
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--kanban-accent), transparent 76%);
+}
+
+.kanban-board.is-dragging .kanban-column {
+    min-height: 170px;
+}
+
+.kanban-column.is-drop-target {
+    background: color-mix(in srgb, var(--kanban-accent), transparent 92%);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kanban-accent), transparent 70%);
 }
 
 .kanban-column--todo { --kanban-accent: #64748b; }
@@ -96,6 +107,26 @@
     min-height: 40px;
 }
 
+.kanban-drop-insert-line {
+    height: 10px;
+    position: relative;
+    margin: -3px 0;
+    flex: none;
+}
+
+.kanban-drop-insert-line::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    top: 50%;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--kanban-accent, #64748b);
+    transform: translateY(-50%);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--kanban-accent), transparent 82%);
+}
+
 .kanban-column-empty {
     height: 38px;
     display: flex;
@@ -129,6 +160,7 @@
     text-align: left;
     cursor: default;
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+    transition: transform 120ms ease, opacity 120ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
 .kanban-card--todo {
@@ -159,7 +191,9 @@
 }
 
 .kanban-card.is-dragging {
-    opacity: 0.5;
+    opacity: 0.2;
+    transform: scale(0.985);
+    box-shadow: none;
 }
 
 .kanban-card:not(.is-editing),
@@ -174,14 +208,45 @@
 }
 
 body.kanban-drag-select-block,
-body.kanban-drag-select-block * {
+body.kanban-drag-select-block *,
+html.kanban-drag-select-block,
+html.kanban-drag-select-block body,
+html.kanban-drag-select-block * {
     user-select: none !important;
     -webkit-user-select: none !important;
-    -webkit-user-drag: none;
+    -webkit-user-drag: none !important;
+    -webkit-touch-callout: none !important;
+}
+
+body.kanban-drag-select-block *::selection,
+html.kanban-drag-select-block *::selection {
+    background: transparent !important;
+    color: inherit !important;
 }
 
 .kanban-card--editable:not(.is-editing):active {
     cursor: grabbing;
+}
+
+.kanban-drag-overlay {
+    position: fixed;
+    z-index: 2400;
+    pointer-events: none;
+    margin: 0;
+    cursor: grabbing;
+    opacity: 0.98;
+    transform: rotate(1deg) scale(1.025);
+    box-shadow: 0 22px 44px rgba(15, 23, 42, 0.28);
+    will-change: left, top, transform;
+}
+
+.kanban-drag-overlay:hover {
+    background: var(--kanban-card-bg);
+    border-color: color-mix(in srgb, var(--kanban-card-bg), #000000 14%);
+}
+
+.kanban-drag-overlay .kanban-card-title {
+    -webkit-line-clamp: 2;
 }
 
 .kanban-card.is-editing {
@@ -221,6 +286,7 @@ body.kanban-drag-select-block * {
     border-radius: 4px;
     color: rgba(255, 255, 255, 0.76);
     cursor: grab;
+    margin-left: -2px;
 }
 
 .kanban-drag-handle:active {

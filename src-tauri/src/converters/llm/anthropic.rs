@@ -253,8 +253,12 @@ fn classify_error(status: u16, body_msg: &str) -> ConverterError {
         401 | 403 => ConverterError::Claude(
             "Claude 인증 실패 — API 키 또는 구독 로그인을 확인하세요.".into(),
         ),
-        429 => ConverterError::RateLimit,
-        503 | 529 => ConverterError::Overloaded,
+        429 => ConverterError::Claude(
+            "Claude 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.".into(),
+        ),
+        503 | 529 => ConverterError::Claude(
+            "Claude 서버가 일시 과부하 상태입니다. 잠시 후 다시 시도해주세요.".into(),
+        ),
         _ => ConverterError::Claude(format!("HTTP {} — {}", status, body_msg)),
     }
 }

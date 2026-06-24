@@ -16,7 +16,7 @@ import { SlideshowView } from './components/SlideshowView';
 import { getSlideshowSettings, setSlideshowSettings as persistSlideshowSettings, type SlideshowSettings } from './lib/slideSplit';
 import { applySlideDesignOptions, BUILTIN_SLIDE_THEMES, DEFAULT_SLIDE_THEME, getSlideTheme, type SlideExportOptions } from './lib/slideTheme';
 import { DEFAULT_HTML_SLIDE_THEME, getHtmlSlideTheme } from './lib/htmlSlideTheme';
-import { clampMarkdownSlideDraft, PPTX_MAX_SLIDES, slideImagePolicyMode } from './lib/slideLimits';
+import { clampMarkdownSlideDraft, PPTX_MAX_SLIDES, slideImagePolicyMode, slideImageSourceMode } from './lib/slideLimits';
 import { markMindPptxDesignRulesText } from './lib/pptxDesignSystem';
 import { Toolbar, EditableFileName, PaneHeader, ViewMode, PaneView, EDITABLE_VIEWS, isPaneView } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
@@ -828,13 +828,18 @@ function App() {
 
       const jobId = beginPptxProgress('HTML 생성 중…');
       const sourceOnlyImages = slideImagePolicyMode(pptxOptions.imagePolicy) === 'sourceOnly';
+      const htmlImageSourceMode = slideImageSourceMode(pptxOptions.imageSourceMode);
+      const stockOnlyImages = htmlImageSourceMode === 'stockOnly';
+      const effectiveHtmlImageSourceMode = stockOnlyImages
+        ? 'use stock photos and logos only; do not generate images'
+        : pptxOptions.imageSourceMode?.trim() || 'prefer generated images for concepts and ambient visuals, then use stock for factual subjects';
       const htmlExportOptions: SlideExportOptions = {
         ...pptxOptions,
         visualDensity: pptxOptions.visualDensity?.trim() || 'minimal-to-balanced text density with strong whitespace and visual hierarchy',
         imagePolicy: sourceOnlyImages
           ? (pptxOptions.imagePolicy?.trim() || 'use source images only; do not add new image intent')
           : 'actively add ambient, editorial, and supporting visual intent to most HTML slides, including spacious body slides, cover, section, quote, stat, conclusion, and core argument slides',
-        imageSourceMode: pptxOptions.imageSourceMode?.trim() || 'prefer generated images for concepts and ambient visuals, then use stock for factual subjects',
+        imageSourceMode: effectiveHtmlImageSourceMode,
       };
       const htmlTheme = getHtmlSlideTheme(pptxOptions.htmlThemeId);
       const slideTheme = applySlideDesignOptions(getSlideTheme(pptxOptions.themeId), htmlExportOptions);
@@ -857,6 +862,8 @@ function App() {
         ].join('\n'),
         sourceOnlyImages
           ? 'Image rule: reuse existing Markdown image paths for source images when they exist, but do not invent new image intents. MarkMind will copy and rebase local source image files next to the exported HTML.'
+          : stockOnlyImages
+            ? 'Image rule: add stock/logo image placeholders only. Do not request generated images, do not create prompt-only asset intents, and set each markmind asset intent sourcePreference to stock or logo with a concrete query/entity.'
           : 'Image rule: add image placeholders to roughly 70-90 percent of slides. Prefer body slides with empty visual regions, section openers, quote/stat slides, cover, conclusion, and core argument slides over generic bullet-only slides.',
         'Keep content concise: no long notes, no implementation explanation visible in the deck, and no repeated source prose.',
         'Run a self-check for overflow, contrast, placeholder coverage, layout diversity, runtime behavior, and template fidelity before returning HTML.',
@@ -994,8 +1001,20 @@ function App() {
             console.warn('[export_html_slides] native HTML QA warnings:\n' + summarizeHtmlNativeValidation(initialReport));
           }
           const nativeIntents = normalizeHtmlNativeAssetIntents(nativeDeck.assetIntents);
-          const assetIntents = sourceOnlyImages ? [] : nativeIntents.slice(0, HTML_NATIVE_MAX_IMAGE_ASSETS);
-          const cappedAssetIntents = sourceOnlyImages ? nativeIntents : nativeIntents.slice(HTML_NATIVE_MAX_IMAGE_ASSETS);
+          const sourceConstrainedIntents = stockOnlyImages
+            ? nativeIntents.map((intent) => ({
+                ...intent,
+                sourcePreference: intent.role === 'logo' ? ('logo' as const) : ('stock' as const),
+                query: intent.query || intent.entity || intent.textSummary || intent.title,
+                prompt: undefined,
+              }))
+            : nativeIntents;
+          const assetIntents = sourceOnlyImages
+            ? []
+            : sourceConstrainedIntents.slice(0, HTML_NATIVE_MAX_IMAGE_ASSETS);
+          const cappedAssetIntents = sourceOnlyImages
+            ? sourceConstrainedIntents
+            : sourceConstrainedIntents.slice(HTML_NATIVE_MAX_IMAGE_ASSETS);
           let htmlWithBudgetedPlaceholders = nativeDeck.html;
           if (cappedAssetIntents.length > 0) {
             htmlWithBudgetedPlaceholders = replaceHtmlNativeAssetPlaceholders(
@@ -1022,7 +1041,7 @@ function App() {
             onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
             isCancelled: () => pptxCancelRequestedRef.current || pptxProgressJobIdRef.current !== jobId,
             stockLimitOverride: assetIntents.length,
-            generatedLimitOverride: assetIntents.length,
+            generatedLimitOverride: stockOnlyImages ? 0 : assetIntents.length,
           });
           ensurePptxJobActive(jobId);
           const applied = applyHtmlNativeAssetRecords(htmlWithBudgetedPlaceholders, assetResult.assets);
