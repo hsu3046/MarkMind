@@ -70,6 +70,20 @@ title: x
         expect(counts.blocked).toBe(1);
     });
 
+    it('normalizes Korean status aliases with spaces', () => {
+        const md = `# Plan
+- 진행 카드 @status(진행 중)
+- 작업 카드 @status(작업 중)
+- 검토 카드 @status(검토 중)
+- 대기 카드 @status(대기 중)
+`;
+        const { cards, counts } = parseKanban(md);
+        expect(cards.map((c) => c.status)).toEqual(['doing', 'doing', 'review', 'blocked']);
+        expect(counts.doing).toBe(2);
+        expect(counts.review).toBe(1);
+        expect(counts.blocked).toBe(1);
+    });
+
     it('falls back to todo for invalid dates and unknown statuses', () => {
         const md = `# Plan
 - 확인 필요 @status(unknown) @due(2026-02-30)

@@ -1155,10 +1155,10 @@ function App() {
 
   // AI
   const ai = useAI();
-  // AI 결과(InlineDiff)는 에디터 페인에서만 보이므로, 마인드맵이 active 면 editor 로 전환해 diff 노출(#64).
-  // solo mindmap → editor, split 의 active mindmap 패인 → editor.
+  // AI 결과(InlineDiff)는 에디터 페인에서만 보이므로, 보드/맵 뷰가 active 면 editor 로 전환해 diff 노출(#64, #93).
+  // solo mindmap/kanban → editor, split 의 active mindmap/kanban 패인 → editor.
   useEffect(() => {
-    if (ai.response && !ai.isLoading && activeView === 'mindmap') {
+    if (ai.response && !ai.isLoading && (activeView === 'mindmap' || activeView === 'kanban')) {
       if (viewMode === 'split') {
         if (activePane === 'left') setSplitLeft('editor');
         else setSplitRight('editor');
