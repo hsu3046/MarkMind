@@ -153,6 +153,36 @@ describe('slideAssets', () => {
     expect(result.assets.filter((asset) => asset.sourceMode === 'generated')).toHaveLength(3);
   });
 
+  it('HTML-native 호출은 placeholder 개수에 맞춰 생성 이미지 예산을 올릴 수 있다', async () => {
+    generateImageMock.mockClear();
+    const slides: Slide[] = Array.from({ length: 10 }, (_, index) => ({
+      title: `HTML placeholder ${index + 1}`,
+      layout: 'content',
+      sourceIds: [`html-placeholder-${index + 1}`],
+      body: [{ kind: 'text', spans: [{ text: 'HTML-native placeholder 슬라이드' }] }],
+      image: {
+        prompt: `abstract generated HTML visual ${index + 1}`,
+        sourcePreference: 'generated',
+        role: 'support',
+      },
+    }));
+
+    const result = await resolveSlideAssets(
+      slides,
+      {
+        themeId: DEFAULT_SLIDE_THEME.id,
+        imagePolicy:
+          'actively add ambient, editorial, and supporting visual intent to most HTML slides, including spacious body slides, cover, section, quote, stat, conclusion, and core argument slides',
+        imageSourceMode: 'generated only',
+      },
+      { generatedLimitOverride: slides.length },
+    );
+
+    expect(generateImageMock).toHaveBeenCalledTimes(10);
+    expect(result.summary.generatedResolved).toBe(10);
+    expect(result.summary.skipped).toBe(0);
+  });
+
   it('HTML-native raw asset id aliases survive asset resolution', async () => {
     generateImageMock.mockClear();
     const slides: Slide[] = [

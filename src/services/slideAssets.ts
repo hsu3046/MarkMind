@@ -79,6 +79,8 @@ export interface ResolveSlideAssetsOptions {
   theme?: SlideTheme;
   onProgress?: (step: string, detail?: string, stepId?: string) => void;
   isCancelled?: () => boolean;
+  stockLimitOverride?: number;
+  generatedLimitOverride?: number;
 }
 
 const STOCK_CONCURRENCY = 4;
@@ -309,6 +311,12 @@ function throwIfAssetResolutionCancelled(resolveOptions: ResolveSlideAssetsOptio
   const err = new Error('Aborted');
   err.name = 'AbortError';
   throw err;
+}
+
+function resolveAssetLimit(defaultLimit: number, override: number | undefined): number {
+  if (override === undefined) return defaultLimit;
+  if (!Number.isFinite(override)) return defaultLimit;
+  return Math.max(0, Math.floor(override));
 }
 
 function canSearchStock(intent: SlideImageIntent): boolean {
@@ -560,8 +568,11 @@ export async function resolveSlideAssets(
   resolveOptions: ResolveSlideAssetsOptions = {},
 ): Promise<{ slides: Slide[]; summary: SlideAssetResolutionSummary; assets: SlideAssetRecord[] }> {
   throwIfAssetResolutionCancelled(resolveOptions);
-  const stockLimit = stockImageLimitForPolicy(options.imagePolicy);
-  const generatedLimit = generatedImageLimitForPolicy(options.imagePolicy);
+  const stockLimit = resolveAssetLimit(stockImageLimitForPolicy(options.imagePolicy), resolveOptions.stockLimitOverride);
+  const generatedLimit = resolveAssetLimit(
+    generatedImageLimitForPolicy(options.imagePolicy),
+    resolveOptions.generatedLimitOverride,
+  );
   const summary: SlideAssetResolutionSummary = {
     requested: 0,
     resolved: 0,

@@ -4,6 +4,7 @@ import {
   ensureHtmlNativeDocument,
   htmlNativeDeckFromLlmHtml,
   normalizeHtmlNativeAssetIntents,
+  replaceHtmlNativeAssetPlaceholders,
   sanitizeHtmlNativeSlides,
   slidesFromHtmlNativeAssetIntents,
   unresolvedHtmlNativeAssetPlaceholders,
@@ -241,6 +242,27 @@ describe('nativeHtmlSlides', () => {
     const html = '<section class="slide"><img src="{{markmind_asset:cover hero}}"><img src="markmind-asset://wide-hero"></section>';
 
     expect(unresolvedHtmlNativeAssetPlaceholders(html)).toEqual(['cover hero', 'wide-hero']);
+  });
+
+  it('replaces only explicitly capped native asset placeholders', () => {
+    const html = [
+      '<section class="slide"><img src="{{markmind_asset:keep}}"></section>',
+      '<section class="slide"><img src="{{markmind_asset:skip raw}}"></section>',
+      '<section class="slide"><img src="markmind-asset://skip-url"></section>',
+    ].join('');
+    const next = replaceHtmlNativeAssetPlaceholders(
+      html,
+      [
+        { slideId: 'skip-raw', rawSlideId: 'skip raw' },
+        { slideId: 'skip-url' },
+      ],
+      'data:image/svg+xml,EMPTY',
+    );
+
+    expect(next).toContain('{{markmind_asset:keep}}');
+    expect(next).not.toContain('{{markmind_asset:skip raw}}');
+    expect(next).not.toContain('markmind-asset://skip-url');
+    expect(unresolvedHtmlNativeAssetPlaceholders(next)).toEqual(['keep']);
   });
 
   it('sanitizes dangerous tags while preserving supported local runtime scripts', () => {

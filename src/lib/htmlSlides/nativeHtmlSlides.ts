@@ -375,6 +375,20 @@ export function unresolvedHtmlNativeAssetPlaceholders(html: string): string[] {
   return [...ids];
 }
 
+export function replaceHtmlNativeAssetPlaceholders(
+  html: string,
+  intents: Array<Pick<SlideImageIntent, 'slideId' | 'rawSlideId'>>,
+  replacementUrl: string,
+): string {
+  let next = html;
+  for (const intent of intents) {
+    for (const pattern of tokenPatterns([intent.slideId, intent.rawSlideId])) {
+      next = next.replace(pattern, replacementUrl);
+    }
+  }
+  return next;
+}
+
 export function slidesFromHtmlNativeAssetIntents(intents: SlideImageIntent[]): Slide[] {
   return intents.map((intent): Slide => ({
     title: intent.title,

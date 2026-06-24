@@ -76,6 +76,9 @@ const SLIDE_REVIEW_MARKER_RE =
 const SLIDE_DRAFT_MARKER_RE = /^\s*(?:<!--\s*markmind:slide-draft\b[^>]*-->|&lt;!--\s*markmind:slide-draft\b.*?--&gt;)\s*$/im;
 const SLIDE_DRAFT_MARKER_VERSION_RE =
   /^\s*(?:<!--\s*markmind:slide-draft\s+v(\d+)\b[^>]*-->|&lt;!--\s*markmind:slide-draft\s+v(\d+)\b.*?--&gt;)\s*$/im;
+const HTML_NATIVE_MAX_IMAGE_ASSETS = PPTX_MAX_SLIDES;
+const HTML_NATIVE_EMPTY_IMAGE_DATA_URL =
+  'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%221%22%20height%3D%221%22/%3E';
 
 function getSlideDraftMarkerVersion(markdown: string): number {
   const match = markdown.match(SLIDE_DRAFT_MARKER_VERSION_RE);
@@ -793,6 +796,7 @@ function App() {
           ensureHtmlNativeDocument,
           htmlNativeDeckFromLlmHtml,
           normalizeHtmlNativeAssetIntents,
+          replaceHtmlNativeAssetPlaceholders,
           sanitizeHtmlNativeSlides,
           slidesFromHtmlNativeAssetIntents,
           summarizeHtmlNativeValidation,
@@ -987,20 +991,38 @@ function App() {
             console.warn('[export_html_slides] native HTML QA warnings:\n' + summarizeHtmlNativeValidation(initialReport));
           }
           const nativeIntents = normalizeHtmlNativeAssetIntents(nativeDeck.assetIntents);
+          const assetIntents = sourceOnlyImages ? [] : nativeIntents.slice(0, HTML_NATIVE_MAX_IMAGE_ASSETS);
+          const cappedAssetIntents = sourceOnlyImages ? nativeIntents : nativeIntents.slice(HTML_NATIVE_MAX_IMAGE_ASSETS);
+          let htmlWithBudgetedPlaceholders = nativeDeck.html;
+          if (cappedAssetIntents.length > 0) {
+            htmlWithBudgetedPlaceholders = replaceHtmlNativeAssetPlaceholders(
+              htmlWithBudgetedPlaceholders,
+              cappedAssetIntents,
+              HTML_NATIVE_EMPTY_IMAGE_DATA_URL,
+            );
+            pushPptxProgressStep(
+              jobId,
+              sourceOnlyImages ? 'HTML 이미지 슬롯 제거' : 'HTML 이미지 슬롯 제한 적용',
+              `${nativeIntents.length}개 → ${assetIntents.length}개`,
+              'html-native-asset-plan',
+            );
+          }
           pushPptxProgressStep(
             jobId,
             'HTML 이미지 슬롯 계획 완료',
-            `${nativeIntents.length}개`,
+            `${assetIntents.length}개`,
             'html-native-asset-plan',
           );
-          const intentSlides = slidesFromHtmlNativeAssetIntents(nativeIntents);
+          const intentSlides = slidesFromHtmlNativeAssetIntents(assetIntents);
           const assetResult = await resolveSlideAssets(intentSlides, htmlExportOptions, {
             theme: slideTheme,
             onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
             isCancelled: () => pptxCancelRequestedRef.current || pptxProgressJobIdRef.current !== jobId,
+            stockLimitOverride: assetIntents.length,
+            generatedLimitOverride: assetIntents.length,
           });
           ensurePptxJobActive(jobId);
-          const applied = applyHtmlNativeAssetRecords(nativeDeck.html, assetResult.assets);
+          const applied = applyHtmlNativeAssetRecords(htmlWithBudgetedPlaceholders, assetResult.assets);
           const unresolvedAssetIds = unresolvedHtmlNativeAssetPlaceholders(applied.html);
           if (unresolvedAssetIds.length > 0) {
             const previewIds = unresolvedAssetIds.slice(0, 8).join(', ');
