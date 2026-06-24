@@ -214,6 +214,25 @@ describe('sourceImageRebase', () => {
     expect(result).toEqual({ html, copied: 0, rewritten: 0 });
   });
 
+  it('copies absolute markdown image refs even when the source document path is unavailable', async () => {
+    const { deps, copied } = fakeDeps(['/Users/me/pasted.png']);
+    const html = '<img src="/Users/me/pasted.png">';
+
+    const result = await rebaseHtmlSourceImageReferences(html, {
+      sourceDocPath: null,
+      sourceMarkdown: '![](/Users/me/pasted.png)',
+      htmlPath: '/exports/deck.html',
+      deps,
+    });
+
+    expect(copied).toEqual([
+      { src: '/Users/me/pasted.png', dest: '/exports/deck.assets/source/pasted.png' },
+    ]);
+    expect(result.copied).toBe(1);
+    expect(result.rewritten).toBe(1);
+    expect(result.html).toBe('<img src="deck.assets/source/pasted.png">');
+  });
+
   it('does not copy local files that were not referenced by the source markdown', async () => {
     const { deps, copied } = fakeDeps([
       '/docs/project/img/known.png',

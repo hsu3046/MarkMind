@@ -195,7 +195,7 @@ function collectMarkdownImageDestinations(markdown: string): string[] {
 
 function collectKnownSourceImagePaths(sourceMarkdown: string | null | undefined, sourceDocDir: string | null): Set<string> {
   const known = new Set<string>();
-  if (!sourceMarkdown || !sourceDocDir) return known;
+  if (!sourceMarkdown) return known;
   const markdown = maskCodeFences(sourceMarkdown);
   for (const destination of collectMarkdownImageDestinations(markdown)) {
     const raw = markdownImageDestination(destination);

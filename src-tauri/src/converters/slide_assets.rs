@@ -79,6 +79,7 @@ pub async fn resolve_stock_slide_asset(
     extend_provider_candidates(&mut candidates, "unsplash", unsplash);
     extend_provider_candidates(&mut candidates, "pexels", pexels);
     extend_provider_candidates(&mut candidates, "brandfetch", brandfetch);
+    candidates.retain(|candidate| provider_allowed_for_license(candidate.provider, &intent));
     candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
 
     for candidate in candidates.into_iter().take(8) {
@@ -115,6 +116,20 @@ fn allows_stock_lookup(intent: &StockSlideAssetIntent) -> bool {
         .as_deref()
         .unwrap_or("auto")
         .eq_ignore_ascii_case("none")
+}
+
+fn open_license_required(intent: &StockSlideAssetIntent) -> bool {
+    intent
+        .license_strictness
+        .as_deref()
+        .is_some_and(|v| v.eq_ignore_ascii_case("open"))
+}
+
+fn provider_allowed_for_license(provider: &str, intent: &StockSlideAssetIntent) -> bool {
+    if !open_license_required(intent) {
+        return true;
+    }
+    matches!(provider, "openverse" | "wikimedia")
 }
 
 fn stock_query(intent: &StockSlideAssetIntent) -> String {
@@ -298,6 +313,9 @@ async fn search_unsplash(
     let Some(key) = key.map(str::trim).filter(|v| !v.is_empty()) else {
         return Ok(Vec::new());
     };
+    if open_license_required(intent) {
+        return Ok(Vec::new());
+    }
     if intent.role == "logo" || intent.source_preference.as_deref() == Some("logo") {
         return Ok(Vec::new());
     }
@@ -373,6 +391,9 @@ async fn search_pexels(
     let Some(key) = key.map(str::trim).filter(|v| !v.is_empty()) else {
         return Ok(Vec::new());
     };
+    if open_license_required(intent) {
+        return Ok(Vec::new());
+    }
     if intent.role == "logo" || intent.source_preference.as_deref() == Some("logo") {
         return Ok(Vec::new());
     }
@@ -451,6 +472,9 @@ async fn search_brandfetch(
     let Some(key) = key.map(str::trim).filter(|v| !v.is_empty()) else {
         return Ok(Vec::new());
     };
+    if open_license_required(intent) {
+        return Ok(Vec::new());
+    }
     if !brandfetch_should_search(intent, query) {
         return Ok(Vec::new());
     }
@@ -840,6 +864,29 @@ mod tests {
     #[test]
     fn none_preference_blocks_stock_lookup() {
         assert!(!allows_stock_lookup(&intent(Some("none"))));
+    }
+
+    #[test]
+    fn open_license_requests_allow_only_open_stock_providers() {
+        let mut item = intent(None);
+        item.license_strictness = Some("open".to_string());
+
+        assert!(provider_allowed_for_license("openverse", &item));
+        assert!(provider_allowed_for_license("wikimedia", &item));
+        assert!(!provider_allowed_for_license("unsplash", &item));
+        assert!(!provider_allowed_for_license("pexels", &item));
+        assert!(!provider_allowed_for_license("brandfetch", &item));
+    }
+
+    #[test]
+    fn presentation_license_requests_keep_all_stock_providers_available() {
+        let item = intent(None);
+
+        assert!(provider_allowed_for_license("openverse", &item));
+        assert!(provider_allowed_for_license("wikimedia", &item));
+        assert!(provider_allowed_for_license("unsplash", &item));
+        assert!(provider_allowed_for_license("pexels", &item));
+        assert!(provider_allowed_for_license("brandfetch", &item));
     }
 
     #[test]

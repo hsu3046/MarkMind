@@ -146,6 +146,39 @@ describe('nativeHtmlSlides', () => {
     expect(unresolvedHtmlNativeAssetPlaceholders(applied.html)).toEqual([]);
   });
 
+  it('does not use duplicate raw asset ids as replacement aliases', () => {
+    const deck = htmlNativeDeckFromLlmHtml(`<!DOCTYPE html><html><body>
+      <section class="slide"><img src="{{markmind_asset:photo}}" alt=""></section>
+      <section class="slide"><img src="{{markmind_asset:photo}}" alt=""></section>
+      <script type="application/json" id="markmind-asset-intents">[
+        {"id":"photo","slideIndex":0,"slideTitle":"First","prompt":"first image"},
+        {"id":"photo","slideIndex":1,"slideTitle":"Second","prompt":"second image"}
+      ]</script>
+    </body></html>`);
+    const intents = normalizeHtmlNativeAssetIntents(deck?.assetIntents ?? []);
+    const records: SlideAssetRecord[] = intents.map((intent, index) => ({
+      slideIndex: intent.slideIndex,
+      slideTitle: intent.title,
+      slideId: intent.slideId,
+      rawSlideId: intent.rawSlideId,
+      role: intent.role,
+      sourceMode: 'generated',
+      provider: 'openai',
+      inserted: false,
+      importance: intent.importance,
+      imageScore: intent.imageScore,
+      dataUrl: `data:image/png;base64,DUP${index + 1}`,
+    }));
+
+    const applied = applyHtmlNativeAssetRecords(deck?.html ?? '', records);
+
+    expect(intents.map((intent) => intent.slideId)).toEqual(['photo-1', 'photo-2']);
+    expect(intents.map((intent) => intent.rawSlideId)).toEqual([undefined, undefined]);
+    expect(applied.html).not.toContain('data:image/png;base64,DUP1');
+    expect(applied.html).not.toContain('data:image/png;base64,DUP2');
+    expect(unresolvedHtmlNativeAssetPlaceholders(applied.html)).toEqual(['photo']);
+  });
+
   it('does not partially replace markmind asset URL ids with shared prefixes', () => {
     const html = '<img src="markmind-asset://hero-wide"><img src="markmind-asset://hero">';
     const records: SlideAssetRecord[] = [

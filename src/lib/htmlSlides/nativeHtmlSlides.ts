@@ -255,6 +255,10 @@ export function normalizeHtmlNativeAssetIntents(inputs: HtmlNativeAssetIntentInp
 
   const counts = new Map<string, number>();
   for (const intent of normalized) counts.set(intent.slideId, (counts.get(intent.slideId) ?? 0) + 1);
+  const rawCounts = new Map<string, number>();
+  for (const intent of normalized) {
+    if (intent.rawSlideId) rawCounts.set(intent.rawSlideId, (rawCounts.get(intent.rawSlideId) ?? 0) + 1);
+  }
 
   const positions = new Map<string, number>();
   const used = new Set<string>();
@@ -270,10 +274,14 @@ export function normalizeHtmlNativeAssetIntents(inputs: HtmlNativeAssetIntentInp
       suffix += 1;
     }
     used.add(slideId);
+    const rawSlideId =
+      intent.rawSlideId && intent.rawSlideId !== slideId && (rawCounts.get(intent.rawSlideId) ?? 0) === 1
+        ? intent.rawSlideId
+        : undefined;
     return {
       ...intent,
       slideId,
-      rawSlideId: intent.rawSlideId && intent.rawSlideId !== slideId ? intent.rawSlideId : undefined,
+      rawSlideId,
     };
   });
 }
