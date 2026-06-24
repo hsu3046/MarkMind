@@ -1050,23 +1050,21 @@ function App() {
 
       pushPptxProgressStep(jobId, 'HTML 파일 생성 중...', undefined, 'html-build');
       ensurePptxJobActive(jobId);
-      if (sourceOnlyImages) {
-        const rebased = await rebaseHtmlSourceImageReferences(html, {
-          sourceDocPath: filePath,
-          sourceMarkdown: content,
-          htmlPath: path,
-        });
-        html = rebased.html;
-        if (rebased.rewritten > 0) {
-          pushPptxProgressStep(
-            jobId,
-            'HTML 원본 이미지 준비 완료',
-            `${rebased.copied}개 복사 · ${rebased.rewritten}개 경로 보정`,
-            'html-source-images',
-          );
-        }
-        ensurePptxJobActive(jobId);
+      const rebased = await rebaseHtmlSourceImageReferences(html, {
+        sourceDocPath: filePath,
+        sourceMarkdown: content,
+        htmlPath: path,
+      });
+      html = rebased.html;
+      if (rebased.rewritten > 0) {
+        pushPptxProgressStep(
+          jobId,
+          'HTML 원본 이미지 준비 완료',
+          `${rebased.copied}개 복사 · ${rebased.rewritten}개 경로 보정`,
+          'html-source-images',
+        );
       }
+      ensurePptxJobActive(jobId);
       pushPptxProgressStep(jobId, 'HTML 저장 중...', undefined, 'html-save');
       await writeTextFile(path, html);
       ensurePptxJobActive(jobId);

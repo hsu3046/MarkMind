@@ -221,10 +221,10 @@ function normalizeLicense(value: unknown): SlideImageLicenseStrictness {
 }
 
 export function normalizeHtmlNativeAssetIntents(inputs: HtmlNativeAssetIntentInput[]): SlideImageIntent[] {
-  return inputs
+  const normalized = inputs
     .map((input, index): SlideImageIntent | null => {
       const rawId = stringValue(input.id);
-      const id = safeAssetId(rawId, index);
+      const baseId = safeAssetId(rawId, index);
       const slideIndex = Math.max(0, Math.round(numberValue(input.slideIndex) ?? index));
       const title = stringValue(input.slideTitle) ?? stringValue(input.title) ?? `Slide ${slideIndex + 1}`;
       const query = stringValue(input.query);
@@ -234,8 +234,8 @@ export function normalizeHtmlNativeAssetIntents(inputs: HtmlNativeAssetIntentInp
       const importance = clamp(Math.round(numberValue(input.importance) ?? 70), 0, 100);
       return {
         slideIndex,
-        slideId: id,
-        rawSlideId: rawId && rawId !== id ? rawId : undefined,
+        slideId: baseId,
+        rawSlideId: rawId,
         title,
         role: normalizeRole(input.role, slideIndex === 0 ? 'cover' : 'support'),
         query,
@@ -252,6 +252,30 @@ export function normalizeHtmlNativeAssetIntents(inputs: HtmlNativeAssetIntentInp
       };
     })
     .filter((intent): intent is SlideImageIntent => Boolean(intent));
+
+  const counts = new Map<string, number>();
+  for (const intent of normalized) counts.set(intent.slideId, (counts.get(intent.slideId) ?? 0) + 1);
+
+  const positions = new Map<string, number>();
+  const used = new Set<string>();
+  return normalized.map((intent) => {
+    const baseId = intent.slideId;
+    const count = counts.get(baseId) ?? 1;
+    const position = (positions.get(baseId) ?? 0) + 1;
+    positions.set(baseId, position);
+    let slideId = count > 1 ? `${baseId}-${position}` : baseId;
+    let suffix = 2;
+    while (used.has(slideId)) {
+      slideId = `${baseId}-${position}-${suffix}`;
+      suffix += 1;
+    }
+    used.add(slideId);
+    return {
+      ...intent,
+      slideId,
+      rawSlideId: intent.rawSlideId && intent.rawSlideId !== slideId ? intent.rawSlideId : undefined,
+    };
+  });
 }
 
 function tokenPatterns(ids: Array<string | undefined>): RegExp[] {

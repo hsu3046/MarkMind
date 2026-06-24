@@ -111,6 +111,41 @@ describe('nativeHtmlSlides', () => {
     expect(unresolvedHtmlNativeAssetPlaceholders(applied.html)).toEqual([]);
   });
 
+  it('keeps normalized asset ids unique when raw ids collide', () => {
+    const deck = htmlNativeDeckFromLlmHtml(`<!DOCTYPE html><html><body>
+      <section class="slide"><img src="{{markmind_asset:cover hero}}" alt=""></section>
+      <section class="slide"><img src="{{markmind_asset:cover-hero}}" alt=""></section>
+      <script type="application/json" id="markmind-asset-intents">[
+        {"id":"cover hero","slideIndex":0,"slideTitle":"Opening","prompt":"first image"},
+        {"id":"cover-hero","slideIndex":1,"slideTitle":"Second","prompt":"second image"}
+      ]</script>
+    </body></html>`);
+    const intents = normalizeHtmlNativeAssetIntents(deck?.assetIntents ?? []);
+    const records: SlideAssetRecord[] = intents.map((intent, index) => ({
+      slideIndex: intent.slideIndex,
+      slideTitle: intent.title,
+      slideId: intent.slideId,
+      rawSlideId: intent.rawSlideId,
+      role: intent.role,
+      sourceMode: 'generated',
+      provider: 'openai',
+      inserted: false,
+      importance: intent.importance,
+      imageScore: intent.imageScore,
+      dataUrl: `data:image/png;base64,IMAGE${index + 1}`,
+    }));
+
+    const applied = applyHtmlNativeAssetRecords(deck?.html ?? '', records);
+
+    expect(intents.map((intent) => intent.slideId)).toEqual(['cover-hero-1', 'cover-hero-2']);
+    expect(intents.map((intent) => intent.rawSlideId)).toEqual(['cover hero', 'cover-hero']);
+    expect(applied.html).toContain('data:image/png;base64,IMAGE1');
+    expect(applied.html).toContain('data:image/png;base64,IMAGE2');
+    expect(applied.insertedIds.has('cover-hero-1')).toBe(true);
+    expect(applied.insertedIds.has('cover-hero-2')).toBe(true);
+    expect(unresolvedHtmlNativeAssetPlaceholders(applied.html)).toEqual([]);
+  });
+
   it('does not partially replace markmind asset URL ids with shared prefixes', () => {
     const html = '<img src="markmind-asset://hero-wide"><img src="markmind-asset://hero">';
     const records: SlideAssetRecord[] = [
