@@ -16,6 +16,8 @@ export interface HtmlSourceImageRebaseResult {
 
 const IMAGE_SRC_RE = /(<(?:img|source)\b[^>]*\bsrc\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
 const CSS_URL_RE = /(url\(\s*)(?:"([^"]*)"|'([^']*)'|([^'")\s]+))(\s*\))/gi;
+const STYLE_TAG_RE = /(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi;
+const STYLE_ATTR_RE = /(\bstyle\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
 const IMAGE_EXT_RE = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp|ico)(?:[?#].*)?$/i;
 const PASS_THROUGH_URL_RE = /^(?:https?:|data:|blob:|asset:|tauri:|mailto:|#|javascript:|vbscript:|markmind-asset:)/i;
 
@@ -68,21 +70,26 @@ function sourceDirFromPath(path?: string | null): string | null {
   return dir || null;
 }
 
-function resolveLocalSourcePath(rawValue: string, sourceDocDir: string | null, requireImageExt: boolean): string | null {
+function localSourcePathCandidates(rawValue: string, sourceDocDir: string | null, requireImageExt: boolean): string[] {
   const decoded = decodeHtmlAttributeValue(rawValue).trim();
-  if (!decoded || decoded.startsWith('{{') || PASS_THROUGH_URL_RE.test(decoded)) return null;
+  if (!decoded || decoded.startsWith('{{') || PASS_THROUGH_URL_RE.test(decoded)) return [];
 
   const fileUrlPath = fileUrlToPath(decoded);
   const { path } = splitPathSuffix(fileUrlPath ?? decoded);
-  if (!path || (requireImageExt && !IMAGE_EXT_RE.test(path))) return null;
+  if (!path) return [];
 
-  const candidates = [path, safeDecodeUri(path)].filter((candidate, index, all) => candidate && all.indexOf(candidate) === index);
+  const candidates = [safeDecodeUri(path), path].filter((candidate, index, all) => candidate && all.indexOf(candidate) === index);
+  const resolved: string[] = [];
   for (const candidate of candidates) {
-    if (isLocalAbsolutePath(candidate)) return candidate;
+    if (requireImageExt && !IMAGE_EXT_RE.test(candidate)) continue;
+    if (isLocalAbsolutePath(candidate)) {
+      resolved.push(candidate);
+      continue;
+    }
     if (!sourceDocDir || candidate.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(candidate)) continue;
-    return resolveRelativePath(candidate, sourceDocDir);
+    resolved.push(resolveRelativePath(candidate, sourceDocDir));
   }
-  return null;
+  return resolved.filter((candidate, index, all) => all.indexOf(candidate) === index);
 }
 
 function htmlAttr(value: string): string {
@@ -106,6 +113,93 @@ async function defaultDeps(): Promise<HtmlSourceImageRebaseDeps> {
   };
 }
 
+function addRawCandidates(rawToCandidates: Map<string, string[]>, raw: string, candidates: string[]): void {
+  if (candidates.length === 0) return;
+  const existing = rawToCandidates.get(raw) ?? [];
+  rawToCandidates.set(
+    raw,
+    [...existing, ...candidates].filter((candidate, index, all) => all.indexOf(candidate) === index),
+  );
+}
+
+function collectCssUrlCandidates(css: string, sourceDocDir: string | null, rawToCandidates: Map<string, string[]>): void {
+  for (const match of css.matchAll(CSS_URL_RE)) {
+    const raw = match[2] ?? match[3] ?? match[4] ?? '';
+    addRawCandidates(rawToCandidates, raw, localSourcePathCandidates(raw, sourceDocDir, true));
+  }
+}
+
+function collectStyleContextCssUrlCandidates(html: string, sourceDocDir: string | null, rawToCandidates: Map<string, string[]>): void {
+  for (const match of html.matchAll(STYLE_TAG_RE)) {
+    collectCssUrlCandidates(match[2] ?? '', sourceDocDir, rawToCandidates);
+  }
+  for (const match of html.matchAll(STYLE_ATTR_RE)) {
+    collectCssUrlCandidates(match[2] ?? match[3] ?? match[4] ?? '', sourceDocDir, rawToCandidates);
+  }
+}
+
+async function firstExistingPath(candidates: string[], exists: (path: string) => Promise<boolean>): Promise<string | null> {
+  for (const candidate of candidates) {
+    if (await exists(candidate)) return candidate;
+  }
+  return null;
+}
+
+function replaceImageSrcs(
+  html: string,
+  rawToSource: Map<string, string>,
+  sourceToRel: Map<string, string>,
+): { html: string; rewritten: number } {
+  let rewritten = 0;
+  const nextHtml = html.replace(IMAGE_SRC_RE, (full, prefix, doubleQuoted, singleQuoted, bare) => {
+    const raw = doubleQuoted ?? singleQuoted ?? bare ?? '';
+    const sourcePath = rawToSource.get(raw);
+    const rel = sourcePath ? sourceToRel.get(sourcePath) : undefined;
+    if (!rel) return full;
+    rewritten += 1;
+    return `${prefix}"${htmlAttr(rel)}"`;
+  });
+  return { html: nextHtml, rewritten };
+}
+
+function replaceCssUrls(
+  css: string,
+  rawToSource: Map<string, string>,
+  sourceToRel: Map<string, string>,
+): { css: string; rewritten: number } {
+  let rewritten = 0;
+  const nextCss = css.replace(CSS_URL_RE, (full, prefix, doubleQuoted, singleQuoted, bare, suffix) => {
+    const raw = doubleQuoted ?? singleQuoted ?? bare ?? '';
+    const sourcePath = rawToSource.get(raw);
+    const rel = sourcePath ? sourceToRel.get(sourcePath) : undefined;
+    if (!rel) return full;
+    rewritten += 1;
+    return `${prefix}"${cssString(rel)}"${suffix}`;
+  });
+  return { css: nextCss, rewritten };
+}
+
+function replaceStyleContextCssUrls(
+  html: string,
+  rawToSource: Map<string, string>,
+  sourceToRel: Map<string, string>,
+): { html: string; rewritten: number } {
+  let rewritten = 0;
+  let nextHtml = html.replace(STYLE_TAG_RE, (full, open, css, close) => {
+    const replaced = replaceCssUrls(css, rawToSource, sourceToRel);
+    rewritten += replaced.rewritten;
+    return replaced.rewritten > 0 ? `${open}${replaced.css}${close}` : full;
+  });
+  nextHtml = nextHtml.replace(STYLE_ATTR_RE, (full, prefix, doubleQuoted, singleQuoted, bare) => {
+    const css = doubleQuoted ?? singleQuoted ?? bare ?? '';
+    const replaced = replaceCssUrls(css, rawToSource, sourceToRel);
+    if (replaced.rewritten === 0) return full;
+    rewritten += replaced.rewritten;
+    return `${prefix}"${htmlAttr(replaced.css)}"`;
+  });
+  return { html: nextHtml, rewritten };
+}
+
 export async function rebaseHtmlSourceImageReferences(
   html: string,
   {
@@ -123,29 +217,27 @@ export async function rebaseHtmlSourceImageReferences(
   const bundleDirName = `${deckStemFromPath(htmlPath)}.assets`;
   const targetRelDir = `${bundleDirName}/source`;
   const targetDir = joinPath(joinPath(htmlDir, bundleDirName), 'source');
-  const rawToSource = new Map<string, string>();
+  const rawToCandidates = new Map<string, string[]>();
 
   for (const match of html.matchAll(IMAGE_SRC_RE)) {
     const raw = match[2] ?? match[3] ?? match[4] ?? '';
-    const sourcePath = resolveLocalSourcePath(raw, sourceDocDir, false);
-    if (sourcePath) rawToSource.set(raw, sourcePath);
+    addRawCandidates(rawToCandidates, raw, localSourcePathCandidates(raw, sourceDocDir, false));
   }
-  for (const match of html.matchAll(CSS_URL_RE)) {
-    const raw = match[2] ?? match[3] ?? match[4] ?? '';
-    const sourcePath = resolveLocalSourcePath(raw, sourceDocDir, true);
-    if (sourcePath) rawToSource.set(raw, sourcePath);
-  }
+  collectStyleContextCssUrlCandidates(html, sourceDocDir, rawToCandidates);
 
-  if (rawToSource.size === 0) return { html, copied: 0, rewritten: 0 };
+  if (rawToCandidates.size === 0) return { html, copied: 0, rewritten: 0 };
 
   const d = deps ?? (await defaultDeps());
+  const rawToSource = new Map<string, string>();
   const sourceToRel = new Map<string, string>();
   let copied = 0;
   let mkdirDone = false;
 
-  for (const sourcePath of rawToSource.values()) {
+  for (const [raw, candidates] of rawToCandidates) {
+    const sourcePath = await firstExistingPath(candidates, d.exists);
+    if (!sourcePath) continue;
+    rawToSource.set(raw, sourcePath);
     if (sourceToRel.has(sourcePath)) continue;
-    if (!(await d.exists(sourcePath))) continue;
 
     if (sourcePath.startsWith(`${targetDir}/`)) {
       sourceToRel.set(sourcePath, `${targetRelDir}/${sourcePath.slice(targetDir.length + 1)}`);
@@ -165,24 +257,10 @@ export async function rebaseHtmlSourceImageReferences(
 
   if (sourceToRel.size === 0) return { html, copied: 0, rewritten: 0 };
 
-  let rewritten = 0;
-  const rebased = html
-    .replace(IMAGE_SRC_RE, (full, prefix, doubleQuoted, singleQuoted, bare) => {
-      const raw = doubleQuoted ?? singleQuoted ?? bare ?? '';
-      const sourcePath = rawToSource.get(raw);
-      const rel = sourcePath ? sourceToRel.get(sourcePath) : undefined;
-      if (!rel) return full;
-      rewritten += 1;
-      return `${prefix}"${htmlAttr(rel)}"`;
-    })
-    .replace(CSS_URL_RE, (full, prefix, doubleQuoted, singleQuoted, bare, suffix) => {
-      const raw = doubleQuoted ?? singleQuoted ?? bare ?? '';
-      const sourcePath = rawToSource.get(raw);
-      const rel = sourcePath ? sourceToRel.get(sourcePath) : undefined;
-      if (!rel) return full;
-      rewritten += 1;
-      return `${prefix}"${cssString(rel)}"${suffix}`;
-    });
+  const imageRebase = replaceImageSrcs(html, rawToSource, sourceToRel);
+  const cssRebase = replaceStyleContextCssUrls(imageRebase.html, rawToSource, sourceToRel);
+  const rebased = cssRebase.html;
+  const rewritten = imageRebase.rewritten + cssRebase.rewritten;
 
   return { html: rebased, copied, rewritten };
 }

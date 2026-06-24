@@ -80,6 +80,76 @@ describe('sourceImageRebase', () => {
     expect(result.html).toBe('<img src="deck.assets/source/chart-1.png"><img src="deck.assets/source/chart-1.png">');
   });
 
+  it('prefers existing decoded paths for percent-encoded local image refs', async () => {
+    const { deps, copied } = fakeDeps([
+      '/docs/project/img/my chart.png',
+      '/docs/project/img/한글.png',
+    ]);
+    const html = '<img src="img/my%20chart.png"><img src="img/%ED%95%9C%EA%B8%80.png">';
+
+    const result = await rebaseHtmlSourceImageReferences(html, {
+      sourceDocPath: '/docs/project/source.md',
+      htmlPath: '/exports/deck.html',
+      deps,
+    });
+
+    expect(copied).toEqual([
+      { src: '/docs/project/img/my chart.png', dest: '/exports/deck.assets/source/my chart.png' },
+      { src: '/docs/project/img/한글.png', dest: '/exports/deck.assets/source/한글.png' },
+    ]);
+    expect(result.copied).toBe(2);
+    expect(result.rewritten).toBe(2);
+    expect(result.html).toBe('<img src="deck.assets/source/my chart.png"><img src="deck.assets/source/한글.png">');
+  });
+
+  it('rebases CSS urls only inside style tags and style attributes', async () => {
+    const { deps, copied } = fakeDeps([
+      '/docs/project/img/bg.png',
+      '/docs/project/img/inline.png',
+    ]);
+    const html = [
+      '<html><head><style>.hero{background:url("img/bg.png")}</style></head>',
+      '<body>',
+      '<section style="background-image:url(\'img/inline.png\')"></section>',
+      '<pre><code>.sample{background:url("img/bg.png")}</code></pre>',
+      '<script type="application/json">{"example":"url(img/bg.png)"}</script>',
+      '<p>Use url(img/bg.png) in CSS.</p>',
+      '</body></html>',
+    ].join('');
+
+    const result = await rebaseHtmlSourceImageReferences(html, {
+      sourceDocPath: '/docs/project/source.md',
+      htmlPath: '/exports/deck.html',
+      deps,
+    });
+
+    expect(copied).toEqual([
+      { src: '/docs/project/img/bg.png', dest: '/exports/deck.assets/source/bg.png' },
+      { src: '/docs/project/img/inline.png', dest: '/exports/deck.assets/source/inline.png' },
+    ]);
+    expect(result.copied).toBe(2);
+    expect(result.rewritten).toBe(2);
+    expect(result.html).toContain('<style>.hero{background:url("deck.assets/source/bg.png")}</style>');
+    expect(result.html).toContain('style="background-image:url(&quot;deck.assets/source/inline.png&quot;)"');
+    expect(result.html).toContain('<pre><code>.sample{background:url("img/bg.png")}</code></pre>');
+    expect(result.html).toContain('<script type="application/json">{"example":"url(img/bg.png)"}</script>');
+    expect(result.html).toContain('<p>Use url(img/bg.png) in CSS.</p>');
+  });
+
+  it('does not copy CSS url examples outside style contexts', async () => {
+    const { deps, copied } = fakeDeps(['/docs/project/img/bg.png']);
+    const html = '<pre><code>.sample{background:url("img/bg.png")}</code></pre>';
+
+    const result = await rebaseHtmlSourceImageReferences(html, {
+      sourceDocPath: '/docs/project/source.md',
+      htmlPath: '/exports/deck.html',
+      deps,
+    });
+
+    expect(copied).toEqual([]);
+    expect(result).toEqual({ html, copied: 0, rewritten: 0 });
+  });
+
   it('leaves unresolved relative refs unchanged when the source document path is unavailable', async () => {
     const { deps, copied } = fakeDeps(['/docs/img/chart.png']);
     const html = '<img src="img/chart.png">';
