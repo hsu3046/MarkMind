@@ -62,7 +62,13 @@ describe('frontendSlidesDocs', () => {
 
   it('detects local template runtime files referenced by generated HTML', () => {
     const files = getHtmlSlideRuntimeFilesForHtml(
-      '<html><head><script src="./deck-stage.js"></script><script src=deck-stage.js></script></head></html>',
+      [
+        '<html><head>',
+        '<script src="./deck-stage.js"></script>',
+        '<script src=deck-stage.js></script>',
+        '<script src="h&Tab;ttps://attacker.example/deck-stage.js"></script>',
+        '</head></html>',
+      ].join(''),
       'neo-grid-bold',
     );
 

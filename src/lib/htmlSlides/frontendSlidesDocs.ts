@@ -5,6 +5,7 @@ import {
   type BeautifulHtmlTemplateMetadata,
   type HtmlSlideThemeId,
 } from '../htmlSlideTheme';
+import { normalizeRuntimeScriptSrc } from './htmlUrlSafety';
 import animationPatternsMd from './vendor/frontend-slides/animation-patterns.md?raw';
 import beautifulAgentsMd from './vendor/beautiful-html-templates/AGENTS.md?raw';
 import beautifulRuntimeDeckStageJs from './vendor/beautiful-html-templates/runtime/deck-stage.js?raw';
@@ -124,7 +125,7 @@ function scriptSrcs(html: string): string[] {
 }
 
 function runtimePathForScriptSrc(src: string): string | null {
-  const clean = src.split(/[?#]/, 1)[0]?.trim().replace(/\\/g, '/') ?? '';
+  const clean = normalizeRuntimeScriptSrc(src);
   if (!clean || /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(clean) || clean.split('/').includes('..')) return null;
   if (!/(?:^|\/)deck-stage\.js$/i.test(clean)) return null;
   return clean.replace(/^\.\//, '');

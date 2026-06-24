@@ -85,6 +85,7 @@ describe('nativeHtmlSlides', () => {
       nativeHtml,
       '<script src="./deck-stage.js"></script>',
       '<script src="https://example.com/x.js"></script>',
+      '<script src="h&Tab;ttps://attacker.example/deck-stage.js"></script>',
       '<iframe src="https://example.com"></iframe>',
       '<a onclick="x()" href="javascript:alert(1)">x</a>',
       '<img onerror=alert(1) src=javascript:alert(2)>',
@@ -96,6 +97,7 @@ describe('nativeHtmlSlides', () => {
 
     expect(clean).toContain('src="./deck-stage.js"');
     expect(clean).not.toContain('https://example.com/x.js');
+    expect(clean).not.toContain('attacker.example');
     expect(clean).not.toContain('<iframe');
     expect(clean).not.toContain('onclick=');
     expect(clean).not.toContain('onerror=');
@@ -182,10 +184,14 @@ describe('nativeHtmlSlides', () => {
     const remoteRuntime = validateHtmlNativeSlides(
       '<!DOCTYPE html><html><head><script src="https://example.com/deck-stage.js"></script></head><body><section class="slide"></section></body></html>',
     );
+    const encodedRemoteRuntime = validateHtmlNativeSlides(
+      '<!DOCTYPE html><html><head><script src="h&Tab;ttps://example.com/deck-stage.js"></script></head><body><section class="slide"></section></body></html>',
+    );
 
     expect(localRuntime.errors).toEqual([]);
     expect(templateChartRuntime.errors).toEqual([]);
     expect(unknownRuntime.errors.join('\n')).toContain('지원하지 않는 script src');
     expect(remoteRuntime.errors.join('\n')).toContain('지원하지 않는 script src');
+    expect(encodedRemoteRuntime.errors.join('\n')).toContain('지원하지 않는 script src');
   });
 });
