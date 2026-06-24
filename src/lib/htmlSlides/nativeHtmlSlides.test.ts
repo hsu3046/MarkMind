@@ -60,6 +60,20 @@ describe('nativeHtmlSlides', () => {
     expect(slides[0].image?.prompt).toContain('Editorial abstract');
   });
 
+  it('preserves raw asset ids when converting native intents to temporary slides', () => {
+    const deck = htmlNativeDeckFromLlmHtml(`<!DOCTYPE html><html><body>
+      <section class="slide"><img src="{{markmind_asset:cover hero}}" alt=""></section>
+      <script type="application/json" id="markmind-asset-intents">[
+        {"id":"cover hero","slideIndex":0,"slideTitle":"Opening","prompt":"cover image"}
+      ]</script>
+    </body></html>`);
+    const intents = normalizeHtmlNativeAssetIntents(deck?.assetIntents ?? []);
+    const slides = slidesFromHtmlNativeAssetIntents(intents);
+
+    expect(slides[0].sourceIds).toEqual(['cover-hero']);
+    expect(slides[0].image?.rawAssetId).toBe('cover hero');
+  });
+
   it('replaces MarkMind asset placeholders from saved asset records', () => {
     const record: SlideAssetRecord = {
       slideIndex: 0,
@@ -368,5 +382,15 @@ describe('nativeHtmlSlides', () => {
     expect(unknownRuntime.errors.join('\n')).toContain('지원하지 않는 script src');
     expect(remoteRuntime.errors.join('\n')).toContain('지원하지 않는 script src');
     expect(encodedRemoteRuntime.errors.join('\n')).toContain('지원하지 않는 script src');
+  });
+
+  it('applies remote script allow-list per selected template', () => {
+    const html =
+      '<!DOCTYPE html><html><head><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script></head><body><section class="slide"></section></body></html>';
+
+    expect(validateHtmlNativeSlidesForTemplate(html, 'retro-windows').errors).toEqual([]);
+    expect(validateHtmlNativeSlidesForTemplate(html, 'blue-professional').errors.join('\n')).toContain(
+      '선택한 템플릿에서 허용하지 않는 script src',
+    );
   });
 });

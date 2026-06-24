@@ -91,6 +91,8 @@ function scriptSrcs(html: string): string[] {
     .filter((src): src is string => Boolean(src));
 }
 
+const CHART_JS_TEMPLATE_IDS = new Set(['cartesian', 'coral', 'retro-windows']);
+
 function isAllowedTemplateRuntimeScript(src: string): boolean {
   const clean = normalizeRuntimeScriptSrc(src);
   if (!clean) return false;
@@ -98,6 +100,16 @@ function isAllowedTemplateRuntimeScript(src: string): boolean {
   if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(clean)) return false;
   if (clean.split('/').includes('..')) return false;
   return /(?:^|\/)deck-stage\.js$/i.test(clean);
+}
+
+function isChartJsRuntimeScript(src: string): boolean {
+  const clean = normalizeRuntimeScriptSrc(src);
+  return /^https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:@[\w.-]+)?(?:\/[^?#]*)?$/i.test(clean);
+}
+
+function isAllowedTemplateRuntimeScriptForTheme(src: string, themeId?: string): boolean {
+  if (isChartJsRuntimeScript(src)) return Boolean(themeId && CHART_JS_TEMPLATE_IDS.has(themeId));
+  return isAllowedTemplateRuntimeScript(src);
 }
 
 const URL_ATTRIBUTE_RE = /\b(href|src|xlink:href|formaction)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi;
@@ -382,6 +394,7 @@ export function slidesFromHtmlNativeAssetIntents(intents: SlideImageIntent[]): S
       role: intent.role,
       query: intent.query,
       entity: intent.entity,
+      rawAssetId: intent.rawSlideId,
       prompt: intent.prompt,
       aspect: intent.aspect,
       style: intent.style,
@@ -463,6 +476,12 @@ export function validateHtmlNativeSlides(html: string): HtmlNativeValidationRepo
 
 export function validateHtmlNativeSlidesForTemplate(html: string, _themeId?: string): HtmlNativeValidationReport {
   const report = validateHtmlNativeSlides(html);
+  const blockedTemplateScriptSrcs = scriptSrcs(html).filter(
+    (src) => isAllowedTemplateRuntimeScript(src) && !isAllowedTemplateRuntimeScriptForTheme(src, _themeId),
+  );
+  if (blockedTemplateScriptSrcs.length > 0) {
+    report.errors.push(`선택한 템플릿에서 허용하지 않는 script src가 있습니다: ${blockedTemplateScriptSrcs.join(', ')}`);
+  }
   return report;
 }
 

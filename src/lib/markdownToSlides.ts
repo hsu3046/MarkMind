@@ -48,6 +48,8 @@ export type SlideImageLicenseStrictness = 'presentation' | 'open' | 'internal-on
 export interface SlideImageSpec {
   src?: string;
   alt?: string;
+  /** HTML-native export internal id alias for placeholders before sanitization/normalization. */
+  rawAssetId?: string;
   prompt?: string;
   kind?: string;
   role?: SlideImageRole;

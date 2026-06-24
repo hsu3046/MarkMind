@@ -152,4 +152,31 @@ describe('slideAssets', () => {
     expect(result.summary.generatedResolved).toBe(3);
     expect(result.assets.filter((asset) => asset.sourceMode === 'generated')).toHaveLength(3);
   });
+
+  it('HTML-native raw asset id aliases survive asset resolution', async () => {
+    generateImageMock.mockClear();
+    const slides: Slide[] = [
+      {
+        title: 'Opening',
+        layout: 'title',
+        sourceIds: ['cover-hero'],
+        body: [{ kind: 'text', spans: [{ text: 'opening context' }] }],
+        image: {
+          prompt: 'cover image',
+          rawAssetId: 'cover hero',
+          sourcePreference: 'generated',
+          role: 'cover',
+        },
+      },
+    ];
+
+    const result = await resolveSlideAssets(slides, {
+      themeId: DEFAULT_SLIDE_THEME.id,
+      imagePolicy: 'add image intent only when it materially improves the slide',
+      imageSourceMode: 'generated only',
+    });
+
+    expect(result.assets[0].slideId).toBe('cover-hero');
+    expect(result.assets[0].rawSlideId).toBe('cover hero');
+  });
 });

@@ -263,6 +263,7 @@ function collectImageIntents(slides: Slide[], options: SlideExportOptions): Slid
       return {
         slideIndex: index,
         slideId: slide.sourceIds?.[0] ?? `slide-${index + 1}`,
+        rawSlideId: image?.rawAssetId,
         title: slide.title || `Slide ${index + 1}`,
         role: roleForSlide(slide, index),
         query: image?.query ?? query,
