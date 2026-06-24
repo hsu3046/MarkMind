@@ -262,7 +262,7 @@ function tokenPatterns(ids: Array<string | undefined>): RegExp[] {
       const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       return [
         new RegExp(`\\{\\{\\s*markmind_asset:${escaped}\\s*\\}\\}`, 'g'),
-        new RegExp(`markmind-asset://${escaped}`, 'g'),
+        new RegExp(`markmind-asset://${escaped}(?=$|["'\\s)<])`, 'g'),
       ];
     });
 }

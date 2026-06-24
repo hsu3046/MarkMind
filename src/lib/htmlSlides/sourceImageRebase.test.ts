@@ -114,6 +114,41 @@ describe('sourceImageRebase', () => {
     expect(result.html).toBe('<img src="deck.assets/source/my chart.png"><img src="deck.assets/source/한글.png">');
   });
 
+  it('allow-lists markdown image destinations with parentheses and angle brackets', async () => {
+    const { deps, copied } = fakeDeps([
+      '/docs/project/img/Screenshot (1).png',
+      '/docs/project/img/img (final).png',
+      '/docs/project/img/escaped).png',
+    ]);
+    const html = [
+      '<img src="img/Screenshot%20(1).png">',
+      '<img src="img/img%20(final).png">',
+      '<img src="img/escaped).png">',
+    ].join('');
+
+    const result = await rebaseHtmlSourceImageReferences(html, {
+      sourceDocPath: '/docs/project/source.md',
+      sourceMarkdown: [
+        '![screen](img/Screenshot%20(1).png)',
+        '![final](<img/img (final).png>)',
+        '![escaped](img/escaped\\).png)',
+      ].join('\n'),
+      htmlPath: '/exports/deck.html',
+      deps,
+    });
+
+    expect(copied).toEqual([
+      { src: '/docs/project/img/Screenshot (1).png', dest: '/exports/deck.assets/source/Screenshot (1).png' },
+      { src: '/docs/project/img/img (final).png', dest: '/exports/deck.assets/source/img (final).png' },
+      { src: '/docs/project/img/escaped).png', dest: '/exports/deck.assets/source/escaped).png' },
+    ]);
+    expect(result.copied).toBe(3);
+    expect(result.rewritten).toBe(3);
+    expect(result.html).toBe(
+      '<img src="deck.assets/source/Screenshot (1).png"><img src="deck.assets/source/img (final).png"><img src="deck.assets/source/escaped).png">',
+    );
+  });
+
   it('rebases CSS urls only inside style tags and style attributes', async () => {
     const { deps, copied } = fakeDeps([
       '/docs/project/img/bg.png',

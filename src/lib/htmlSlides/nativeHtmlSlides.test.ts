@@ -111,6 +111,43 @@ describe('nativeHtmlSlides', () => {
     expect(unresolvedHtmlNativeAssetPlaceholders(applied.html)).toEqual([]);
   });
 
+  it('does not partially replace markmind asset URL ids with shared prefixes', () => {
+    const html = '<img src="markmind-asset://hero-wide"><img src="markmind-asset://hero">';
+    const records: SlideAssetRecord[] = [
+      {
+        slideIndex: 0,
+        slideTitle: 'Hero',
+        slideId: 'hero',
+        role: 'support',
+        sourceMode: 'generated',
+        provider: 'openai',
+        inserted: false,
+        importance: 70,
+        imageScore: 70,
+        dataUrl: 'data:image/png;base64,HERO',
+      },
+      {
+        slideIndex: 0,
+        slideTitle: 'Wide',
+        slideId: 'hero-wide',
+        role: 'support',
+        sourceMode: 'generated',
+        provider: 'openai',
+        inserted: false,
+        importance: 70,
+        imageScore: 70,
+        dataUrl: 'data:image/png;base64,WIDE',
+      },
+    ];
+
+    const applied = applyHtmlNativeAssetRecords(html, records);
+
+    expect(applied.html).toBe('<img src="data:image/png;base64,WIDE"><img src="data:image/png;base64,HERO">');
+    expect(applied.html).not.toContain('data:image/png;base64,HERO-wide');
+    expect(applied.insertedIds.has('hero')).toBe(true);
+    expect(applied.insertedIds.has('hero-wide')).toBe(true);
+  });
+
   it('reports unresolved MarkMind asset placeholders after asset application', () => {
     const applied = applyHtmlNativeAssetRecords(nativeHtml, []);
 

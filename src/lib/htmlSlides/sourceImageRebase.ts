@@ -18,7 +18,6 @@ const IMAGE_SRC_RE = /(<(?:img|source)\b[^>]*\bsrc\s*=\s*)(?:"([^"]*)"|'([^']*)'
 const CSS_URL_RE = /(url\(\s*)(?:"([^"]*)"|'([^']*)'|([^'")\s]+))(\s*\))/gi;
 const STYLE_TAG_RE = /(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi;
 const STYLE_ATTR_RE = /(\bstyle\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
-const MARKDOWN_IMAGE_RE = /!\[[^\]]*]\(([^)]+)\)/g;
 const IMAGE_EXT_RE = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp|ico)(?:[?#].*)?$/i;
 const PASS_THROUGH_URL_RE = /^(?:https?:|data:|blob:|asset:|tauri:|mailto:|#|javascript:|vbscript:|markmind-asset:)/i;
 
@@ -122,15 +121,84 @@ function markdownImageDestination(raw: string): string {
     return end >= 0 ? trimmed.slice(1, end).trim() : trimmed;
   }
   const titleMatch = trimmed.match(/^(\S+)(?:\s+["'][\s\S]*["'])$/);
-  return (titleMatch?.[1] ?? trimmed).trim();
+  return (titleMatch?.[1] ?? trimmed).trim().replace(/\\([\\`()\[\]<>])/g, '$1');
+}
+
+function findUnescaped(text: string, needle: string, start: number): number {
+  for (let i = start; i < text.length; i += 1) {
+    if (text[i] === '\\') {
+      i += 1;
+      continue;
+    }
+    if (text[i] === needle) return i;
+  }
+  return -1;
+}
+
+function readMarkdownImageDestination(markdown: string, openParen: number): { raw: string; end: number } | null {
+  let i = openParen + 1;
+  while (/\s/.test(markdown[i] ?? '')) i += 1;
+  if (markdown[i] === '<') {
+    const closeAngle = findUnescaped(markdown, '>', i + 1);
+    if (closeAngle < 0) return null;
+    const closeParen = findUnescaped(markdown, ')', closeAngle + 1);
+    if (closeParen < 0) return null;
+    return { raw: markdown.slice(i, closeAngle + 1), end: closeParen + 1 };
+  }
+
+  let depth = 0;
+  let end = -1;
+  for (; i < markdown.length; i += 1) {
+    const ch = markdown[i];
+    if (ch === '\\') {
+      i += 1;
+      continue;
+    }
+    if (ch === '(') {
+      depth += 1;
+      continue;
+    }
+    if (ch === ')') {
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+      depth -= 1;
+    }
+  }
+  if (end < 0) return null;
+  return { raw: markdown.slice(openParen + 1, end), end: end + 1 };
+}
+
+function collectMarkdownImageDestinations(markdown: string): string[] {
+  const destinations: string[] = [];
+  let i = 0;
+  while (i < markdown.length) {
+    const marker = markdown.indexOf('![', i);
+    if (marker < 0) break;
+    const closeLabel = findUnescaped(markdown, ']', marker + 2);
+    if (closeLabel < 0) break;
+    if (markdown[closeLabel + 1] !== '(') {
+      i = closeLabel + 1;
+      continue;
+    }
+    const destination = readMarkdownImageDestination(markdown, closeLabel + 1);
+    if (!destination) {
+      i = closeLabel + 2;
+      continue;
+    }
+    destinations.push(destination.raw);
+    i = destination.end;
+  }
+  return destinations;
 }
 
 function collectKnownSourceImagePaths(sourceMarkdown: string | null | undefined, sourceDocDir: string | null): Set<string> {
   const known = new Set<string>();
   if (!sourceMarkdown || !sourceDocDir) return known;
   const markdown = maskCodeFences(sourceMarkdown);
-  for (const match of markdown.matchAll(MARKDOWN_IMAGE_RE)) {
-    const raw = markdownImageDestination(match[1] ?? '');
+  for (const destination of collectMarkdownImageDestinations(markdown)) {
+    const raw = markdownImageDestination(destination);
     for (const candidate of localSourcePathCandidates(raw, sourceDocDir, true)) {
       known.add(candidate);
     }
