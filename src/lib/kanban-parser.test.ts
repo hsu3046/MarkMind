@@ -75,12 +75,14 @@ title: x
 - 진행 카드 @status(진행 중)
 - 작업 카드 @status(작업 중)
 - 검토 카드 @status(검토 중)
+- 검토 카드 2 @status(검토중)
+- 리뷰 카드 @status(리뷰중)
 - 대기 카드 @status(대기 중)
 `;
         const { cards, counts } = parseKanban(md);
-        expect(cards.map((c) => c.status)).toEqual(['doing', 'doing', 'review', 'blocked']);
+        expect(cards.map((c) => c.status)).toEqual(['doing', 'doing', 'review', 'review', 'review', 'blocked']);
         expect(counts.doing).toBe(2);
-        expect(counts.review).toBe(1);
+        expect(counts.review).toBe(3);
         expect(counts.blocked).toBe(1);
     });
 

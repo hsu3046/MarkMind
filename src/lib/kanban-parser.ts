@@ -51,8 +51,10 @@ const STATUS_ALIASES: Record<string, KanbanStatus> = {
     review: 'review',
     reviewing: 'review',
     검토: 'review',
+    검토중: 'review',
     '검토-중': 'review',
     리뷰: 'review',
+    리뷰중: 'review',
     '리뷰-중': 'review',
 
     block: 'blocked',
