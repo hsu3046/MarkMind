@@ -5,8 +5,10 @@ import {
   htmlNativeDeckFromLlmHtml,
   normalizeHtmlNativeAssetIntents,
   sanitizeHtmlNativeSlides,
+  shouldRepairHtmlNativeSlides,
   slidesFromHtmlNativeAssetIntents,
   validateHtmlNativeSlides,
+  validateHtmlNativeSlidesForTemplate,
 } from './nativeHtmlSlides';
 import type { SlideAssetRecord } from '../../services/slideAssets';
 
@@ -96,5 +98,19 @@ describe('nativeHtmlSlides', () => {
 
     expect(report.errors.join('\n')).toContain('HTML 문서가 끝까지 닫히지 않았습니다');
     expect(report.errors.join('\n')).toContain('일부 slide section이 닫히지 않았습니다');
+  });
+
+  it('flags native HTML that does not trace the selected template class grammar', () => {
+    const generic = `<!DOCTYPE html><html><head><style>.deck-stage{width:1920px;height:1080px}</style></head><body><main class="deck-stage">
+      <section class="slide generic" data-layout="a"></section>
+      <section class="slide generic" data-layout="b"></section>
+      <section class="slide generic" data-layout="c"></section>
+      <section class="slide generic" data-layout="d"></section>
+      <section class="slide generic" data-layout="e"></section>
+    </main></body></html>`;
+    const report = validateHtmlNativeSlidesForTemplate(generic, 'neo-grid-bold');
+
+    expect(report.templateClassHits).toBe(0);
+    expect(shouldRepairHtmlNativeSlides(report)).toBe(true);
   });
 });

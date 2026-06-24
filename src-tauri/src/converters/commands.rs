@@ -134,6 +134,18 @@ const HTML_SLIDES_SYSTEM: &str = concat!(
     "Before output, perform a visual QA pass: check slide fit, text overflow risk, layout diversity, image placeholder coverage, fixed-stage rules, contrast, and template fidelity. Repair the HTML yourself before returning it."
 );
 
+const HTML_SLIDES_REPAIR_SYSTEM: &str = concat!(
+    "You are repairing a single-file HTML slide deck created for MarkMind. ",
+    "Output raw HTML only: no prose, no markdown fence, no JSON wrapper. ",
+    "Keep the deck as a self-contained 1920x1080 fixed-stage HTML presentation with inline CSS and inline JavaScript only. ",
+    "Do not return MarkMind Slide[] JSON. Do not use external scripts, iframes, object/embed tags, remote image URLs, or base64 images. ",
+    "Your job is to make the deck trace the selected frontend-slides / beautiful-html-templates template.html more closely. ",
+    "Prefer rewriting section markup and CSS to use the selected template's original class names, layout families, component grammar, visual rhythm, and chart/table/process/diagram structures. ",
+    "Preserve factual content and document language. Keep or improve markmind asset placeholders and the markmind-asset-intents JSON script. ",
+    "If validation reports low layout diversity or low template class usage, replace generic slides with template-native sections instead of making minor cosmetic tweaks. ",
+    "Before output, perform a final QA pass for closed tags, slide count, placeholder coverage, overflow risk, contrast, and template fidelity."
+);
+
 const SLIDE_MARKDOWN_DRAFT_SYSTEM: &str = concat!(
     "You are a slide manuscript agent for a Markdown-first editor. ",
     "Create a reviewable slide draft, not a PowerPoint file and not JSON. ",
@@ -1109,6 +1121,60 @@ pub async fn generate_html_slides_llm(
     let cleaned = strip_outer_markdown_fence(&raw);
     emitter.emit("✅ HTML 응답 정리 완료", None);
     emitter.emit("✅ AI HTML 생성 완료", None);
+    Ok(cleaned)
+}
+
+#[tauri::command]
+pub async fn repair_html_slides_llm(
+    app: AppHandle,
+    markdown: String,
+    html: String,
+    validation_summary: String,
+    company: crate::subscription_auth::AICompany,
+    auth: crate::subscription_auth::ClaudeAuthMode,
+    model: Option<String>,
+    options: Option<SlideGenerationOptions>,
+    job_id: Option<String>,
+) -> Result<String, String> {
+    let emitter = new_emitter(app, job_id);
+    let opt_block = slide_options_prompt(options.as_ref());
+    let (outline_block, source_sections, source_map) = slide_generation_source_context(&markdown);
+    emitter.emit(
+        "✅ HTML 재작성 컨텍스트 준비 완료",
+        Some(format!("소스 섹션 {}개", source_sections.len())),
+    );
+
+    let prompt = format!(
+        "Repair this HTML slide deck so it follows the selected frontend-slides / beautiful-html-templates template much more closely.\n\n{}\n\n<validation_report>\n{}\n</validation_report>\n\n<current_html>\n{}\n</current_html>\n\n{}\n\n{}",
+        opt_block,
+        validation_summary,
+        html,
+        outline_block,
+        source_map
+    );
+    emitter.emit("✅ HTML 재작성 요청 준비 완료", None);
+    let max_tokens = options
+        .as_ref()
+        .and_then(|o| o.max_output_tokens)
+        .unwrap_or(36000)
+        .clamp(16000, SLIDES_HARD_MAX_TOKENS);
+    let raw = call_slides_llm_with_progress(
+        &emitter,
+        "html-native-repair-llm",
+        "⏳ AI가 HTML 슬라이드를 재작성하는 중…",
+        "✅ HTML 슬라이드 재작성 완료",
+        company,
+        auth,
+        model.as_deref(),
+        HTML_SLIDES_REPAIR_SYSTEM,
+        &prompt,
+        None,
+        max_tokens,
+    )
+    .await?;
+
+    let cleaned = strip_outer_markdown_fence(&raw);
+    emitter.emit("✅ HTML 재작성 응답 정리 완료", None);
     Ok(cleaned)
 }
 

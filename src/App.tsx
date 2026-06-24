@@ -719,8 +719,9 @@ function App() {
           htmlNativeDeckFromLlmHtml,
           normalizeHtmlNativeAssetIntents,
           slidesFromHtmlNativeAssetIntents,
+          shouldRepairHtmlNativeSlides,
           summarizeHtmlNativeValidation,
-          validateHtmlNativeSlides,
+          validateHtmlNativeSlidesForTemplate,
         },
         { normalizeSlidesForPptx, validateSlideDeck, summarizeSlideIssues },
         { resolveSlideAssets },
@@ -763,13 +764,15 @@ function App() {
         'Autonomous design mode: do not ask for style previews or user selection. Infer one visual thesis for the whole deck from the document, audience, tone, and selected template, then distribute slide roles and visual intensity yourself.',
         'Before writing HTML, decide which pages are cover, section beat, core argument, evidence, contrast, quote, stat, image essay, and closing. Encode that decision in section classes, data-layout values, hierarchy, and image slots.',
         'Output a complete HTML document directly. Do not output MarkMind Slide[] JSON, PptxGenJS options, or markdown.',
+        'Trace mode: treat the selected beautiful-html-templates template.html as the primary implementation pattern. Reuse its slide class names and component DOM grammar whenever the content fits.',
         `HTML template recipe: ${htmlTheme.name}. ${htmlTheme.description}`,
         frontendSlidesDesignRules,
         [
           'HTML-native structure rule: every <section class="slide ..."> must include data-layout with a meaningful template-specific layout name.',
-          'Use template-specific components instead of generic cards: Blue can use dashboard/detail/bar/metric/agenda layouts; Neo can use dense grid panels/process/matrix/poster layouts; Signal can use chapter/statement/split/stats/chart/pyramid/cycle/editorial layouts.',
+          'Use template-specific components instead of generic cards: Blue must reuse layout-dashboard/layout-detail/layout-bars/layout-metrics/layout-agenda; Neo must reuse s-stats/s-chart/s-process2/s-matrix2/s-consult; Signal must reuse slide--chart/slide--diagram/slide--pyramid/slide--cycle/slide--vtimeline when applicable.',
           'Do not repeat the same visual pattern on adjacent body slides. In decks with 7 or more slides, use at least 4 visibly different section data-layout values unless the source content is extremely short.',
           'Plan image slots while designing each slide. Use {{markmind_asset:asset-id}} placeholders and the markmind-asset-intents JSON script for every stock/logo/generated visual.',
+          'If the source has lists, criteria, comparisons, processes, tables, evidence, or numeric-looking claims, convert them into table/chart/process/matrix/diagram HTML rather than bullets.',
         ].join('\n'),
         sourceOnlyImages
           ? 'Image rule: preserve source image paths when they exist, but do not invent new image intents.'
@@ -835,11 +838,57 @@ function App() {
       }
       const baseDir = filePath ? filePath.replace(/\/[^/]*$/, '') : undefined;
       pushPptxProgressStep(jobId, 'HTML 응답 검증 중...', undefined, 'html-validate-response');
-      const nativeDeck = raw ? htmlNativeDeckFromLlmHtml(raw) : null;
+      let nativeDeck = raw ? htmlNativeDeckFromLlmHtml(raw) : null;
       let html: string | null = null;
       let htmlAssetRecords: Awaited<ReturnType<typeof resolveSlideAssets>>['assets'] = [];
       if (nativeDeck) {
-        const initialReport = validateHtmlNativeSlides(nativeDeck.html);
+        let initialReport = validateHtmlNativeSlidesForTemplate(nativeDeck.html, htmlTheme.id);
+        if (shouldRepairHtmlNativeSlides(initialReport)) {
+          const summary = summarizeHtmlNativeValidation(initialReport);
+          console.warn('[export_html_slides] native HTML QA requested repair:\n' + summary);
+          pushPptxProgressStep(jobId, 'HTML-native 재작성 중...', '원본 템플릿 구조로 보정', 'html-native-repair');
+          try {
+            const repairedRaw = await invoke<string>('repair_html_slides_llm', {
+              markdown: content,
+              html: nativeDeck.html,
+              validationSummary: [
+                summary,
+                `Slide count: ${initialReport.slideCount}`,
+                `Layout count: ${initialReport.layoutCount}`,
+                `Template class hits: ${initialReport.templateClassHits}`,
+              ].join('\n'),
+              company: sel.company,
+              auth: sel.auth,
+              model: sel.model,
+              jobId,
+              options: buildHtmlLlmOptions(
+                'Repair the current HTML instead of starting from MarkMind Slide[] JSON. Increase template class usage, layout diversity, table/chart/process/matrix/diagram usage, and fidelity to the selected template.html. Keep the deck compact enough to return completely.',
+                36000,
+              ),
+            });
+            const repairedDeck = htmlNativeDeckFromLlmHtml(repairedRaw);
+            if (repairedDeck) {
+              const repairedReport = validateHtmlNativeSlidesForTemplate(repairedDeck.html, htmlTheme.id);
+              if (repairedReport.errors.length === 0) {
+                nativeDeck = repairedDeck;
+                initialReport = repairedReport;
+                pushPptxProgressStep(
+                  jobId,
+                  'HTML-native 재작성 완료',
+                  `${repairedReport.slideCount}장 · 템플릿 클래스 ${repairedReport.templateClassHits}종`,
+                  'html-native-repair',
+                );
+              } else {
+                console.warn('[export_html_slides] repaired HTML still invalid:\n' + summarizeHtmlNativeValidation(repairedReport));
+              }
+            }
+          } catch (repairErr) {
+            if (!isRetryableHtmlNativeError(repairErr)) throw repairErr;
+            console.warn('[export_html_slides] native HTML repair failed, falling back:', repairErr);
+            pushPptxProgressStep(jobId, 'HTML-native 재작성 실패', '기존 렌더러 안전망으로 전환', 'html-native-repair');
+          }
+        }
+
         if (initialReport.errors.length > 0) {
           console.warn('[export_html_slides] native HTML QA failed:\n' + summarizeHtmlNativeValidation(initialReport));
           pushPptxProgressStep(jobId, 'HTML-native 검증 실패', '기존 렌더러 안전망으로 전환', 'html-native-qa');
@@ -861,7 +910,7 @@ function App() {
           });
           const applied = applyHtmlNativeAssetRecords(nativeDeck.html, assetResult.assets);
           html = ensureHtmlNativeDocument(applied.html, baseName);
-          const finalReport = validateHtmlNativeSlides(html);
+          const finalReport = validateHtmlNativeSlidesForTemplate(html, htmlTheme.id);
           if (finalReport.errors.length > 0) {
             console.warn('[export_html_slides] native HTML final QA failed:\n' + summarizeHtmlNativeValidation(finalReport));
             pushPptxProgressStep(jobId, 'HTML-native 최종 검증 실패', '기존 렌더러 안전망으로 전환', 'html-native-final-qa');
@@ -877,7 +926,7 @@ function App() {
             pushPptxProgressStep(
               jobId,
               'HTML-native 레이아웃 검증 완료',
-              `${finalReport.slideCount}장 · 레이아웃 ${finalReport.layoutCount || '확인 불가'}종`,
+              `${finalReport.slideCount}장 · 레이아웃 ${finalReport.layoutCount || '확인 불가'}종 · 템플릿 ${finalReport.templateClassHits}종`,
               'html-native-final-qa',
             );
           }

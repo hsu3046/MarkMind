@@ -28,6 +28,8 @@ describe('frontendSlidesDocs', () => {
     expect(prompt).toContain('animation-patterns.md');
     expect(prompt).toContain('templates/signal/design.md');
     expect(prompt).toContain('Signal');
+    expect(prompt).toContain('beautiful-html-template-profile');
+    expect(prompt).toContain('slide--pyramid');
   });
 
   it('can build native HTML rules without the JSON-only renderer constraint', () => {

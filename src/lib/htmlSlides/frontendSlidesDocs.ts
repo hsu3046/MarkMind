@@ -8,6 +8,7 @@ import neoGridBoldDesignMd from './vendor/frontend-slides/bold-template-pack/tem
 import neoGridBoldPreviewMd from './vendor/frontend-slides/bold-template-pack/templates/neo-grid-bold/preview.md?raw';
 import signalDesignMd from './vendor/frontend-slides/bold-template-pack/templates/signal/design.md?raw';
 import signalPreviewMd from './vendor/frontend-slides/bold-template-pack/templates/signal/preview.md?raw';
+import { buildTemplateProfilePrompt } from './templateProfiles';
 
 export interface FrontendSlidesTemplateDocs {
   id: HtmlSlideThemeId;
@@ -71,7 +72,9 @@ export function buildFrontendSlidesDesignRules(themeId?: string, outputMode: Fro
     'Infer the final deck art direction yourself, then apply it consistently across cover, section, content, evidence, quote, image, and closing slides.',
     'Use the fixed-stage browser slide model described by frontend-slides. Plan for a 1920x1080 canvas scaled to the viewport, not for editable PowerPoint placeholders.',
     'Prefer distinctive HTML-native slide structures: full-bleed or large media regions, poster-like grids, dense editorial panels, strong section dividers, and progressive visual hierarchy.',
+    'Trace the selected beautiful-html-templates template.html structure as closely as possible. Reuse its class names, layout families, component grammar, and slide rhythm instead of inventing a generic MarkMind visual system.',
     outputRule,
+    buildTemplateProfilePrompt(docs.id),
     `<frontend-slides-html-template path="html-template.md">\n${htmlTemplateMd}\n</frontend-slides-html-template>`,
     `<frontend-slides-viewport-base path="viewport-base.css">\n${viewportBaseCss}\n</frontend-slides-viewport-base>`,
     `<frontend-slides-animation-patterns path="animation-patterns.md">\n${animationPatternsMd}\n</frontend-slides-animation-patterns>`,

@@ -1,5 +1,6 @@
 import type { Slide, SlideImageLicenseStrictness, SlideImageRole, SlideImageSourcePreference } from '../markdownToSlides';
 import type { ResolvedSlideAsset, SlideAssetRecord, SlideImageIntent } from '../../services/slideAssets';
+import { getFrontendSlidesTemplateProfile } from './templateProfiles';
 
 export interface HtmlNativeAssetIntentInput {
   id?: unknown;
@@ -29,6 +30,8 @@ export interface HtmlNativeDeck {
 export interface HtmlNativeValidationReport {
   slideCount: number;
   layoutCount: number;
+  templateClassHits: number;
+  templateClassHitRatio: number;
   errors: string[];
   warnings: string[];
 }
@@ -294,7 +297,35 @@ export function validateHtmlNativeSlides(html: string): HtmlNativeValidationRepo
     warnings.push('HTML-native 레이아웃 종류가 적습니다.');
   }
 
-  return { slideCount, layoutCount: layouts.size, errors, warnings };
+  return { slideCount, layoutCount: layouts.size, templateClassHits: 0, templateClassHitRatio: 0, errors, warnings };
+}
+
+export function validateHtmlNativeSlidesForTemplate(html: string, themeId?: string): HtmlNativeValidationReport {
+  const report = validateHtmlNativeSlides(html);
+  const profile = getFrontendSlidesTemplateProfile(themeId);
+  const hits = profile.layoutClasses.filter((className) => new RegExp(`\\b${className.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(html));
+  const hitRatio = profile.layoutClasses.length > 0 ? hits.length / profile.layoutClasses.length : 0;
+  report.templateClassHits = hits.length;
+  report.templateClassHitRatio = hitRatio;
+
+  if (report.slideCount >= 5 && hits.length < 3) {
+    report.warnings.push(`선택 템플릿의 원본 레이아웃 클래스 사용이 부족합니다 (${hits.length}종).`);
+  }
+  if (report.slideCount >= 7 && hits.length < 4) {
+    report.warnings.push('frontend-slides 템플릿 리듬을 충분히 트레이스하지 못했습니다.');
+  }
+  if (report.slideCount >= 5 && report.layoutCount < 3 && hits.length < 3) {
+    report.warnings.push('레이아웃 다양성과 템플릿 클래스 다양성이 모두 낮습니다.');
+  }
+
+  return report;
+}
+
+export function shouldRepairHtmlNativeSlides(report: HtmlNativeValidationReport): boolean {
+  if (report.errors.length > 0) return true;
+  return report.warnings.some((warning) =>
+    /레이아웃 종류|원본 레이아웃 클래스|템플릿 리듬|다양성이 모두 낮/i.test(warning),
+  );
 }
 
 export function summarizeHtmlNativeValidation(report: HtmlNativeValidationReport): string {
