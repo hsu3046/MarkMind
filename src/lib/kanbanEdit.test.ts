@@ -65,6 +65,16 @@ describe('updateKanbanCardLine', () => {
         expect(removed.split('\n')[1]).toBe('- [ ] 작업 @status(todo) @start(2026-07-10)');
     });
 
+    it('preserves checked-state done cards when status is inferred', () => {
+        const md = `# Board
+- [x] 릴리스 @start(2026-07-10)
+`;
+        const next = updateKanbanCardLine(md, 2, { label: '릴리스 완료', order: 4000 });
+        expect(next.split('\n')[1]).toBe('- [x] 릴리스 완료 @start(2026-07-10) @order(4000)');
+        expect(parseKanban(next).cards[0].status).toBe('done');
+        expect(parseGantt(next).tasks[0].progress).toBe(100);
+    });
+
     it('returns the original markdown for invalid line coordinates', () => {
         const md = '# Board\n- [ ] 작업 @status(todo)\n';
         expect(updateKanbanCardLine(md, 0, { status: 'done' })).toBe(md);

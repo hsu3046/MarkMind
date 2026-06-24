@@ -169,7 +169,8 @@ function buildLine(parsed: ParsedLine, patch: KanbanCardPatch): string {
     if (patch.order !== undefined) replaced.add('order');
     markers.push(...parsed.preservedMarkers.filter((m) => !replaced.has(m.name)).map((m) => m.marker));
 
-    const shouldCheck = status === 'done';
+    const wasChecked = parsed.checkbox?.trim().toLowerCase() === '[x]';
+    const shouldCheck = patch.status !== undefined ? status === 'done' : status === 'done' || wasChecked;
     const checkbox = parsed.checkbox !== null || patch.status !== undefined
         ? `${shouldCheck ? '[x]' : '[ ]'} `
         : '';
