@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, FileText, Loader2, Sparkles } from 'lucide-react';
+import { HTML_SLIDE_THEME_OPTIONS, getHtmlSlideTheme } from '../../lib/htmlSlideTheme';
+import type { HtmlSlideTheme } from '../../lib/htmlSlideTheme';
 import type { SlideExportOptions, SlideTheme } from '../../lib/slideTheme';
+import { slideImagePolicyMode } from '../../lib/slideLimits';
 import { isTauri } from '../../services/platform';
 
 interface SlideExportPanelProps {
@@ -12,6 +15,7 @@ interface SlideExportPanelProps {
   onOptionsChange: (next: SlideExportOptions) => void;
   onGenerateDraft: () => void;
   onExportDirect: () => void;
+  onExportHtml: () => void;
   onShowSettings: () => void;
 }
 
@@ -67,12 +71,15 @@ const IMAGE_POLICIES = [
   { value: 'actively add ambient and supporting visuals to spacious body slides as well as cover and section slides', label: '적극 추가' },
 ];
 
+const HTML_IMAGE_POLICIES = [
+  { value: 'use source images only; do not add new image intent', label: '원문만', mode: 'sourceOnly' },
+  { value: 'actively add ambient and supporting visuals to spacious body slides as well as cover and section slides', label: '이미지 추가', mode: 'active' },
+] as const;
+
 const IMAGE_SOURCE_MODES = [
   { value: 'auto choose stock photos, logos, or generated images based on slide intent', label: '자동' },
-  { value: 'prefer stock photos and logos, then generate only when stock fails', label: 'Stock 우선' },
-  { value: 'prefer generated images for concepts and ambient visuals, then use stock for factual subjects', label: '생성 우선' },
-  { value: 'use stock photos and logos only; do not generate images', label: 'Stock만' },
-  { value: 'use generated images only; do not search stock photos or logos', label: '생성만' },
+  { value: 'prefer stock photos and logos, then generate only when stock fails', label: 'Stock' },
+  { value: 'prefer generated images for concepts and ambient visuals, then use stock for factual subjects', label: '생성 이미지' },
 ];
 
 const MARGIN_OPTIONS = [
@@ -100,9 +107,31 @@ const DENSITY_OPTIONS = [
   { value: 'information-dense but still readable slide composition', label: '고밀도' },
 ];
 
-type SlideTask = 'draft' | 'pptx';
+type SlideTask = 'draft' | 'pptx' | 'html';
 
 const SLIDE_DRAFT_MARKER_RE = /^\s*(?:<!--\s*markmind:slide-draft\b[^>]*-->|&lt;!--\s*markmind:slide-draft\b.*?--&gt;)\s*$/im;
+
+function HtmlThemePreview({ theme }: { theme: HtmlSlideTheme }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [theme.previewImageUrl]);
+  if (!theme.previewImageUrl || failed) {
+    return (
+      <span className="ai-pptx-palette ai-pptx-html-preview-fallback">
+        <i style={{ background: `#${theme.colors.bg}` }} />
+        <i style={{ background: `#${theme.colors.surface}` }} />
+        <i style={{ background: `#${theme.colors.text}` }} />
+        <i style={{ background: `#${theme.colors.accent}` }} />
+      </span>
+    );
+  }
+  return (
+    <span className="ai-pptx-theme-preview" aria-hidden="true">
+      <img src={theme.previewImageUrl} alt="" loading="lazy" onError={() => setFailed(true)} />
+    </span>
+  );
+}
 
 export function SlideExportPanel({
   content,
@@ -113,9 +142,11 @@ export function SlideExportPanel({
   onOptionsChange,
   onGenerateDraft,
   onExportDirect,
+  onExportHtml,
   onShowSettings,
 }: SlideExportPanelProps) {
   const [themeOpen, setThemeOpen] = useState(false);
+  const [htmlThemeOpen, setHtmlThemeOpen] = useState(false);
   const [fontFamilies, setFontFamilies] = useState<string[]>([]);
   const [fontFamiliesLoading, setFontFamiliesLoading] = useState(false);
   const [task, setTask] = useState<SlideTask>('draft');
@@ -123,6 +154,8 @@ export function SlideExportPanel({
   const patch = (partial: Partial<SlideExportOptions>) => onOptionsChange({ ...options, ...partial });
   const empty = content.trim().length === 0;
   const isDraft = task === 'draft';
+  const isPptx = task === 'pptx';
+  const isHtml = task === 'html';
   const isExistingDraft = SLIDE_DRAFT_MARKER_RE.test(content);
   const draftLabel = isExistingDraft ? '슬라이드 초안 수정' : '슬라이드 초안';
   const draftButtonLabel = isExistingDraft ? '슬라이드 초안 수정' : '슬라이드 초안 만들기';
@@ -140,6 +173,11 @@ export function SlideExportPanel({
       ...FALLBACK_FONT_FAMILIES,
     ]),
   );
+  const selectedHtmlTheme = getHtmlSlideTheme(options.htmlThemeId);
+  const htmlImageMode = slideImagePolicyMode(options.imagePolicy) === 'sourceOnly' ? 'sourceOnly' : 'active';
+  const actionLabel = isDraft ? draftButtonLabel : isHtml ? 'HTML 생성' : '파워포인트 생성';
+  const actionTitle = actionLabel;
+  const runAction = isDraft ? onGenerateDraft : isHtml ? onExportHtml : onExportDirect;
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -189,12 +227,31 @@ export function SlideExportPanel({
             <strong>파워포인트 생성</strong>
           </span>
         </label>
+        <label className={`ai-pptx-task${task === 'html' ? ' active' : ''}`}>
+          <input
+            type="radio"
+            name="slide-task"
+            value="html"
+            checked={task === 'html'}
+            onChange={() => setTask('html')}
+          />
+          <span>
+            <strong>HTML 생성</strong>
+          </span>
+        </label>
       </div>
 
-      {!isDraft && (
+      {isPptx && (
         <div className="ai-pptx-field">
           <span className="ai-pptx-label">테마</span>
-          <button className="ai-pptx-theme-trigger" type="button" onClick={() => setThemeOpen(true)}>
+          <button
+            className="ai-pptx-theme-trigger"
+            type="button"
+            onClick={() => {
+              setHtmlThemeOpen(false);
+              setThemeOpen(true);
+            }}
+          >
             <span className="ai-pptx-theme-swatch" style={{ background: `#${selectedTheme.palette.accent}` }} />
             <span>
               <strong>{selectedTheme.name}</strong>
@@ -225,6 +282,61 @@ export function SlideExportPanel({
                     <span>
                       <strong>{theme.name}</strong>
                       <small>{theme.description}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {isHtml && (
+        <div className="ai-pptx-field">
+          <span className="ai-pptx-label">테마</span>
+          <button
+            className="ai-pptx-theme-trigger has-preview"
+            type="button"
+            onClick={() => {
+              setThemeOpen(false);
+              setHtmlThemeOpen(true);
+            }}
+          >
+            <HtmlThemePreview theme={selectedHtmlTheme} />
+            <span>
+              <strong>{selectedHtmlTheme.name}</strong>
+              <small>{selectedHtmlTheme.description}</small>
+            </span>
+            <ChevronDown size={14} />
+          </button>
+          {htmlThemeOpen && (
+            <>
+              <div className="ai-pptx-backdrop" onClick={() => setHtmlThemeOpen(false)} aria-hidden="true" />
+              <div className="ai-pptx-theme-menu">
+                {HTML_SLIDE_THEME_OPTIONS.map((theme) => (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    className={`ai-pptx-theme-option has-preview${theme.id === selectedHtmlTheme.id ? ' active' : ''}`}
+                    onClick={() => {
+                      patch({ htmlThemeId: theme.id });
+                      setHtmlThemeOpen(false);
+                    }}
+                  >
+                    <HtmlThemePreview theme={theme} />
+                    <span>
+                      <strong>{theme.name}</strong>
+                      <small>
+                        {[
+                          theme.description,
+                          theme.density ? `density ${theme.density}` : '',
+                          theme.formality ? `formality ${theme.formality}` : '',
+                          theme.scheme ? theme.scheme : '',
+                          ...(theme.tone?.slice(0, 2) ?? []),
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </small>
                     </span>
                   </button>
                 ))}
@@ -379,7 +491,7 @@ export function SlideExportPanel({
             </div>
           </div>
         </>
-      ) : (
+      ) : isPptx ? (
         <>
           <div className="ai-pptx-grid">
             <div className="ai-pptx-field">
@@ -416,7 +528,7 @@ export function SlideExportPanel({
 
           <div className="ai-pptx-field">
             <span className="ai-pptx-label">이미지 소스</span>
-            <div className="ai-pptx-segments five">
+            <div className="ai-pptx-segments three">
               {IMAGE_SOURCE_MODES.map((item) => (
                 <button
                   key={item.value}
@@ -479,6 +591,107 @@ export function SlideExportPanel({
             </div>
           </div>
         </>
+      ) : isHtml ? (
+        <>
+          <div className="ai-pptx-field">
+            <span className="ai-pptx-label">이미지</span>
+            <div className="ai-pptx-segments">
+              {HTML_IMAGE_POLICIES.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  className={item.mode === htmlImageMode ? 'active' : ''}
+                  onClick={() => patch({ imagePolicy: item.value })}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="ai-pptx-field">
+            <span className="ai-pptx-label">이미지 소스</span>
+            <div className="ai-pptx-segments three">
+              {IMAGE_SOURCE_MODES.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  className={item.value === (options.imageSourceMode ?? 'auto choose stock photos, logos, or generated images based on slide intent') ? 'active' : ''}
+                  onClick={() => patch({ imageSourceMode: item.value })}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="ai-pptx-grid">
+            <div className="ai-pptx-field">
+              <span className="ai-pptx-label">이미지</span>
+              <div className="ai-pptx-segments three">
+                {IMAGE_POLICIES.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    className={item.value === (options.imagePolicy ?? 'add image intent only when it materially improves the slide') ? 'active' : ''}
+                    onClick={() => patch({ imagePolicy: item.value })}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="ai-pptx-field">
+              <span className="ai-pptx-label">정보 밀도</span>
+              <div className="ai-pptx-segments three">
+                {DENSITY_OPTIONS.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    className={item.value === (options.visualDensity ?? 'balanced text density with readable slide capacity') ? 'active' : ''}
+                    onClick={() => patch({ visualDensity: item.value })}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="ai-pptx-field">
+            <span className="ai-pptx-label">서체</span>
+            <select
+              value={options.fontFamily ?? ''}
+              onChange={(e) => patch({ fontFamily: e.target.value || undefined })}
+              disabled={fontFamiliesLoading && fontOptions.length === 0}
+            >
+              <option value="">테마 기본</option>
+              {fontOptions.map((font) => (
+                <option key={font} value={font}>
+                  {font}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="ai-pptx-field">
+            <span className="ai-pptx-label">이미지 소스</span>
+            <div className="ai-pptx-segments three">
+              {IMAGE_SOURCE_MODES.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  className={item.value === (options.imageSourceMode ?? 'auto choose stock photos, logos, or generated images based on slide intent') ? 'active' : ''}
+                  onClick={() => patch({ imageSourceMode: item.value })}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       )}
 
       <label className="ai-pptx-field">
@@ -493,7 +706,7 @@ export function SlideExportPanel({
 
       {!available && (
         <div className="ai-pptx-authline">
-          <span>{isDraft ? 'AI 초안 생성에는 모델 설정이 필요합니다' : '파워포인트 생성에는 모델 설정이 필요합니다'}</span>
+          <span>{isDraft ? 'AI 초안 생성에는 모델 설정이 필요합니다' : isHtml ? 'HTML 생성에는 모델 설정이 필요합니다' : '파워포인트 생성에는 모델 설정이 필요합니다'}</span>
           <button type="button" onClick={onShowSettings}>설정</button>
         </div>
       )}
@@ -501,12 +714,12 @@ export function SlideExportPanel({
       <div className="ai-pptx-actions">
         <button
           className="ai-btn primary"
-          onClick={isDraft ? onGenerateDraft : onExportDirect}
+          onClick={runAction}
           disabled={!available || !!busy || empty}
-          title={isDraft ? draftButtonLabel : '파워포인트 생성'}
+          title={actionTitle}
         >
           {busy ? <Loader2 size={14} className="spinning" /> : isDraft ? <Sparkles size={14} /> : <FileText size={14} />}
-          {busy ? '작업 중...' : isDraft ? draftButtonLabel : '파워포인트 생성'}
+          {busy ? '작업 중...' : actionLabel}
         </button>
       </div>
       {busy && <div className="ai-pptx-busy">{busy}</div>}

@@ -191,6 +191,20 @@ describe('slidesFromLlmJson', () => {
     expect(slidesFromLlmJson(raw)?.[0].title).toBe('T');
   });
 
+  it('HTML 전용 variant 힌트를 보존한다', () => {
+    const raw = JSON.stringify({
+      slides: [
+        { title: 'Agenda', layout: 'content', htmlVariant: 'blue.agenda-grid', bullets: ['A'] },
+        { title: 'Signal', layout: 'content', html: { variant: 'signal.timeline-spine' }, bullets: ['B'] },
+      ],
+    });
+
+    const slides = slidesFromLlmJson(raw);
+
+    expect(slides?.[0].htmlVariant).toBe('blue.agenda-grid');
+    expect(slides?.[1].htmlVariant).toBe('signal.timeline-spine');
+  });
+
   it('잘린 JSON 에서 완성된 슬라이드만 부분 복구', () => {
     // 마지막 객체가 토큰 한도로 잘린 상황
     const raw =

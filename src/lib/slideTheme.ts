@@ -70,6 +70,7 @@ export interface SlideExportOptions {
   fontPreference?: string;
   fontFamily?: string;
   marginPreference?: string;
+  htmlThemeId?: string;
   extraInstructions?: string;
   designRules?: string;
 }

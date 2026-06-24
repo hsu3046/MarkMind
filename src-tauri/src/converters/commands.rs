@@ -65,6 +65,11 @@ pub fn get_conversions_dir() -> String {
     super::conversions_dir().to_string_lossy().into_owned()
 }
 
+#[tauri::command]
+pub fn cancel_slide_job(job_id: String) -> bool {
+    super::cancel::cancel_job(&job_id)
+}
+
 // ─── PPTX 스마트 레이아웃 (이슈 #6) ─────────────────────────────
 //
 // 마크다운을 슬라이드용으로 "재구성"해 과밀 슬라이드를 막는다(규칙 기반의 약점
@@ -72,8 +77,9 @@ pub fn get_conversions_dir() -> String {
 // 반환은 프론트가 파싱하는 슬라이드 JSON 문자열:
 //   { "master"?: { deck-wide chrome }, "slides": [ { "title", "layout", "bullets"/"blocks"/"columns", "notes"? } ] }
 
-// 최종 슬라이드 JSON 출력 상한. 장수 추정으로 흔들지 않고 단순 고정값을 쓴다.
-const SLIDES_MAX_TOKENS: u32 = 16000;
+// 최종 슬라이드 JSON 출력 상한. 기본은 넉넉하게 두고, 하드캡은 무한 생성 방지용이다.
+const SLIDES_MAX_TOKENS: u32 = 32000;
+const SLIDES_HARD_MAX_TOKENS: u32 = 64000;
 const SLIDES_MAX_COUNT: usize = 32;
 const SLIDES_PLAN_MAX_TOKENS: u32 = 12000;
 const SLIDES_TWO_PASS_SECTION_THRESHOLD: usize = 28;
@@ -100,7 +106,7 @@ const SLIDES_SYSTEM: &str = concat!(
     "You are a slide manuscript agent, not a visual renderer. Convert a grounded source map or deck plan into final slide JSON. ",
     "Output STRICT minified JSON only (no prose, no code fences, no markdown) of the form: {\"master\":{...},\"slides\":[...]}. The top-level master object is optional. ",
     "Allowed layout values: \"title\", \"content\", \"section\", \"two-column\", \"image-focus\", \"quote\", \"stat\", \"comparison\", \"timeline\". ",
-    "A slide may include: title:string, layout:string, importance:number(0-100), importanceReason:string, sourceIds:string[], bullets:string[], blocks:[{kind:\"text\"|\"bullet\"|\"subhead\",text:string,level?:number}], columns:[[string|{kind,text,level?}]], quote:{text,attribution?}, stat:{value,label?,context?}, image:{src?,prompt?,query?,entity?,role?,kind?,alt?,aspect?,style?,sourcePreference?,licenseStrictness?}, source:{headingLevel?:number,sectionPath?:string[]}, notes:string. ",
+    "A slide may include: title:string, layout:string, htmlVariant:string, importance:number(0-100), importanceReason:string, sourceIds:string[], bullets:string[], blocks:[{kind:\"text\"|\"bullet\"|\"subhead\",text:string,level?:number}], columns:[[string|{kind,text,level?}]], quote:{text,attribution?}, stat:{value,label?,context?}, image:{src?,prompt?,query?,entity?,role?,kind?,alt?,aspect?,style?,sourcePreference?,licenseStrictness?}, source:{headingLevel?:number,sectionPath?:string[]}, notes:string. ",
     "Never output more than 32 slides. Use the slide count target as a soft target inside that hard limit. ",
     "Optional master may include only deck-wide chrome policies for slideNumber, footer, or date, using enabled, includeOn(title/content/section), position(bottom-left/bottom-center/bottom-right), style(minimal/muted/accent/inverse), and short footer/date text. ",
     "Follow the deck plan when provided; otherwise plan internally from the source map. Do not flatten the document into a list. Each slide must express one clear message and cite its source through source.headingLevel and source.sectionPath. ",
@@ -113,9 +119,38 @@ const SLIDES_SYSTEM: &str = concat!(
     "Layout capacity rules: title slides need title plus at most two short support lines; content slides need at most seven short bullets; two-column/comparison slides need two balanced columns; stat slides need exactly one headline number; quote slides need one concise quotation; tables and code require short summaries when they would dominate the page. ",
     "Before finalizing each slide, perform a fit check: if text would overflow a slot, rewrite shorter or split into another slide instead of relying on tiny fonts. ",
     "Speaker notes are optional; include them only when useful, at most 1-2 natural sentences. ",
-    "Honor design options for layout direction, image policy, image source mode, visual density, font preference, and margin preference. Use them to choose layout values and control how much text each slide carries. ",
+    "Honor design options for layout direction, image policy, image source mode, visual density, font preference, margin preference, and any HTML variant list supplied in design rules. Use them to choose layout/htmlVariant values and control how much text each slide carries. ",
     "Keep bullets short, avoid copying full source paragraphs, preserve the document language unless the user requests a target language, and never invent facts. ",
     "Do not output colors, coordinates, font sizes, font names, PptxGenJS options, OpenXML, placeholders, or raw CSS."
+);
+
+const HTML_SLIDES_SYSTEM: &str = concat!(
+    "You are a senior frontend presentation designer using the beautiful-html-templates library. Create one complete HTML presentation, not PPTX JSON and not a manuscript. ",
+    "Output raw HTML only: no prose, no markdown fence, no JSON wrapper. ",
+    "Return a full document with <!DOCTYPE html>, <html>, <head>, template CSS/runtime, navigation controls, and all slides. ",
+    "Follow the provided beautiful-html-templates AGENTS.md, selected template.json, original design.md, and template.html. Treat those repository files as the implementation authority. ",
+    "Do not return partial slide fragments, MarkMind Slide[] JSON, PPTX JSON, markdown, npm/build instructions, or unsupported external asset files. ",
+    "Preserve the selected template sizing model, viewport behavior, slide classes, DOM conventions, and navigation runtime. ",
+    "Local sibling JavaScript files are allowed for provided template runtimes such as deck-stage.js. If the selected template uses deck-stage.js, keep that local script reference; MarkMind will save the runtime file next to the HTML. Remote JavaScript is allowed only when it already appears in the selected template.html, such as Chart.js in chart-heavy templates. Keep custom deck logic inline. Do not reference unknown local JavaScript or invented remote JavaScript. ",
+    "Preserve the selected template's fonts, palette, decorative vocabulary, spacing rhythm, component grammar, DOM conventions, navigation behavior, animation approach, and layout vocabulary. Replace demo content with the user's actual content. ",
+    "Images must be planned before final layout. For every image slot, put a placeholder URL exactly like {{markmind_asset:asset-id}} in img src or CSS url(), and add a matching intent object inside <script type=\"application/json\" id=\"markmind-asset-intents\">[...]</script>. ",
+    "Each asset intent must include id, slideIndex, slideTitle, role(cover/hero/support/logo/icon/background), query or prompt, aspect, sourcePreference(auto/stock/logo/generated/none), licenseStrictness(presentation/open/internal-only), importance, and optional style/textSummary. ",
+    "Use stock/logo intents for factual subjects, companies, products, real places, and logos. Use generated-image prompts for abstract concepts, atmosphere, section backgrounds, and emotional metaphors. Prompts must describe composition, mood, style, and constraints; search queries must stay short. ",
+    "Do not use placeholders without matching asset intents. Do not include base64 images. Do not invent factual claims, numbers, citations, people, or logos. Preserve the document language unless export options ask otherwise. ",
+    "Before output, perform a visual QA pass: check slide fit, text overflow risk, panel overlap, template runtime behavior, image placeholder coverage, contrast, and template fidelity. Repair the HTML yourself before returning it."
+);
+
+const HTML_SLIDES_REPAIR_SYSTEM: &str = concat!(
+    "You are repairing a single-file HTML slide deck created for MarkMind. ",
+    "Output raw HTML only: no prose, no markdown fence, no JSON wrapper. ",
+    "Return the corrected complete HTML document, not partial slide sections. ",
+    "Do not return MarkMind Slide[] JSON, PPTX JSON, markdown, external asset files, or base64 images. ",
+    "Your job is to make the full HTML deck follow the provided beautiful-html-templates AGENTS.md and selected template more closely. ",
+    "Prefer rewriting the HTML/CSS/JS as needed to preserve the selected template's original class names, layout families, component grammar, visual rhythm, navigation behavior, and chart/table/process/diagram structures. ",
+    "Preserve factual content and document language. Keep or improve local deck runtime references, markmind asset placeholders, and the markmind-asset-intents JSON script. ",
+    "If the current HTML is truncated, lacks slide sections, or has an unclosed style/head/body/html tag, reconstruct a complete HTML deck from the source map instead of patching the broken prefix. ",
+    "If validation reports low layout diversity or low template fidelity, replace generic slides with repository-template-native slides instead of making minor cosmetic tweaks. ",
+    "Before output, perform a final QA pass for closed tags, slide count, placeholder coverage, overflow risk, contrast, and template fidelity."
 );
 
 const SLIDE_MARKDOWN_DRAFT_SYSTEM: &str = concat!(
@@ -156,6 +191,7 @@ pub struct SlideGenerationOptions {
     margin_preference: Option<String>,
     extra_instructions: Option<String>,
     design_rules: Option<String>,
+    max_output_tokens: Option<u32>,
     theme_name: Option<String>,
     #[serde(default)]
     theme_rules: Vec<String>,
@@ -760,12 +796,16 @@ async fn call_slides_llm(
                         max_output_tokens: Some(max_tokens),
                         temperature: Some(0.25),
                     };
-                    Ok(
-                        llm::gemini::generate_text(&key, model_id, &full, Vec::new(), Some(cfg))
-                            .await
-                            .map_err(err_to_string)?
-                            .text,
+                    Ok(llm::gemini::generate_text_without_total_timeout(
+                        &key,
+                        model_id,
+                        &full,
+                        Vec::new(),
+                        Some(cfg),
                     )
+                    .await
+                    .map_err(err_to_string)?
+                    .text)
                 }
             }
         }
@@ -778,7 +818,7 @@ async fn call_slides_llm(
             let result = match auth {
                 ClaudeAuthMode::Subscription => {
                     let token = crate::subscription_auth::claude_access_token().await?;
-                    llm::anthropic::generate_text(
+                    llm::anthropic::generate_text_without_total_timeout(
                         llm::anthropic::ClaudeAuth::Subscription(&token),
                         model_id,
                         prompt,
@@ -793,7 +833,7 @@ async fn call_slides_llm(
                             "Claude API 키가 없습니다. Settings 에서 등록하거나 구독 로그인을 사용하세요."
                                 .to_string()
                         })?;
-                    llm::anthropic::generate_text(
+                    llm::anthropic::generate_text_without_total_timeout(
                         llm::anthropic::ClaudeAuth::ApiKey(&key),
                         model_id,
                         prompt,
@@ -809,7 +849,7 @@ async fn call_slides_llm(
             let result = match auth {
                 ClaudeAuthMode::Subscription => {
                     let tokens = crate::subscription_auth::read_codex_tokens()?;
-                    llm::openai_codex::generate_text(
+                    llm::openai_codex::generate_text_without_total_timeout(
                         &tokens.access_token,
                         tokens.account_id.as_deref(),
                         model_id,
@@ -825,7 +865,7 @@ async fn call_slides_llm(
                         .ok_or_else(|| {
                             "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string()
                         })?;
-                    llm::openai_api::generate_text(
+                    llm::openai_api::generate_text_without_total_timeout(
                         &key,
                         model_id,
                         Some(system),
@@ -844,7 +884,14 @@ async fn call_slides_llm(
                 ClaudeAuthMode::ApiKey => "api_key",
             };
             let key = grok_bearer(auth_id)?;
-            llm::grok::generate_text(&key, model_id, Some(system), prompt).await
+            llm::grok::generate_text_without_total_timeout(
+                &key,
+                model_id,
+                Some(system),
+                prompt,
+                Some(max_tokens),
+            )
+            .await
         }
     }
 }
@@ -943,7 +990,12 @@ async fn call_slides_llm_with_progress(
         }
     });
 
-    let result = call_slides_llm(company, auth, model, system, prompt, max_tokens).await;
+    let cancel_token = super::cancel::register_job(emitter.job_id());
+    let result = tokio::select! {
+        result = call_slides_llm(company, auth, model, system, prompt, max_tokens) => result,
+        _ = cancel_token.cancelled() => Err("사용자가 작업을 정지했습니다.".to_string()),
+    };
+    super::cancel::unregister_job(emitter.job_id());
     stop.store(true, Ordering::Relaxed);
     heartbeat.abort();
 
@@ -967,6 +1019,7 @@ pub async fn generate_slides_llm(
     job_id: Option<String>,
 ) -> Result<String, String> {
     let emitter = new_emitter(app, job_id);
+    let _cancel_guard = super::cancel::job_guard(emitter.job_id());
     let opt_block = slide_options_prompt(options.as_ref());
     let (outline_block, source_sections, source_map) = slide_generation_source_context(&markdown);
     emitter.emit(
@@ -1018,6 +1071,11 @@ pub async fn generate_slides_llm(
     emitter.emit("✅ 슬라이드 JSON 요청 준비 완료", None);
 
     // 슬라이드 JSON이 잘리면 프론트 파싱 실패로 이어지므로 상한은 단순 고정값을 쓴다.
+    let final_max_tokens = options
+        .as_ref()
+        .and_then(|o| o.max_output_tokens)
+        .unwrap_or(SLIDES_MAX_TOKENS)
+        .clamp(8000, SLIDES_HARD_MAX_TOKENS);
     let slides_raw = call_slides_llm_with_progress(
         &emitter,
         "pptx-slides-llm",
@@ -1029,13 +1087,120 @@ pub async fn generate_slides_llm(
         SLIDES_SYSTEM,
         &draft_prompt,
         None,
-        SLIDES_MAX_TOKENS,
+        final_max_tokens,
     )
     .await?;
 
     let cleaned = extract_json_object(&slides_raw);
     emitter.emit("✅ 슬라이드 JSON 정리 완료", None);
     emitter.emit("✅ AI 슬라이드 생성 완료", None);
+    Ok(cleaned)
+}
+
+#[tauri::command]
+pub async fn generate_html_slides_llm(
+    app: AppHandle,
+    markdown: String,
+    company: crate::subscription_auth::AICompany,
+    auth: crate::subscription_auth::ClaudeAuthMode,
+    model: Option<String>,
+    options: Option<SlideGenerationOptions>,
+    job_id: Option<String>,
+) -> Result<String, String> {
+    let emitter = new_emitter(app, job_id);
+    let _cancel_guard = super::cancel::job_guard(emitter.job_id());
+    let opt_block = slide_options_prompt(options.as_ref());
+    let (outline_block, source_sections, source_map) = slide_generation_source_context(&markdown);
+    emitter.emit(
+        "✅ 문서 구조 분석 완료",
+        Some(format!("소스 섹션 {}개", source_sections.len())),
+    );
+
+    let prompt = format!(
+        "Create the final HTML slide deck directly from this Markdown-derived source map. Do not return MarkMind Slide[] JSON. The selected template documentation, export options, and asset rules are provided below.\n\n{}\n\n{}\n\n{}",
+        opt_block,
+        outline_block,
+        source_map
+    );
+    emitter.emit("✅ HTML 설계 요청 준비 완료", None);
+    let max_tokens = options
+        .as_ref()
+        .and_then(|o| o.max_output_tokens)
+        .unwrap_or(SLIDES_HARD_MAX_TOKENS)
+        .clamp(16000, SLIDES_HARD_MAX_TOKENS);
+    let raw = call_slides_llm_with_progress(
+        &emitter,
+        "html-native-llm",
+        "⏳ AI가 HTML 슬라이드를 작성하는 중…",
+        "✅ HTML 슬라이드 작성 완료",
+        company,
+        auth,
+        model.as_deref(),
+        HTML_SLIDES_SYSTEM,
+        &prompt,
+        None,
+        max_tokens,
+    )
+    .await?;
+
+    let cleaned = strip_outer_markdown_fence(&raw);
+    emitter.emit("✅ HTML 응답 정리 완료", None);
+    emitter.emit("✅ AI HTML 생성 완료", None);
+    Ok(cleaned)
+}
+
+#[tauri::command]
+pub async fn repair_html_slides_llm(
+    app: AppHandle,
+    markdown: String,
+    html: String,
+    validation_summary: String,
+    company: crate::subscription_auth::AICompany,
+    auth: crate::subscription_auth::ClaudeAuthMode,
+    model: Option<String>,
+    options: Option<SlideGenerationOptions>,
+    job_id: Option<String>,
+) -> Result<String, String> {
+    let emitter = new_emitter(app, job_id);
+    let _cancel_guard = super::cancel::job_guard(emitter.job_id());
+    let opt_block = slide_options_prompt(options.as_ref());
+    let (outline_block, source_sections, source_map) = slide_generation_source_context(&markdown);
+    emitter.emit(
+        "✅ HTML 재작성 컨텍스트 준비 완료",
+        Some(format!("소스 섹션 {}개", source_sections.len())),
+    );
+
+    let prompt = format!(
+        "Repair this HTML slide deck so it follows the selected frontend-slides / beautiful-html-templates template much more closely.\n\n{}\n\n<validation_report>\n{}\n</validation_report>\n\n<current_html>\n{}\n</current_html>\n\n{}\n\n{}",
+        opt_block,
+        validation_summary,
+        html,
+        outline_block,
+        source_map
+    );
+    emitter.emit("✅ HTML 재작성 요청 준비 완료", None);
+    let max_tokens = options
+        .as_ref()
+        .and_then(|o| o.max_output_tokens)
+        .unwrap_or(36000)
+        .clamp(16000, SLIDES_HARD_MAX_TOKENS);
+    let raw = call_slides_llm_with_progress(
+        &emitter,
+        "html-native-repair-llm",
+        "⏳ AI가 HTML 슬라이드를 재작성하는 중…",
+        "✅ HTML 슬라이드 재작성 완료",
+        company,
+        auth,
+        model.as_deref(),
+        HTML_SLIDES_REPAIR_SYSTEM,
+        &prompt,
+        None,
+        max_tokens,
+    )
+    .await?;
+
+    let cleaned = strip_outer_markdown_fence(&raw);
+    emitter.emit("✅ HTML 재작성 응답 정리 완료", None);
     Ok(cleaned)
 }
 
@@ -1050,6 +1215,7 @@ pub async fn generate_slide_markdown_draft(
     job_id: Option<String>,
 ) -> Result<String, String> {
     let emitter = new_emitter(app, job_id);
+    let _cancel_guard = super::cancel::job_guard(emitter.job_id());
     let is_existing_draft = has_slide_draft_marker(&markdown);
     let markdown_body = strip_slide_draft_marker(&markdown);
     let opt_block = slide_options_prompt(options.as_ref());

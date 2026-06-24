@@ -48,6 +48,8 @@ export type SlideImageLicenseStrictness = 'presentation' | 'open' | 'internal-on
 export interface SlideImageSpec {
   src?: string;
   alt?: string;
+  /** HTML-native export internal id alias for placeholders before sanitization/normalization. */
+  rawAssetId?: string;
   prompt?: string;
   kind?: string;
   role?: SlideImageRole;
@@ -62,6 +64,8 @@ export interface SlideImageSpec {
 export interface Slide {
   title: string;
   layout: SlideLayout;
+  /** HTML export 전용 레이아웃 변형. 예: blue.agenda-grid, neo.poster-grid-6, signal.timeline-spine. */
+  htmlVariant?: string;
   body: SlideBlock[];
   notes?: string;
   /** 0-100 deck-level importance hint from the LLM. Renderer/pipeline may re-score deterministically. */
@@ -331,6 +335,21 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | und
   return typeof value === 'string' && allowed.includes(value as T) ? (value as T) : undefined;
 }
 
+function htmlVariantFromUnknown(o: Record<string, unknown>): string | undefined {
+  const html = o.html && typeof o.html === 'object' ? (o.html as Record<string, unknown>) : {};
+  const raw =
+    typeof o.htmlVariant === 'string'
+      ? o.htmlVariant
+      : typeof o.variant === 'string'
+        ? o.variant
+        : typeof html.variant === 'string'
+          ? html.variant
+          : '';
+  const normalized = raw.trim().toLowerCase();
+  if (!normalized || normalized.length > 80) return undefined;
+  return /^[a-z0-9][a-z0-9._-]*$/.test(normalized) ? normalized : undefined;
+}
+
 /** LLM 슬라이드 객체 → Slide. 새 필드는 없으면 기존 bullets 기반으로 복구한다. */
 function llmObjToSlide(o: Record<string, unknown>, index: number): Slide {
   const title = typeof o.title === 'string' ? o.title : '';
@@ -357,6 +376,7 @@ function llmObjToSlide(o: Record<string, unknown>, index: number): Slide {
   return {
     title,
     layout,
+    htmlVariant: htmlVariantFromUnknown(o),
     body,
     notes,
     importance: importanceFromUnknown(o.importance),

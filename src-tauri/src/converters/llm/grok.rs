@@ -13,7 +13,10 @@ use std::time::Duration;
 
 const CHAT_URL: &str = "https://api.x.ai/v1/chat/completions";
 const IMAGE_URL: &str = "https://api.x.ai/v1/images/generations";
-/// 이미지는 2K 생성 시 수십 초 소요 가능 → 넉넉히 5분(텍스트는 별도 180s).
+const CONNECT_TIMEOUT_SECS: u64 = 30;
+const REQUEST_TIMEOUT_SECS: u64 = 180;
+const DEFAULT_TEXT_MAX_TOKENS: u32 = 16000;
+/// 이미지는 2K 생성 시 수십 초 소요 가능 → 넉넉히 5분.
 const IMAGE_TIMEOUT_SECS: u64 = 300;
 
 // ───────────────────────── 텍스트 (chat completions) ─────────────────────────
@@ -56,6 +59,25 @@ pub async fn generate_text(
     system: Option<&str>,
     prompt: &str,
 ) -> Result<String, String> {
+    generate_text_inner(api_key, model, system, prompt, false, None).await
+}
+
+pub async fn generate_text_without_total_timeout(
+    api_key: &str,
+    model: &str,
+    system: Option<&str>,
+    prompt: &str,
+    max_tokens: Option<u32>,
+) -> Result<String, String> {
+    generate_text_inner(api_key, model, system, prompt, true, max_tokens).await
+}
+
+fn chat_request<'a>(
+    model: &'a str,
+    system: Option<&'a str>,
+    prompt: &'a str,
+    max_tokens: Option<u32>,
+) -> ChatRequest<'a> {
     let mut messages = Vec::new();
     if let Some(s) = system {
         if !s.is_empty() {
@@ -70,14 +92,29 @@ pub async fn generate_text(
         content: prompt,
     });
 
-    let body = ChatRequest {
+    ChatRequest {
         model,
         messages,
-        max_tokens: Some(16000),
-    };
+        max_tokens: Some(max_tokens.unwrap_or(DEFAULT_TEXT_MAX_TOKENS)),
+    }
+}
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(180))
+async fn generate_text_inner(
+    api_key: &str,
+    model: &str,
+    system: Option<&str>,
+    prompt: &str,
+    without_total_timeout: bool,
+    max_tokens: Option<u32>,
+) -> Result<String, String> {
+    let body = chat_request(model, system, prompt, max_tokens);
+
+    let mut builder =
+        reqwest::Client::builder().connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS));
+    if !without_total_timeout {
+        builder = builder.timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS));
+    }
+    let client = builder
         .build()
         .map_err(|e| format!("HTTP 클라이언트 생성 실패: {e}"))?;
 
@@ -212,7 +249,27 @@ pub async fn generate_image(
 
 #[cfg(test)]
 mod tests {
-    use super::grok_resolution;
+    use super::{chat_request, grok_resolution, DEFAULT_TEXT_MAX_TOKENS};
+    use serde_json::json;
+
+    #[test]
+    fn text_request_uses_default_max_tokens() {
+        let body = chat_request("grok-4.3", None, "prompt", None);
+        let value = serde_json::to_value(body).unwrap();
+
+        assert_eq!(value["max_tokens"], json!(DEFAULT_TEXT_MAX_TOKENS));
+        assert_eq!(value["messages"][0]["role"], json!("user"));
+    }
+
+    #[test]
+    fn text_request_uses_requested_max_tokens() {
+        let body = chat_request("grok-4.3", Some("system"), "prompt", Some(64000));
+        let value = serde_json::to_value(body).unwrap();
+
+        assert_eq!(value["max_tokens"], json!(64000));
+        assert_eq!(value["messages"][0]["role"], json!("system"));
+        assert_eq!(value["messages"][1]["role"], json!("user"));
+    }
 
     #[test]
     fn resolution_maps_to_grok_tiers() {

@@ -308,12 +308,25 @@ async function addSlideImage(
   const img = await resolveImage(src, baseDir);
   if (!img) return false;
   const { width: _width, height: _height, ...imgProps } = img;
-  const fitted = fitImageBox(img, box, sizing);
-  s.addImage({
-    ...imgProps,
-    ...fitted,
-    altText: slide.image?.alt || slide.title,
-  });
+  if (sizing === 'cover') {
+    const covered = fitImageBox(img, box, 'cover');
+    s.addImage({
+      ...imgProps,
+      x: box.x,
+      y: box.y,
+      w: covered.w,
+      h: covered.h,
+      sizing: { type: 'cover', w: box.w, h: box.h },
+      altText: slide.image?.alt || slide.title,
+    });
+  } else {
+    const fitted = fitImageBox(img, box, 'contain');
+    s.addImage({
+      ...imgProps,
+      ...fitted,
+      altText: slide.image?.alt || slide.title,
+    });
+  }
   return true;
 }
 
@@ -355,12 +368,25 @@ async function addSlideImagePanel(
     line: { color: theme.palette.border, transparency: 100 },
   });
   const { width: _width, height: _height, ...imgProps } = img;
-  const fitted = fitImageBox(img, box, sizing);
-  s.addImage({
-    ...imgProps,
-    ...fitted,
-    altText: slide.image?.alt || slide.title,
-  });
+  if (sizing === 'cover') {
+    const covered = fitImageBox(img, box, 'cover');
+    s.addImage({
+      ...imgProps,
+      x: box.x,
+      y: box.y,
+      w: covered.w,
+      h: covered.h,
+      sizing: { type: 'cover', w: box.w, h: box.h },
+      altText: slide.image?.alt || slide.title,
+    });
+  } else {
+    const fitted = fitImageBox(img, box, 'contain');
+    s.addImage({
+      ...imgProps,
+      ...fitted,
+      altText: slide.image?.alt || slide.title,
+    });
+  }
   s.addShape(RECT_SHAPE, {
     ...box,
     fill: { color: theme.palette.surface, transparency: 100 },
@@ -845,7 +871,7 @@ async function renderContentSlide(pptx: Pptx, slide: Slide, theme: SlideTheme, b
     w: imageW,
     h: theme.spacing.bodyBottom - bodyTop,
   };
-  const imageAdded = hasResolvedImage ? await addSlideImage(s, slide, baseDir, imageBox, 'contain') : false;
+  const imageAdded = hasResolvedImage ? await addSlideImage(s, slide, baseDir, imageBox, 'cover') : false;
   await renderBlocks(
     s,
     slide.body,
@@ -886,7 +912,7 @@ async function renderTwoColumnSlide(pptx: Pptx, slide: Slide, theme: SlideTheme,
     w: imageW,
     h: maxCardH,
   };
-  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'contain') : false;
+  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'cover') : false;
   const contentW = imageAdded ? w - imageW - imageGap : w;
   const gap = Math.max(0.28, theme.spacing.columnGap * (columnCount === 3 ? 0.78 : 1));
   const colW = (contentW - gap * (columnCount - 1)) / columnCount;
@@ -944,7 +970,7 @@ async function renderQuoteSlide(pptx: Pptx, slide: Slide, theme: SlideTheme, bas
     w: imageW,
     h: 4.52,
   };
-  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'contain') : false;
+  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'cover') : false;
   const quoteX = theme.spacing.marginX + 0.55;
   const quoteW = imageAdded
     ? Math.max(5.4, imageBox.x - quoteX - Math.max(0.42, theme.spacing.columnGap))
@@ -999,7 +1025,7 @@ async function renderStatSlide(pptx: Pptx, slide: Slide, theme: SlideTheme, base
     w: imageW,
     h: theme.spacing.bodyBottom - bodyTopFor(slide, theme),
   };
-  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'contain') : false;
+  const imageAdded = hasResolvedImage ? await addSlideImagePanel(s, slide, theme, baseDir, imageBox, 'cover') : false;
   const textX = theme.spacing.marginX;
   const textW = imageAdded
     ? Math.max(5.5, imageBox.x - textX - Math.max(0.46, theme.spacing.columnGap))
@@ -1051,8 +1077,17 @@ async function renderImageFocusSlide(pptx: Pptx, slide: Slide, theme: SlideTheme
   const img = src ? await resolveImage(src, baseDir) : null;
   if (img) {
     const { width: _width, height: _height, ...imgProps } = img;
-    const fitted = fitImageBox(img, { x: 0, y: 0, w: PAGE_W, h: PAGE_H }, 'cover');
-    s.addImage({ ...imgProps, ...fitted, altText: slide.image?.alt });
+    const box = { x: 0, y: 0, w: PAGE_W, h: PAGE_H };
+    const covered = fitImageBox(img, box, 'cover');
+    s.addImage({
+      ...imgProps,
+      x: box.x,
+      y: box.y,
+      w: covered.w,
+      h: covered.h,
+      sizing: { type: 'cover', w: PAGE_W, h: PAGE_H },
+      altText: slide.image?.alt,
+    });
     s.addShape(RECT_SHAPE, { x: 0, y: 0, w: PAGE_W * 0.45, h: PAGE_H, fill: { color: theme.palette.title, transparency: 10 }, line: { color: theme.palette.title, transparency: 100 } });
     s.addText(slide.title, {
       x: 0.72,

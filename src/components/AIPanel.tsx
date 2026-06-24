@@ -66,6 +66,7 @@ interface AIPanelProps {
     // ── 슬라이드 생성(pptx) ──
     onGenerateSlideDraft: () => void;
     onExportPptx: () => void;
+    onExportHtml: () => void;
     pptxAvailable: boolean;
     pptxBusy: string | null;
     pptxThemes: SlideTheme[];
@@ -125,6 +126,7 @@ export function AIPanel({
     onConsumeOcrDropped,
     onGenerateSlideDraft,
     onExportPptx,
+    onExportHtml,
     pptxAvailable,
     pptxBusy,
     pptxThemes,
@@ -247,6 +249,7 @@ export function AIPanel({
                         onOptionsChange={onPptxOptionsChange}
                         onGenerateDraft={onGenerateSlideDraft}
                         onExportDirect={onExportPptx}
+                        onExportHtml={onExportHtml}
                         onShowSettings={onShowSettings}
                     />
                 </div>

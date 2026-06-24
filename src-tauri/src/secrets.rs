@@ -28,6 +28,12 @@ pub struct Vault {
     pub grok: Option<String>,
     #[serde(default)]
     pub pyannoteai: Option<String>,
+    #[serde(default)]
+    pub unsplash: Option<String>,
+    #[serde(default)]
+    pub pexels: Option<String>,
+    #[serde(default)]
+    pub brandfetch: Option<String>,
     /// 로컬 화자분리용 Python 인터프리터 경로 (pyannote.audio 설치됨). 설정 시 로컬 우선.
     #[serde(default)]
     pub diar_python: Option<String>,
@@ -104,6 +110,12 @@ pub struct SecretsUserInputs {
     #[serde(default)]
     pub pyannoteai: Option<String>,
     #[serde(default)]
+    pub unsplash: Option<String>,
+    #[serde(default)]
+    pub pexels: Option<String>,
+    #[serde(default)]
+    pub brandfetch: Option<String>,
+    #[serde(default)]
     pub diar_python: Option<String>,
     #[serde(default)]
     pub gdrive_client_id: Option<String>,
@@ -135,6 +147,9 @@ pub fn secrets_set_user_inputs(updates: SecretsUserInputs) -> Result<(), String>
         apply_field(&mut v.openai, updates.openai);
         apply_field(&mut v.grok, updates.grok);
         apply_field(&mut v.pyannoteai, updates.pyannoteai);
+        apply_field(&mut v.unsplash, updates.unsplash);
+        apply_field(&mut v.pexels, updates.pexels);
+        apply_field(&mut v.brandfetch, updates.brandfetch);
         apply_field(&mut v.diar_python, updates.diar_python);
         apply_field(&mut v.gdrive_client_id, updates.gdrive_client_id);
         apply_field(&mut v.gdrive_client_secret, updates.gdrive_client_secret);
@@ -236,6 +251,9 @@ mod tests {
             openai: Some("o".into()),
             grok: Some("x".into()),
             pyannoteai: Some("p".into()),
+            unsplash: Some("u".into()),
+            pexels: Some("px".into()),
+            brandfetch: Some("bf".into()),
             diar_python: None,
             gdrive_client_id: Some("id.apps.googleusercontent.com".into()),
             gdrive_client_secret: Some("GOCSPX-x".into()),

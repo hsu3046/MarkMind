@@ -1,13 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Slide } from '../lib/markdownToSlides';
 import { DEFAULT_SLIDE_THEME } from '../lib/slideTheme';
 import {
   buildGeneratedSlideImagePrompt,
   canResolveStockSearch,
+  resolveSlideAssets,
   routeSlideImageIntent,
   scoreSlideImageCandidate,
   type SlideImageIntent,
 } from './slideAssets';
+
+const { generateImageMock } = vi.hoisted(() => ({
+  generateImageMock: vi.fn(async () => ['data:image/png;base64,AAAA']),
+}));
+
+vi.mock('./imageGen', async () => {
+  const actual = await vi.importActual<typeof import('./imageGen')>('./imageGen');
+  return {
+    ...actual,
+    generateImage: generateImageMock,
+  };
+});
 
 describe('slideAssets', () => {
   it('중요도와 밀도를 합쳐 이미지 후보 점수를 계산', () => {
@@ -101,5 +114,164 @@ describe('slideAssets', () => {
     expect(routeSlideImageIntent({ ...intent, role: 'logo' }, 'generatedOnly')).toBeNull();
     expect(routeSlideImageIntent({ ...intent, sourcePreference: 'logo' }, 'generatedOnly')).toBeNull();
     expect(routeSlideImageIntent({ ...intent, sourcePreference: 'none' }, 'generatedOnly')).toBeNull();
+  });
+
+  it('stock fallback이 생성 이미지 cap을 초과하지 않는다', async () => {
+    generateImageMock.mockClear();
+    const generatedSlides: Slide[] = Array.from({ length: 3 }, (_, index) => ({
+      title: `생성 후보 ${index + 1}`,
+      layout: 'content',
+      sourceIds: [`generated-${index + 1}`],
+      body: [{ kind: 'text', spans: [{ text: '생성 이미지가 필요한 추상 개념 슬라이드' }] }],
+      image: {
+        prompt: `abstract generated concept ${index + 1}`,
+        query: `abstract generated concept ${index + 1}`,
+        sourcePreference: 'generated',
+        role: 'support',
+      },
+    }));
+    const stockSlides: Slide[] = Array.from({ length: 3 }, (_, index) => ({
+      title: `Stock 후보 ${index + 1}`,
+      layout: 'content',
+      sourceIds: [`stock-${index + 1}`],
+      body: [{ kind: 'text', spans: [{ text: 'stock 검색이 실패하면 fallback 후보가 되는 슬라이드' }] }],
+      image: {
+        query: `stock search ${index + 1}`,
+        sourcePreference: 'stock',
+        role: 'support',
+      },
+    }));
+
+    const result = await resolveSlideAssets([...generatedSlides, ...stockSlides], {
+      themeId: DEFAULT_SLIDE_THEME.id,
+      imagePolicy: 'add image intent only when it materially improves the slide',
+      imageSourceMode: 'auto choose stock photos, logos, or generated images based on slide intent',
+    });
+
+    expect(generateImageMock).toHaveBeenCalledTimes(3);
+    expect(result.summary.generatedResolved).toBe(3);
+    expect(result.assets.filter((asset) => asset.sourceMode === 'generated')).toHaveLength(3);
+  });
+
+  it('HTML-native 호출은 placeholder 개수에 맞춰 생성 이미지 예산을 올릴 수 있다', async () => {
+    generateImageMock.mockClear();
+    const slides: Slide[] = Array.from({ length: 10 }, (_, index) => ({
+      title: `HTML placeholder ${index + 1}`,
+      layout: 'content',
+      sourceIds: [`html-placeholder-${index + 1}`],
+      body: [{ kind: 'text', spans: [{ text: 'HTML-native placeholder 슬라이드' }] }],
+      image: {
+        prompt: `abstract generated HTML visual ${index + 1}`,
+        sourcePreference: 'generated',
+        role: 'support',
+      },
+    }));
+
+    const result = await resolveSlideAssets(
+      slides,
+      {
+        themeId: DEFAULT_SLIDE_THEME.id,
+        imagePolicy:
+          'actively add ambient, editorial, and supporting visual intent to most HTML slides, including spacious body slides, cover, section, quote, stat, conclusion, and core argument slides',
+        imageSourceMode: 'generated only',
+      },
+      { generatedLimitOverride: slides.length },
+    );
+
+    expect(generateImageMock).toHaveBeenCalledTimes(10);
+    expect(result.summary.generatedResolved).toBe(10);
+    expect(result.summary.skipped).toBe(0);
+  });
+
+  it('HTML-native raw asset id aliases survive asset resolution', async () => {
+    generateImageMock.mockClear();
+    const slides: Slide[] = [
+      {
+        title: 'Opening',
+        layout: 'title',
+        sourceIds: ['cover-hero'],
+        body: [{ kind: 'text', spans: [{ text: 'opening context' }] }],
+        image: {
+          prompt: 'cover image',
+          rawAssetId: 'cover hero',
+          sourcePreference: 'generated',
+          role: 'cover',
+        },
+      },
+    ];
+
+    const result = await resolveSlideAssets(slides, {
+      themeId: DEFAULT_SLIDE_THEME.id,
+      imagePolicy: 'add image intent only when it materially improves the slide',
+      imageSourceMode: 'generated only',
+    });
+
+    expect(result.assets[0].slideId).toBe('cover-hero');
+    expect(result.assets[0].rawSlideId).toBe('cover hero');
+  });
+
+  it('취소된 작업은 이미지 생성 요청을 시작하지 않는다', async () => {
+    generateImageMock.mockClear();
+    const slides: Slide[] = [
+      {
+        title: 'Cancelled visual',
+        layout: 'content',
+        sourceIds: ['cancelled-visual'],
+        body: [{ kind: 'text', spans: [{ text: '이미지 생성을 시작하면 안 되는 슬라이드' }] }],
+        image: {
+          prompt: 'abstract generated concept',
+          sourcePreference: 'generated',
+          role: 'support',
+        },
+      },
+    ];
+
+    await expect(
+      resolveSlideAssets(
+        slides,
+        {
+          themeId: DEFAULT_SLIDE_THEME.id,
+          imagePolicy: 'add image intent only when it materially improves the slide',
+          imageSourceMode: 'generated only',
+        },
+        { isCancelled: () => true },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    expect(generateImageMock).not.toHaveBeenCalled();
+  });
+
+  it('이미지 생성 큐 사이에서 취소되면 다음 생성 요청을 시작하지 않는다', async () => {
+    let cancelled = false;
+    generateImageMock.mockClear();
+    generateImageMock.mockImplementationOnce(async () => {
+      cancelled = true;
+      return ['data:image/png;base64,BBBB'];
+    });
+    const slides: Slide[] = Array.from({ length: 3 }, (_, index) => ({
+      title: `Generated visual ${index + 1}`,
+      layout: 'content',
+      sourceIds: [`generated-visual-${index + 1}`],
+      body: [{ kind: 'text', spans: [{ text: '생성 이미지 후보 슬라이드' }] }],
+      image: {
+        prompt: `abstract generated concept ${index + 1}`,
+        sourcePreference: 'generated',
+        role: 'support',
+      },
+    }));
+
+    await expect(
+      resolveSlideAssets(
+        slides,
+        {
+          themeId: DEFAULT_SLIDE_THEME.id,
+          imagePolicy: 'add image intent only when it materially improves the slide',
+          imageSourceMode: 'generated only',
+        },
+        { isCancelled: () => cancelled },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    expect(generateImageMock).toHaveBeenCalledTimes(1);
   });
 });

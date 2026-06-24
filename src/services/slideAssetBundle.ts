@@ -30,14 +30,14 @@ function parentDirFromPath(path: string): string {
   return path.slice(0, idx);
 }
 
-function deckStemFromPath(pptxPath: string): string {
-  const file = pptxPath.split(/[\\/]/).pop() || 'deck.pptx';
-  return sanitizeFileName(file.replace(/\.pptx$/i, '') || 'deck');
+function deckStemFromPath(deckPath: string): string {
+  const file = deckPath.split(/[\\/]/).pop() || 'deck';
+  return sanitizeFileName(file.replace(/\.(pptx|html?)$/i, '') || 'deck');
 }
 
-export function slideAssetBundleDir(pptxPath: string): string {
-  const parent = parentDirFromPath(pptxPath);
-  return joinPath(parent, `${deckStemFromPath(pptxPath)}.assets`);
+export function slideAssetBundleDir(deckPath: string): string {
+  const parent = parentDirFromPath(deckPath);
+  return joinPath(parent, `${deckStemFromPath(deckPath)}.assets`);
 }
 
 function dataUrlToBytes(dataUrl: string): { bytes: Uint8Array; mime: string } | null {
@@ -74,11 +74,11 @@ export function slideAssetFileStem(record: SlideAssetRecord): string {
 }
 
 function attributionText(records: SavedSlideAssetRecord[]): string {
-  const lines = ['# PPTX Image Assets', ''];
+  const lines = ['# Slide Image Assets', ''];
   for (const record of records) {
     lines.push(`## Slide ${record.slideIndex + 1}: ${record.slideTitle}`);
     lines.push(`- File: ${record.file ?? '(not saved)'}`);
-    lines.push(`- Used in PPTX: ${record.inserted ? 'yes' : 'no'}`);
+    lines.push(`- Inserted in deck: ${record.inserted ? 'yes' : 'no'}`);
     lines.push(`- Provider: ${record.provider}`);
     lines.push(`- Importance: ${record.importance}`);
     lines.push(`- Image score: ${record.imageScore}`);
@@ -94,12 +94,12 @@ function attributionText(records: SavedSlideAssetRecord[]): string {
 }
 
 export async function saveSlideAssetBundle(
-  pptxPath: string,
+  deckPath: string,
   records: SlideAssetRecord[],
 ): Promise<SaveSlideAssetBundleResult | null> {
   if (records.length === 0) return null;
   const fs = await import('@tauri-apps/plugin-fs');
-  const dir = slideAssetBundleDir(pptxPath);
+  const dir = slideAssetBundleDir(deckPath);
   const usedDir = joinPath(dir, 'used');
   const unusedDir = joinPath(dir, 'unused');
   await fs.mkdir(usedDir, { recursive: true });

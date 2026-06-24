@@ -1,3 +1,4 @@
+use super::keychain::{get_key, Provider};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -58,18 +59,27 @@ pub async fn resolve_stock_slide_asset(
         .build()
         .map_err(|e| format!("이미지 검색 클라이언트 생성 실패: {e}"))?;
 
-    let (openverse, wikimedia) = tokio::join!(
+    let unsplash_key =
+        get_key(Provider::Unsplash).map_err(|e| format!("Unsplash 키 조회 실패: {e}"))?;
+    let pexels_key = get_key(Provider::Pexels).map_err(|e| format!("Pexels 키 조회 실패: {e}"))?;
+    let brandfetch_client_id = get_key(Provider::Brandfetch)
+        .map_err(|e| format!("Brandfetch Client ID 조회 실패: {e}"))?;
+
+    let (openverse, wikimedia, unsplash, pexels, brandfetch) = tokio::join!(
         search_openverse(&client, &intent, &query),
-        search_wikimedia(&client, &intent, &query)
+        search_wikimedia(&client, &intent, &query),
+        search_unsplash(&client, &intent, &query, unsplash_key.as_deref()),
+        search_pexels(&client, &intent, &query, pexels_key.as_deref()),
+        search_brandfetch(&client, &intent, &query, brandfetch_client_id.as_deref())
     );
 
     let mut candidates = Vec::new();
-    if let Ok(items) = openverse {
-        candidates.extend(items);
-    }
-    if let Ok(items) = wikimedia {
-        candidates.extend(items);
-    }
+    extend_provider_candidates(&mut candidates, "openverse", openverse);
+    extend_provider_candidates(&mut candidates, "wikimedia", wikimedia);
+    extend_provider_candidates(&mut candidates, "unsplash", unsplash);
+    extend_provider_candidates(&mut candidates, "pexels", pexels);
+    extend_provider_candidates(&mut candidates, "brandfetch", brandfetch);
+    candidates.retain(|candidate| provider_allowed_for_license(candidate.provider, &intent));
     candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
 
     for candidate in candidates.into_iter().take(8) {
@@ -89,12 +99,37 @@ pub async fn resolve_stock_slide_asset(
     Ok(None)
 }
 
+fn extend_provider_candidates(
+    candidates: &mut Vec<CandidateAsset>,
+    provider: &str,
+    result: Result<Vec<CandidateAsset>, String>,
+) {
+    match result {
+        Ok(items) => candidates.extend(items),
+        Err(err) => log::debug!("[slide_assets] {provider} search skipped: {err}"),
+    }
+}
+
 fn allows_stock_lookup(intent: &StockSlideAssetIntent) -> bool {
     !intent
         .source_preference
         .as_deref()
         .unwrap_or("auto")
         .eq_ignore_ascii_case("none")
+}
+
+fn open_license_required(intent: &StockSlideAssetIntent) -> bool {
+    intent
+        .license_strictness
+        .as_deref()
+        .is_some_and(|v| v.eq_ignore_ascii_case("open"))
+}
+
+fn provider_allowed_for_license(provider: &str, intent: &StockSlideAssetIntent) -> bool {
+    if !open_license_required(intent) {
+        return true;
+    }
+    matches!(provider, "openverse" | "wikimedia")
 }
 
 fn stock_query(intent: &StockSlideAssetIntent) -> String {
@@ -269,6 +304,194 @@ async fn search_wikimedia(
     Ok(out)
 }
 
+async fn search_unsplash(
+    client: &reqwest::Client,
+    intent: &StockSlideAssetIntent,
+    query: &str,
+    key: Option<&str>,
+) -> Result<Vec<CandidateAsset>, String> {
+    let Some(key) = key.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(Vec::new());
+    };
+    if open_license_required(intent) {
+        return Ok(Vec::new());
+    }
+    if intent.role == "logo" || intent.source_preference.as_deref() == Some("logo") {
+        return Ok(Vec::new());
+    }
+    let url = format!(
+        "https://api.unsplash.com/search/photos?query={}&per_page=10&order_by=relevant&content_filter=high",
+        urlencoding::encode(query)
+    );
+    let v: Value = client
+        .get(url)
+        .header("Authorization", format!("Client-ID {}", key))
+        .header("Accept-Version", "v1")
+        .send()
+        .await
+        .map_err(|e| format!("Unsplash 검색 실패: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("Unsplash 검색 응답 오류: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("Unsplash 응답 파싱 실패: {e}"))?;
+    let mut out = Vec::new();
+    for item in v
+        .get("results")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(raw_url) = item
+            .get("urls")
+            .and_then(|u| u.get("raw"))
+            .and_then(Value::as_str)
+        else {
+            continue;
+        };
+        let width = u32_field(item, "width");
+        let height = u32_field(item, "height");
+        let user = item.get("user").and_then(Value::as_object);
+        let photographer = user
+            .and_then(|u| u.get("name"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|v| !v.is_empty());
+        let source_url = item
+            .get("links")
+            .and_then(|l| l.get("html"))
+            .and_then(Value::as_str)
+            .map(|u| append_query(u, &[("utm_source", "markmind"), ("utm_medium", "referral")]));
+        let attribution = photographer
+            .map(|name| format!("Photo by {name} on Unsplash"))
+            .or_else(|| Some("Unsplash".to_string()));
+        let mut candidate = CandidateAsset {
+            provider: "unsplash",
+            url: unsplash_image_url(raw_url, intent),
+            source_url,
+            attribution,
+            license: Some("Unsplash License".to_string()),
+            width,
+            height,
+            mime: Some("image/jpeg".to_string()),
+            score: 0.0,
+        };
+        candidate.score = score_candidate(&candidate, intent) + 1.2;
+        out.push(candidate);
+    }
+    Ok(out)
+}
+
+async fn search_pexels(
+    client: &reqwest::Client,
+    intent: &StockSlideAssetIntent,
+    query: &str,
+    key: Option<&str>,
+) -> Result<Vec<CandidateAsset>, String> {
+    let Some(key) = key.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(Vec::new());
+    };
+    if open_license_required(intent) {
+        return Ok(Vec::new());
+    }
+    if intent.role == "logo" || intent.source_preference.as_deref() == Some("logo") {
+        return Ok(Vec::new());
+    }
+    let url = format!(
+        "https://api.pexels.com/v1/search?query={}&per_page=12&locale=ko-KR",
+        urlencoding::encode(query)
+    );
+    let v: Value = client
+        .get(url)
+        .header("Authorization", key)
+        .send()
+        .await
+        .map_err(|e| format!("Pexels 검색 실패: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("Pexels 검색 응답 오류: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("Pexels 응답 파싱 실패: {e}"))?;
+    let mut out = Vec::new();
+    for item in v
+        .get("photos")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let src = item.get("src").and_then(Value::as_object);
+        let url = src
+            .and_then(|s| {
+                if stock_orientation(intent) == Some("portrait") {
+                    s.get("portrait").or_else(|| s.get("large2x"))
+                } else if stock_orientation(intent) == Some("square") {
+                    s.get("large2x").or_else(|| s.get("large"))
+                } else {
+                    s.get("landscape").or_else(|| s.get("large2x"))
+                }
+            })
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let Some(url) = url else {
+            continue;
+        };
+        let width = u32_field(item, "width");
+        let height = u32_field(item, "height");
+        let photographer = item
+            .get("photographer")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|v| !v.is_empty());
+        let source_url = item.get("url").and_then(Value::as_str).map(str::to_string);
+        let attribution = photographer
+            .map(|name| format!("Photo by {name} on Pexels"))
+            .or_else(|| Some("Pexels".to_string()));
+        let mut candidate = CandidateAsset {
+            provider: "pexels",
+            url,
+            source_url,
+            attribution,
+            license: Some("Pexels License".to_string()),
+            width,
+            height,
+            mime: Some("image/jpeg".to_string()),
+            score: 0.0,
+        };
+        candidate.score = score_candidate(&candidate, intent) + 1.0;
+        out.push(candidate);
+    }
+    Ok(out)
+}
+
+async fn search_brandfetch(
+    client: &reqwest::Client,
+    intent: &StockSlideAssetIntent,
+    query: &str,
+    client_id: Option<&str>,
+) -> Result<Vec<CandidateAsset>, String> {
+    let Some(client_id) = client_id.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(Vec::new());
+    };
+    if open_license_required(intent) {
+        return Ok(Vec::new());
+    }
+    if !brandfetch_should_search(intent, query) {
+        return Ok(Vec::new());
+    }
+    let brand_query = brandfetch_query(intent, query);
+    if brand_query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut out = brandfetch_search_candidates(client, &brand_query, client_id)
+        .await
+        .unwrap_or_default();
+    for candidate in &mut out {
+        candidate.score += score_candidate(candidate, intent) + 2.4;
+    }
+    Ok(out)
+}
+
 async fn fetch_candidate(
     client: &reqwest::Client,
     candidate: CandidateAsset,
@@ -313,7 +536,8 @@ fn score_candidate(candidate: &CandidateAsset, intent: &StockSlideAssetIntent) -
         score += megapixels.min(6.0) * 0.5;
         if let Some(target) = intent.aspect.as_deref().and_then(aspect_ratio) {
             let actual = w as f64 / h.max(1) as f64;
-            score += (2.0 - (target - actual).abs()).max(0.0);
+            // Aspect is only a light preference. The slide renderers crop to the actual slot.
+            score += (1.0 - (target - actual).abs()).max(0.0) * 0.35;
         }
     }
     if candidate.provider == "wikimedia"
@@ -390,6 +614,155 @@ fn aspect_ratio(value: &str) -> Option<f64> {
     }
 }
 
+fn stock_orientation(intent: &StockSlideAssetIntent) -> Option<&'static str> {
+    let ratio = intent.aspect.as_deref().and_then(aspect_ratio)?;
+    if ratio > 1.25 {
+        Some("landscape")
+    } else if ratio < 0.85 {
+        Some("portrait")
+    } else {
+        Some("square")
+    }
+}
+
+fn append_query(url: &str, params: &[(&str, &str)]) -> String {
+    let mut out = url.to_string();
+    let mut sep = if out.contains('?') { '&' } else { '?' };
+    for (key, value) in params {
+        out.push(sep);
+        out.push_str(key);
+        out.push('=');
+        out.push_str(urlencoding::encode(value).as_ref());
+        sep = '&';
+    }
+    out
+}
+
+fn unsplash_image_url(raw_url: &str, intent: &StockSlideAssetIntent) -> String {
+    let params = if let Some(ratio) = intent.aspect.as_deref().and_then(aspect_ratio) {
+        let (w, h) = if ratio > 1.55 {
+            ("1920", "1080")
+        } else if ratio > 1.15 {
+            ("1600", "1200")
+        } else if ratio < 0.85 {
+            ("1080", "1440")
+        } else {
+            ("1600", "1600")
+        };
+        vec![
+            ("w", w),
+            ("h", h),
+            ("fit", "crop"),
+            ("crop", "entropy"),
+            ("auto", "format"),
+            ("q", "85"),
+        ]
+    } else {
+        vec![
+            ("w", "1600"),
+            ("fit", "max"),
+            ("auto", "format"),
+            ("q", "85"),
+        ]
+    };
+    append_query(raw_url, &params)
+}
+
+fn brandfetch_should_search(intent: &StockSlideAssetIntent, query: &str) -> bool {
+    if intent.role == "logo" || intent.source_preference.as_deref() == Some("logo") {
+        return true;
+    }
+    let text = [
+        intent.entity.as_deref().unwrap_or_default(),
+        query,
+        intent.title.as_str(),
+    ]
+    .join(" ")
+    .to_lowercase();
+    text.contains("logo") || text.contains("brand") || text.contains("company")
+}
+
+fn brandfetch_query(intent: &StockSlideAssetIntent, query: &str) -> String {
+    let raw = intent
+        .entity
+        .as_deref()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or(query)
+        .trim();
+    let cleaned = raw
+        .replace("presentation background", "")
+        .replace("presentation supporting visual", "")
+        .replace("editorial concept image", "")
+        .replace("logo", "")
+        .replace("Logo", "")
+        .replace("brand", "")
+        .replace("Brand", "")
+        .trim()
+        .trim_matches(|c: char| c == '-' || c == ':' || c == '/' || c.is_whitespace())
+        .to_string();
+    cleaned
+        .chars()
+        .take(90)
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+async fn brandfetch_search_candidates(
+    client: &reqwest::Client,
+    query: &str,
+    client_id: &str,
+) -> Result<Vec<CandidateAsset>, String> {
+    let url = brandfetch_search_url(query, client_id);
+    let v: Value = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("Brandfetch 검색 실패: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("Brandfetch 검색 응답 오류: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("Brandfetch 검색 응답 파싱 실패: {e}"))?;
+    let mut out = Vec::new();
+    for item in v.as_array().into_iter().flatten().take(5) {
+        let Some(url) = item.get("icon").and_then(Value::as_str).map(str::to_string) else {
+            continue;
+        };
+        let name = item
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .unwrap_or("Brand");
+        let domain = item
+            .get("domain")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|v| !v.is_empty());
+        out.push(CandidateAsset {
+            provider: "brandfetch",
+            url,
+            source_url: domain.map(|d| format!("https://brandfetch.com/{d}")),
+            attribution: Some(format!("{name} / Brandfetch")),
+            license: Some("Brandfetch".to_string()),
+            width: None,
+            height: None,
+            mime: None,
+            score: 0.0,
+        });
+    }
+    Ok(out)
+}
+
+fn brandfetch_search_url(query: &str, client_id: &str) -> String {
+    format!(
+        "https://api.brandfetch.io/v2/search/{}?c={}",
+        urlencoding::encode(query),
+        urlencoding::encode(client_id)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,5 +790,64 @@ mod tests {
     #[test]
     fn none_preference_blocks_stock_lookup() {
         assert!(!allows_stock_lookup(&intent(Some("none"))));
+    }
+
+    #[test]
+    fn open_license_requests_allow_only_open_stock_providers() {
+        let mut item = intent(None);
+        item.license_strictness = Some("open".to_string());
+
+        assert!(provider_allowed_for_license("openverse", &item));
+        assert!(provider_allowed_for_license("wikimedia", &item));
+        assert!(!provider_allowed_for_license("unsplash", &item));
+        assert!(!provider_allowed_for_license("pexels", &item));
+        assert!(!provider_allowed_for_license("brandfetch", &item));
+    }
+
+    #[test]
+    fn presentation_license_requests_keep_all_stock_providers_available() {
+        let item = intent(None);
+
+        assert!(provider_allowed_for_license("openverse", &item));
+        assert!(provider_allowed_for_license("wikimedia", &item));
+        assert!(provider_allowed_for_license("unsplash", &item));
+        assert!(provider_allowed_for_license("pexels", &item));
+        assert!(provider_allowed_for_license("brandfetch", &item));
+    }
+
+    #[test]
+    fn unsplash_url_crops_to_requested_aspect() {
+        let mut item = intent(None);
+        item.aspect = Some("4:3".to_string());
+
+        let url = unsplash_image_url("https://images.unsplash.com/photo-1", &item);
+
+        assert!(url.contains("w=1600"));
+        assert!(url.contains("h=1200"));
+        assert!(url.contains("fit=crop"));
+        assert!(url.contains("crop=entropy"));
+    }
+
+    #[test]
+    fn unsplash_url_crops_portrait_assets() {
+        let mut item = intent(None);
+        item.aspect = Some("3:4".to_string());
+
+        let url = unsplash_image_url("https://images.unsplash.com/photo-1", &item);
+
+        assert!(url.contains("w=1080"));
+        assert!(url.contains("h=1440"));
+        assert!(url.contains("fit=crop"));
+    }
+
+    #[test]
+    fn brandfetch_search_uses_client_id_query_parameter() {
+        let url = brandfetch_search_url("OpenAI logo", "client id/with space");
+
+        assert_eq!(
+            url,
+            "https://api.brandfetch.io/v2/search/OpenAI%20logo?c=client%20id%2Fwith%20space"
+        );
+        assert!(!url.to_ascii_lowercase().contains("bearer"));
     }
 }

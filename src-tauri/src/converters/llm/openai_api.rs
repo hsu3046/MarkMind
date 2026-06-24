@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 const API_URL: &str = "https://api.openai.com/v1/chat/completions";
+const CONNECT_TIMEOUT_SECS: u64 = 30;
+const REQUEST_TIMEOUT_SECS: u64 = 180;
 
 #[derive(Serialize)]
 struct ChatRequest<'a> {
@@ -57,6 +59,27 @@ pub async fn generate_text(
     prompt: &str,
     max_completion_tokens: Option<u32>,
 ) -> ConverterResult<GenerateResult> {
+    generate_text_inner(api_key, model, system, prompt, max_completion_tokens, false).await
+}
+
+pub async fn generate_text_without_total_timeout(
+    api_key: &str,
+    model: &str,
+    system: Option<&str>,
+    prompt: &str,
+    max_completion_tokens: Option<u32>,
+) -> ConverterResult<GenerateResult> {
+    generate_text_inner(api_key, model, system, prompt, max_completion_tokens, true).await
+}
+
+async fn generate_text_inner(
+    api_key: &str,
+    model: &str,
+    system: Option<&str>,
+    prompt: &str,
+    max_completion_tokens: Option<u32>,
+    without_total_timeout: bool,
+) -> ConverterResult<GenerateResult> {
     let mut messages = Vec::new();
     if let Some(s) = system {
         if !s.is_empty() {
@@ -77,8 +100,12 @@ pub async fn generate_text(
         max_completion_tokens: Some(max_completion_tokens.unwrap_or(16000)),
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(180))
+    let mut builder =
+        reqwest::Client::builder().connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS));
+    if !without_total_timeout {
+        builder = builder.timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS));
+    }
+    let client = builder
         .build()
         .map_err(|e| ConverterError::Network(e.to_string()))?;
 

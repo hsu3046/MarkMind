@@ -128,12 +128,12 @@ describe('buildPptx', () => {
     expect(slideXml).toContain('Generated image should be visible');
   });
 
-  it('preserves resolved image aspect ratio instead of stretching to the slot', async () => {
+  it('crops resolved slide images to the slot without stretching the image', async () => {
     const slides: Slide[] = [
       {
         title: 'Wide Visual',
         layout: 'content',
-        body: [{ kind: 'bullet', spans: parseInline('Wide image should keep its original ratio'), indent: 0 }],
+        body: [{ kind: 'bullet', spans: parseInline('Wide image should fill the visual slot'), indent: 0 }],
         image: { src: widePng, alt: 'wide visual', role: 'support' },
       },
     ];
@@ -143,9 +143,10 @@ describe('buildPptx', () => {
     const slideXml = await zip.file('ppt/slides/slide1.xml')?.async('string');
     const pic = slideXml?.match(/<p:pic>[\s\S]*?<a:ext cx="(\d+)" cy="(\d+)"/);
     expect(pic).toBeTruthy();
+    expect(slideXml).toMatch(/<a:srcRect[^>]*(?:l|r|t|b)="[1-9]\d*"/);
     const ratio = Number(pic?.[1]) / Number(pic?.[2]);
-    expect(ratio).toBeGreaterThan(1.72);
-    expect(ratio).toBeLessThan(1.83);
+    expect(ratio).toBeGreaterThan(0.7);
+    expect(ratio).toBeLessThan(1.1);
   });
 
   it('renders resolved slide image assets on special visual layouts', async () => {

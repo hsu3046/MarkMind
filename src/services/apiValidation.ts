@@ -9,7 +9,7 @@
  *   + secret 비어있지 않음 (실제 OAuth flow 는 사용자 동의 필요 → "Google Drive 연결" 클릭 시 검증)
  */
 
-export type Provider = 'gemini' | 'claude' | 'openai' | 'grok' | 'pyannoteai';
+export type Provider = 'gemini' | 'claude' | 'openai' | 'grok' | 'pyannoteai' | 'unsplash' | 'pexels' | 'brandfetch';
 export type ValidationKey = Provider | 'gdrive';
 export type ValidationResult = 'valid' | 'invalid' | 'error';
 
@@ -86,6 +86,12 @@ export async function validateProvider(
         case 'pyannoteai':
             // pyannote.ai 키는 브라우저 CORS 로 ping 이 막힐 수 있어 형식(존재)만 확인.
             // 실제 인증은 변환 시 Rust 백엔드(diarize_cloud)에서 검증된다.
+            return key.trim() ? 'valid' : 'invalid';
+        case 'unsplash':
+        case 'pexels':
+        case 'brandfetch':
+            // Stock 이미지 credential 도 실제 호출은 Rust 백엔드에서 수행한다.
+            // 브라우저 검증은 CORS/rate limit 영향을 받을 수 있어 존재 여부만 확인한다.
             return key.trim() ? 'valid' : 'invalid';
     }
 }

@@ -11,12 +11,13 @@ import { getImageAIModelSelection } from './aiModelConfig';
 import { generateImage, humanizeImageGenError, type ImageProvider } from './imageGen';
 import { isTauri } from './platform';
 
-type AssetProvider = 'openverse' | 'wikimedia' | 'openai' | 'gemini' | 'grok';
+type AssetProvider = 'openverse' | 'wikimedia' | 'unsplash' | 'pexels' | 'brandfetch' | 'openai' | 'gemini' | 'grok';
 type AssetSourceKind = 'stock' | 'generated';
 
 export interface SlideImageIntent {
   slideIndex: number;
   slideId: string;
+  rawSlideId?: string;
   title: string;
   role: SlideImageRole;
   query?: string;
@@ -46,6 +47,7 @@ export interface SlideAssetRecord {
   slideIndex: number;
   slideTitle: string;
   slideId: string;
+  rawSlideId?: string;
   role: SlideImageRole;
   sourceMode: AssetSourceKind;
   provider: AssetProvider;
@@ -76,6 +78,9 @@ export interface SlideAssetResolutionSummary {
 export interface ResolveSlideAssetsOptions {
   theme?: SlideTheme;
   onProgress?: (step: string, detail?: string, stepId?: string) => void;
+  isCancelled?: () => boolean;
+  stockLimitOverride?: number;
+  generatedLimitOverride?: number;
 }
 
 const STOCK_CONCURRENCY = 4;
@@ -261,6 +266,7 @@ function collectImageIntents(slides: Slide[], options: SlideExportOptions): Slid
       return {
         slideIndex: index,
         slideId: slide.sourceIds?.[0] ?? `slide-${index + 1}`,
+        rawSlideId: image?.rawAssetId,
         title: slide.title || `Slide ${index + 1}`,
         role: roleForSlide(slide, index),
         query: image?.query ?? query,
@@ -283,18 +289,34 @@ function collectImageIntents(slides: Slide[], options: SlideExportOptions): Slid
 async function mapWithConcurrency<T, R>(
   items: readonly T[],
   concurrency: number,
+  resolveOptions: ResolveSlideAssetsOptions,
   worker: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
   const out = new Array<R>(items.length);
   let cursor = 0;
   const run = async () => {
     while (cursor < items.length) {
+      throwIfAssetResolutionCancelled(resolveOptions);
       const index = cursor++;
       out[index] = await worker(items[index], index);
+      throwIfAssetResolutionCancelled(resolveOptions);
     }
   };
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, run));
   return out;
+}
+
+function throwIfAssetResolutionCancelled(resolveOptions: ResolveSlideAssetsOptions): void {
+  if (!resolveOptions.isCancelled?.()) return;
+  const err = new Error('Aborted');
+  err.name = 'AbortError';
+  throw err;
+}
+
+function resolveAssetLimit(defaultLimit: number, override: number | undefined): number {
+  if (override === undefined) return defaultLimit;
+  if (!Number.isFinite(override)) return defaultLimit;
+  return Math.max(0, Math.floor(override));
 }
 
 function canSearchStock(intent: SlideImageIntent): boolean {
@@ -455,6 +477,7 @@ function makeAssetRecord(
     slideIndex: intent.slideIndex,
     slideTitle: intent.title,
     slideId: intent.slideId,
+    rawSlideId: intent.rawSlideId,
     role: intent.role,
     sourceMode,
     provider: asset.provider,
@@ -479,10 +502,11 @@ async function resolveStockQueue(
   resolveOptions: ResolveSlideAssetsOptions,
 ): Promise<Array<{ intent: SlideImageIntent; asset: ResolvedSlideAsset | null; error: string | null }>> {
   if (items.length === 0) return [];
+  throwIfAssetResolutionCancelled(resolveOptions);
   let done = 0;
   let ok = 0;
   resolveOptions.onProgress?.('🖼️ Stock 이미지 검색 중...', `후보 처리 0/${items.length}`, 'pptx-assets-stock');
-  return mapWithConcurrency(items, STOCK_CONCURRENCY, async (intent) => {
+  return mapWithConcurrency(items, STOCK_CONCURRENCY, resolveOptions, async (intent) => {
     let asset: ResolvedSlideAsset | null = null;
     try {
       asset = await resolveStockAsset(intent);
@@ -492,11 +516,13 @@ async function resolveStockQueue(
     } finally {
       done += 1;
       if (asset) ok += 1;
-      resolveOptions.onProgress?.(
-        '🖼️ Stock 이미지 검색 중...',
-        `${ok}개 확보 · 후보 처리 ${done}/${items.length}`,
-        'pptx-assets-stock',
-      );
+      if (!resolveOptions.isCancelled?.()) {
+        resolveOptions.onProgress?.(
+          '🖼️ Stock 이미지 검색 중...',
+          `${ok}개 확보 · 후보 처리 ${done}/${items.length}`,
+          'pptx-assets-stock',
+        );
+      }
     }
   });
 }
@@ -508,10 +534,11 @@ async function resolveGeneratedQueue(
   Array<{ intent: SlideImageIntent; asset: ResolvedSlideAsset | null; generatedPrompt?: string; error: string | null }>
 > {
   if (items.length === 0) return [];
+  throwIfAssetResolutionCancelled(resolveOptions);
   let done = 0;
   let ok = 0;
   resolveOptions.onProgress?.('🖼️ AI 이미지 생성 중...', `후보 처리 0/${items.length}`, 'pptx-assets-generated');
-  return mapWithConcurrency(items, GENERATED_CONCURRENCY, async (intent) => {
+  return mapWithConcurrency(items, GENERATED_CONCURRENCY, resolveOptions, async (intent) => {
     let asset: ResolvedSlideAsset | null = null;
     let generatedPrompt = '';
     try {
@@ -524,11 +551,13 @@ async function resolveGeneratedQueue(
     } finally {
       done += 1;
       if (asset) ok += 1;
-      resolveOptions.onProgress?.(
-        '🖼️ AI 이미지 생성 중...',
-        `${ok}개 확보 · 후보 처리 ${done}/${items.length}`,
-        'pptx-assets-generated',
-      );
+      if (!resolveOptions.isCancelled?.()) {
+        resolveOptions.onProgress?.(
+          '🖼️ AI 이미지 생성 중...',
+          `${ok}개 확보 · 후보 처리 ${done}/${items.length}`,
+          'pptx-assets-generated',
+        );
+      }
     }
   });
 }
@@ -538,8 +567,12 @@ export async function resolveSlideAssets(
   options: SlideExportOptions,
   resolveOptions: ResolveSlideAssetsOptions = {},
 ): Promise<{ slides: Slide[]; summary: SlideAssetResolutionSummary; assets: SlideAssetRecord[] }> {
-  const stockLimit = stockImageLimitForPolicy(options.imagePolicy);
-  const generatedLimit = generatedImageLimitForPolicy(options.imagePolicy);
+  throwIfAssetResolutionCancelled(resolveOptions);
+  const stockLimit = resolveAssetLimit(stockImageLimitForPolicy(options.imagePolicy), resolveOptions.stockLimitOverride);
+  const generatedLimit = resolveAssetLimit(
+    generatedImageLimitForPolicy(options.imagePolicy),
+    resolveOptions.generatedLimitOverride,
+  );
   const summary: SlideAssetResolutionSummary = {
     requested: 0,
     resolved: 0,
@@ -561,9 +594,11 @@ export async function resolveSlideAssets(
   summary.skipped += queues.skipped;
   if (summary.requested === 0) return { slides: next, summary, assets };
 
+  throwIfAssetResolutionCancelled(resolveOptions);
   const stockResults = await resolveStockQueue(queues.stock, resolveOptions);
   const stockUnresolved: SlideImageIntent[] = [];
   for (const result of stockResults) {
+    throwIfAssetResolutionCancelled(resolveOptions);
     if (result.asset) {
       const inserted = applyAsset(next, result.intent, result.asset);
       assets.push(makeAssetRecord(result.intent, result.asset, 'stock', inserted));
@@ -575,9 +610,11 @@ export async function resolveSlideAssets(
     }
   }
 
+  throwIfAssetResolutionCancelled(resolveOptions);
   const generatedResults = await resolveGeneratedQueue(queues.generated, resolveOptions);
   const generatedUnresolved: SlideImageIntent[] = [];
   for (const result of generatedResults) {
+    throwIfAssetResolutionCancelled(resolveOptions);
     if (result.asset) {
       const inserted = applyAsset(next, result.intent, result.asset);
       assets.push(makeAssetRecord(result.intent, result.asset, 'generated', inserted, result.generatedPrompt));
@@ -591,12 +628,15 @@ export async function resolveSlideAssets(
   }
 
   const remainingGenerated = Math.max(0, generatedLimit - queues.generated.length);
-  const shouldGeneratedFallback = sourceMode !== 'generatedOnly' && sourceMode !== 'stockOnly' && remainingGenerated > 0;
+  const generatedFallbackCapacity = remainingGenerated;
+  const shouldGeneratedFallback = sourceMode !== 'generatedOnly' && sourceMode !== 'stockOnly' && generatedFallbackCapacity > 0;
   if (shouldGeneratedFallback) {
-    const fallbackQueue = stockUnresolved.filter(canGenerate).slice(0, remainingGenerated);
+    const fallbackQueue = stockUnresolved.filter(canGenerate).slice(0, generatedFallbackCapacity);
     summary.skipped += stockUnresolved.length - fallbackQueue.length;
+    throwIfAssetResolutionCancelled(resolveOptions);
     const fallbackResults = await resolveGeneratedQueue(fallbackQueue, resolveOptions);
     for (const result of fallbackResults) {
+      throwIfAssetResolutionCancelled(resolveOptions);
       if (result.asset) {
         const inserted = applyAsset(next, result.intent, result.asset);
         assets.push(makeAssetRecord(result.intent, result.asset, 'generated', inserted, result.generatedPrompt));
@@ -616,8 +656,10 @@ export async function resolveSlideAssets(
   if (shouldStockFallback) {
     const fallbackQueue = generatedUnresolved.filter(canSearchStock).slice(0, remainingStock);
     summary.skipped += generatedUnresolved.length - fallbackQueue.length;
+    throwIfAssetResolutionCancelled(resolveOptions);
     const fallbackResults = await resolveStockQueue(fallbackQueue, resolveOptions);
     for (const result of fallbackResults) {
+      throwIfAssetResolutionCancelled(resolveOptions);
       if (result.asset) {
         const inserted = applyAsset(next, result.intent, result.asset);
         assets.push(makeAssetRecord(result.intent, result.asset, 'stock', inserted));
@@ -631,6 +673,7 @@ export async function resolveSlideAssets(
     summary.skipped += generatedUnresolved.length;
   }
 
+  throwIfAssetResolutionCancelled(resolveOptions);
   resolveOptions.onProgress?.(
     '✅ 이미지 에셋 준비 완료',
     `${summary.resolved}/${summary.requested}개 삽입 · stock ${summary.stockResolved} · 생성 ${summary.generatedResolved}`,

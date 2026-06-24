@@ -10,6 +10,7 @@
 
 pub mod audio_pipeline;
 pub mod audio_splitter;
+pub mod cancel;
 pub mod commands;
 pub mod diar;
 pub mod diarize_cloud;
