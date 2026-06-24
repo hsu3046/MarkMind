@@ -90,7 +90,7 @@ export async function validateProvider(
         case 'unsplash':
         case 'pexels':
         case 'brandfetch':
-            // Stock 이미지 API 키도 실제 호출은 Rust 백엔드에서 수행한다.
+            // Stock 이미지 credential 도 실제 호출은 Rust 백엔드에서 수행한다.
             // 브라우저 검증은 CORS/rate limit 영향을 받을 수 있어 존재 여부만 확인한다.
             return key.trim() ? 'valid' : 'invalid';
     }

@@ -734,6 +734,7 @@ function App() {
       const assetResult = await resolveSlideAssets(slides, pptxOptions, {
         theme: slideTheme,
         onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
+        isCancelled: () => pptxCancelRequestedRef.current || pptxProgressJobIdRef.current !== jobId,
       });
       ensurePptxJobActive(jobId);
       slides = assetResult.slides;
@@ -996,6 +997,7 @@ function App() {
           const assetResult = await resolveSlideAssets(intentSlides, htmlExportOptions, {
             theme: slideTheme,
             onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
+            isCancelled: () => pptxCancelRequestedRef.current || pptxProgressJobIdRef.current !== jobId,
           });
           ensurePptxJobActive(jobId);
           const applied = applyHtmlNativeAssetRecords(nativeDeck.html, assetResult.assets);

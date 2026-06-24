@@ -179,4 +179,69 @@ describe('slideAssets', () => {
     expect(result.assets[0].slideId).toBe('cover-hero');
     expect(result.assets[0].rawSlideId).toBe('cover hero');
   });
+
+  it('취소된 작업은 이미지 생성 요청을 시작하지 않는다', async () => {
+    generateImageMock.mockClear();
+    const slides: Slide[] = [
+      {
+        title: 'Cancelled visual',
+        layout: 'content',
+        sourceIds: ['cancelled-visual'],
+        body: [{ kind: 'text', spans: [{ text: '이미지 생성을 시작하면 안 되는 슬라이드' }] }],
+        image: {
+          prompt: 'abstract generated concept',
+          sourcePreference: 'generated',
+          role: 'support',
+        },
+      },
+    ];
+
+    await expect(
+      resolveSlideAssets(
+        slides,
+        {
+          themeId: DEFAULT_SLIDE_THEME.id,
+          imagePolicy: 'add image intent only when it materially improves the slide',
+          imageSourceMode: 'generated only',
+        },
+        { isCancelled: () => true },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    expect(generateImageMock).not.toHaveBeenCalled();
+  });
+
+  it('이미지 생성 큐 사이에서 취소되면 다음 생성 요청을 시작하지 않는다', async () => {
+    let cancelled = false;
+    generateImageMock.mockClear();
+    generateImageMock.mockImplementationOnce(async () => {
+      cancelled = true;
+      return ['data:image/png;base64,BBBB'];
+    });
+    const slides: Slide[] = Array.from({ length: 3 }, (_, index) => ({
+      title: `Generated visual ${index + 1}`,
+      layout: 'content',
+      sourceIds: [`generated-visual-${index + 1}`],
+      body: [{ kind: 'text', spans: [{ text: '생성 이미지 후보 슬라이드' }] }],
+      image: {
+        prompt: `abstract generated concept ${index + 1}`,
+        sourcePreference: 'generated',
+        role: 'support',
+      },
+    }));
+
+    await expect(
+      resolveSlideAssets(
+        slides,
+        {
+          themeId: DEFAULT_SLIDE_THEME.id,
+          imagePolicy: 'add image intent only when it materially improves the slide',
+          imageSourceMode: 'generated only',
+        },
+        { isCancelled: () => cancelled },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    expect(generateImageMock).toHaveBeenCalledTimes(1);
+  });
 });

@@ -62,15 +62,15 @@ pub async fn resolve_stock_slide_asset(
     let unsplash_key =
         get_key(Provider::Unsplash).map_err(|e| format!("Unsplash 키 조회 실패: {e}"))?;
     let pexels_key = get_key(Provider::Pexels).map_err(|e| format!("Pexels 키 조회 실패: {e}"))?;
-    let brandfetch_key =
-        get_key(Provider::Brandfetch).map_err(|e| format!("Brandfetch 키 조회 실패: {e}"))?;
+    let brandfetch_client_id = get_key(Provider::Brandfetch)
+        .map_err(|e| format!("Brandfetch Client ID 조회 실패: {e}"))?;
 
     let (openverse, wikimedia, unsplash, pexels, brandfetch) = tokio::join!(
         search_openverse(&client, &intent, &query),
         search_wikimedia(&client, &intent, &query),
         search_unsplash(&client, &intent, &query, unsplash_key.as_deref()),
         search_pexels(&client, &intent, &query, pexels_key.as_deref()),
-        search_brandfetch(&client, &intent, &query, brandfetch_key.as_deref())
+        search_brandfetch(&client, &intent, &query, brandfetch_client_id.as_deref())
     );
 
     let mut candidates = Vec::new();
@@ -467,9 +467,9 @@ async fn search_brandfetch(
     client: &reqwest::Client,
     intent: &StockSlideAssetIntent,
     query: &str,
-    key: Option<&str>,
+    client_id: Option<&str>,
 ) -> Result<Vec<CandidateAsset>, String> {
-    let Some(key) = key.map(str::trim).filter(|v| !v.is_empty()) else {
+    let Some(client_id) = client_id.map(str::trim).filter(|v| !v.is_empty()) else {
         return Ok(Vec::new());
     };
     if open_license_required(intent) {
@@ -483,13 +483,9 @@ async fn search_brandfetch(
         return Ok(Vec::new());
     }
 
-    let mut out = Vec::new();
-    if let Ok(mut exact) = brandfetch_brand_candidates(client, &brand_query, key).await {
-        out.append(&mut exact);
-    }
-    if let Ok(mut searched) = brandfetch_search_candidates(client, &brand_query, key).await {
-        out.append(&mut searched);
-    }
+    let mut out = brandfetch_search_candidates(client, &brand_query, client_id)
+        .await
+        .unwrap_or_default();
     for candidate in &mut out {
         candidate.score += score_candidate(candidate, intent) + 2.4;
     }
@@ -717,11 +713,7 @@ async fn brandfetch_search_candidates(
     query: &str,
     client_id: &str,
 ) -> Result<Vec<CandidateAsset>, String> {
-    let url = format!(
-        "https://api.brandfetch.io/v2/search/{}?c={}",
-        urlencoding::encode(query),
-        urlencoding::encode(client_id)
-    );
+    let url = brandfetch_search_url(query, client_id);
     let v: Value = client
         .get(url)
         .send()
@@ -763,78 +755,12 @@ async fn brandfetch_search_candidates(
     Ok(out)
 }
 
-async fn brandfetch_brand_candidates(
-    client: &reqwest::Client,
-    identifier: &str,
-    bearer_token: &str,
-) -> Result<Vec<CandidateAsset>, String> {
-    let url = format!(
-        "https://api.brandfetch.io/v2/brands/{}?allowNsfw=false",
-        urlencoding::encode(identifier)
-    );
-    let v: Value = client
-        .get(url)
-        .bearer_auth(bearer_token)
-        .send()
-        .await
-        .map_err(|e| format!("Brandfetch 브랜드 조회 실패: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("Brandfetch 브랜드 조회 응답 오류: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("Brandfetch 브랜드 응답 파싱 실패: {e}"))?;
-    Ok(brandfetch_assets_from_brand(&v))
-}
-
-fn brandfetch_assets_from_brand(v: &Value) -> Vec<CandidateAsset> {
-    let name = v
-        .get("name")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("Brand");
-    let domain = v
-        .get("domain")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let source_url = domain.map(|d| format!("https://brandfetch.com/{d}"));
-    let mut out = Vec::new();
-    for section in ["logos", "images"] {
-        for asset in v
-            .get(section)
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            for format in asset
-                .get("formats")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-            {
-                let Some(url) = format
-                    .get("src")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-                else {
-                    continue;
-                };
-                out.push(CandidateAsset {
-                    provider: "brandfetch",
-                    url,
-                    source_url: source_url.clone(),
-                    attribution: Some(format!("{name} / Brandfetch")),
-                    license: Some("Brandfetch".to_string()),
-                    width: u32_field(format, "width"),
-                    height: u32_field(format, "height"),
-                    mime: None,
-                    score: if section == "logos" { 1.2 } else { 0.4 },
-                });
-            }
-        }
-    }
-    out
+fn brandfetch_search_url(query: &str, client_id: &str) -> String {
+    format!(
+        "https://api.brandfetch.io/v2/search/{}?c={}",
+        urlencoding::encode(query),
+        urlencoding::encode(client_id)
+    )
 }
 
 #[cfg(test)]
@@ -912,5 +838,16 @@ mod tests {
         assert!(url.contains("w=1080"));
         assert!(url.contains("h=1440"));
         assert!(url.contains("fit=crop"));
+    }
+
+    #[test]
+    fn brandfetch_search_uses_client_id_query_parameter() {
+        let url = brandfetch_search_url("OpenAI logo", "client id/with space");
+
+        assert_eq!(
+            url,
+            "https://api.brandfetch.io/v2/search/OpenAI%20logo?c=client%20id%2Fwith%20space"
+        );
+        assert!(!url.to_ascii_lowercase().contains("bearer"));
     }
 }

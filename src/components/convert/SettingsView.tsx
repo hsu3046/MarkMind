@@ -124,8 +124,8 @@ const KEY_SPECS: KeySpec[] = [
     },
     {
         provider: 'brandfetch',
-        label: 'Brandfetch API 키',
-        placeholder: 'Brandfetch bearer token',
+        label: 'Brandfetch Client ID',
+        placeholder: 'Brandfetch client ID',
         issueUrl: 'https://developers.brandfetch.com',
         issueLabel: 'developers.brandfetch.com',
     },
