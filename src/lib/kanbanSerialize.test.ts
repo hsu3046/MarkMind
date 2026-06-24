@@ -99,6 +99,23 @@ describe('kanbanToMarkdown', () => {
         expect(cards[0].due).toBeNull();
     });
 
+    it('does not serialize Kanban status names as section headings', () => {
+        const md = kanbanToMarkdown({
+            cards: [
+                { name: 'API 구현', section: '진행 중', status: 'doing' },
+                { name: '카피 검수', section: 'Review', status: 'review' },
+                { name: '결제 정책', section: '결제', status: 'todo' },
+            ],
+        });
+        expect(md).not.toContain('## 진행 중');
+        expect(md).not.toContain('## Review');
+        expect(md).toContain('## 결제');
+        const { cards } = parseKanban(md);
+        expect(cards[0].section).toBe('');
+        expect(cards[1].section).toBe('');
+        expect(cards[2].section).toBe('결제');
+    });
+
     it('defaults the title and skips empty card names', () => {
         const md = kanbanToMarkdown({ cards: [{ name: '   ', status: 'todo' }, { name: '작업', status: 'todo' }] });
         expect(md.startsWith('# 칸반 보드')).toBe(true);

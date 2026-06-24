@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "markmind",
   "display_name": "MarkMind",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "description": "Connect Claude to your open MarkMind documents — read and edit live editor content (including unsaved changes) via the in-app MCP server.",
   "author": {
     "name": "KnowAI",

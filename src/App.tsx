@@ -2387,7 +2387,7 @@ function App() {
 
   // 패인 1개 렌더 — 7개 뷰 통합. mcpBanner 는 각 뷰 상단(preview 는 banner prop).
   // 미러(editable=false)는 read-only: editor=editable.of(false), preview=onChange 미전달,
-  // mindmap=readOnly, flowchart/gantt/kanban 는 본래 read-only.
+  // mindmap/kanban=readOnly, flowchart/gantt 는 본래 read-only.
   const renderPaneView = (view: PaneView, side: 'left' | 'right' | 'solo') => {
     const editable = paneEditable(view, side);
     switch (view) {
@@ -2426,7 +2426,7 @@ function App() {
       case 'gantt':
         return <>{mcpBanner}<GanttView content={content} fileName={fileName} onJumpToSource={handleJumpToSource} onChange={updateContent} ganttPanelOpen={ganttPanelOpen} onCloseGanttPanel={() => setGanttPanelOpen(false)} /></>;
       case 'kanban':
-        return <>{mcpBanner}<KanbanView content={content} fileName={fileName} onJumpToSource={handleJumpToSource} onChange={updateContent} kanbanPanelOpen={kanbanPanelOpen} onCloseKanbanPanel={() => setKanbanPanelOpen(false)} /></>;
+        return <>{mcpBanner}<KanbanView content={content} fileName={fileName} onChange={editable ? updateContent : undefined} readOnly={!editable} kanbanPanelOpen={kanbanPanelOpen} onCloseKanbanPanel={() => setKanbanPanelOpen(false)} /></>;
     }
   };
 

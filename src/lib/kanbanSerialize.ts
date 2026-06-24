@@ -101,6 +101,52 @@ const PRIORITY_ALIASES: Record<string, KanbanPriority> = {
     낮음: 'low',
 };
 
+const STATUS_SECTION_TOKENS = new Set([
+    'todo',
+    'to-do',
+    'to_do',
+    'backlog',
+    'ready',
+    'open',
+    '할일',
+    '할-일',
+    '해야할일',
+    '해야-할-일',
+    '백로그',
+    '대기',
+    '예정',
+    'doing',
+    'in-progress',
+    'inprogress',
+    'wip',
+    'active',
+    'started',
+    '진행',
+    '진행중',
+    '진행-중',
+    '작업중',
+    '작업-중',
+    'review',
+    'reviewing',
+    '검토',
+    '검토중',
+    '검토-중',
+    '리뷰',
+    'blocked',
+    'block',
+    'hold',
+    'waiting',
+    '보류',
+    '차단',
+    '막힘',
+    'done',
+    'complete',
+    'completed',
+    'closed',
+    'finished',
+    '완료',
+]);
+
 function cleanToken(value: string): string {
     return value.trim().toLowerCase().replace(/\s+/g, '-');
 }
@@ -138,6 +184,12 @@ function cleanSection(text: unknown): string {
     return cleanInlineText(text).replace(/^#+\s*/, '').trim();
 }
 
+function normalizeGeneratedSection(text: unknown): string {
+    const section = cleanSection(text);
+    if (!section) return '';
+    return STATUS_SECTION_TOKENS.has(cleanToken(section)) ? '' : section;
+}
+
 function normalizeProgress(value: unknown): number | null {
     if (typeof value !== 'number' || !Number.isFinite(value)) return null;
     return Math.min(100, Math.max(0, Math.round(value)));
@@ -172,7 +224,7 @@ export function kanbanToMarkdown(board: GeneratedKanban): string {
 
         const checkbox = status === 'done' ? '[x]' : '[ ]';
         const line = `- ${checkbox} ${name} ${markers.join(' ')}`;
-        const section = cleanSection(card.section);
+        const section = normalizeGeneratedSection(card.section);
         if (!bySection.has(section)) {
             bySection.set(section, []);
             order.push(section);

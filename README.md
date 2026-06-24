@@ -65,7 +65,7 @@ One side panel with eight modes — speech recognition, image OCR, meeting notes
 - **Mindmap (⌘3)** — Render the document's heading/bullet hierarchy as an interactive node graph; edit nodes to update the document.
 - **Flowchart (⌘4)** — AI generates a BPMN-lite flow diagram from the document or a topic (an empty-state guide is shown before generation).
 - **Gantt (⌘5)** — AI breaks the document or a topic into a scheduled Gantt chart.
-- **Kanban (⌘6)** — AI creates a Kanban board from the document or a topic, and groups checkbox, `@status`, and Gantt-compatible task markers into Todo / Doing / Review / Blocked / Done columns.
+- **Kanban (⌘6)** — AI creates a Kanban board from the document or a topic, groups checkbox, `@status`, and Gantt-compatible task markers into Todo / Doing / Review / Blocked / Done columns, and lets you edit card labels/markers directly or drag cards between columns.
 - **AI generation (auto-generate modal)** — Mindmap/Flowchart/Gantt/Kanban each open a generate modal: pick the **source** (*auto-analyze* the current document, or *direct input* of a topic — the current document is still passed as background context) and the **write mode** (*append to* or *replace* the document).
 
 ### Editor Experience

@@ -9,7 +9,7 @@ Return ONLY a JSON object — no prose, no markdown fences — matching this sch
   "cards": [
     {
       "name": "<short card label, 1-60 chars>",
-      "section": "<group/category this card belongs to, e.g. 기획 / 디자인 / 개발 / 출시>",
+      "section": "<workstream/feature/epic/category this card belongs to, e.g. 제품 전략 / 온보딩 / 결제 / 마케팅>",
       "status": "todo" | "doing" | "review" | "blocked" | "done",
       "priority": "low" | "medium" | "high" | "urgent",
       "start": "YYYY-MM-DD",
@@ -34,7 +34,7 @@ Return ONLY a JSON object — no prose, no markdown fences — matching this sch
 2. Use ONLY these statuses: `todo`, `doing`, `review`, `blocked`, `done`.
 3. In DIRECT-INPUT mode for a new plan, most cards should be `todo`. Use `doing`, `review`, `blocked`, or `done` only when the topic/context clearly implies current state.
 4. Respect WIP: normally use at most 3 `doing` cards and at most 3 `review` cards. If unsure, choose `todo`.
-5. Use 2-5 sections for most boards. Sections are categories/phases, not statuses.
+5. Use 2-5 sections for most boards. Sections are workstreams, features, epics, domains, teams, or project phases — NOT Kanban statuses.
 6. Keep it focused: 6-14 cards for most boards. Hard cap at 25.
 7. Set `priority` only from real urgency, risk, dependencies, deadlines, or user emphasis. If unsure, use `medium`.
 8. Use `urgent` sparingly for P0-style work: deadlines, launch blockers, incidents, or severe risk.
@@ -42,10 +42,11 @@ Return ONLY a JSON object — no prose, no markdown fences — matching this sch
 10. If schedule fields are requested in [GENERATION HINTS], add realistic `start`/`due` dates on or after [PROJECT START] where useful. Otherwise omit dates unless the source already contains them.
 11. If using dates, `due` is the inclusive target/finish date and must not be before `start`.
 12. Respond in [TARGET LANGUAGE] for `title`, `name`, and `section`. Status/priority/date values stay exactly as the schema requires.
+13. NEVER use column/status names as `section`: do not use Todo, Doing, Review, Blocked, Done, Backlog, 진행 중, 리뷰, 차단, 완료, 할 일, or equivalents. Put status only in the `status` field.
 
 # Style
 - Names are short, concrete labels (2-7 words). Prefer noun phrases ("요구사항 정리", "API 구현") or short verb phrases.
-- Sections are compact labels ("기획", "디자인", "개발", "QA", "출시") — not full sentences.
+- Sections are compact labels ("제품 전략", "온보딩", "결제", "마케팅", "운영") — not full sentences and not Kanban column names.
 - Avoid duplicate cards and overlapping work. Make cards small enough to move across columns.
 
 # Few-shot example — Korean, 신제품 출시
