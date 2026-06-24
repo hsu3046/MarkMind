@@ -255,6 +255,11 @@
     cursor: pointer;
 }
 
+.ai-pptx-theme-trigger.has-preview {
+    grid-template-columns: 82px 1fr 14px;
+    padding: 6px;
+}
+
 .ai-pptx-theme-trigger strong,
 .ai-pptx-theme-option strong {
     display: block;
@@ -322,6 +327,10 @@
     cursor: pointer;
 }
 
+.ai-pptx-theme-option.has-preview {
+    grid-template-columns: 96px 1fr;
+}
+
 .ai-pptx-theme-option:hover,
 .ai-pptx-theme-option.active {
     background: var(--bg-hover);
@@ -338,6 +347,42 @@
     height: 12px;
     border-radius: 2px;
     border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.ai-pptx-theme-preview {
+    display: block;
+    width: 96px;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border: 1px solid var(--border-primary);
+    border-radius: 5px;
+    background: var(--bg-secondary);
+}
+
+.ai-pptx-theme-trigger .ai-pptx-theme-preview {
+    width: 82px;
+}
+
+.ai-pptx-theme-preview img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.ai-pptx-html-preview-fallback {
+    width: 96px;
+    height: 54px;
+    align-content: center;
+    justify-content: center;
+    border: 1px solid var(--border-primary);
+    border-radius: 5px;
+    background: var(--bg-secondary);
+}
+
+.ai-pptx-theme-trigger .ai-pptx-html-preview-fallback {
+    width: 82px;
+    height: 46px;
 }
 
 .ai-pptx-segments {

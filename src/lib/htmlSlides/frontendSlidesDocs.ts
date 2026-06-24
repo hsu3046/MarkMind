@@ -2,7 +2,6 @@ import {
   BEAUTIFUL_HTML_TEMPLATE_METADATA,
   BEAUTIFUL_HTML_TEMPLATES_SOURCE,
   DEFAULT_HTML_SLIDE_THEME,
-  HTML_SLIDE_AUTO_THEME_ID,
   type BeautifulHtmlTemplateMetadata,
   type HtmlSlideThemeId,
 } from '../htmlSlideTheme';
@@ -62,7 +61,7 @@ const beautifulDeckStageModules = import.meta.glob<string>('./vendor/beautiful-h
 const metadataBySlug = new Map(BEAUTIFUL_HTML_TEMPLATE_METADATA.map((item) => [item.slug, item]));
 
 function templateSlug(themeId?: string): string {
-  if (!themeId || themeId === HTML_SLIDE_AUTO_THEME_ID) return DEFAULT_HTML_SLIDE_THEME.id;
+  if (!themeId) return DEFAULT_HTML_SLIDE_THEME.id;
   return metadataBySlug.has(themeId) ? themeId : DEFAULT_HTML_SLIDE_THEME.id;
 }
 
@@ -88,24 +87,6 @@ async function loadOptionalRaw(modules: Record<string, () => Promise<string>>, p
 export function getHtmlSlideTemplateMetadata(themeId?: string): BeautifulHtmlTemplateMetadata {
   const slug = templateSlug(themeId);
   return metadataBySlug.get(slug) ?? metadataBySlug.get(DEFAULT_HTML_SLIDE_THEME.id)!;
-}
-
-export function getHtmlSlideTemplateCatalogForPrompt(): string {
-  const compact = BEAUTIFUL_HTML_TEMPLATE_METADATA.map((item) => ({
-    slug: item.slug,
-    name: item.name,
-    tagline: item.tagline,
-    mood: item.mood,
-    tone: item.tone,
-    occasion: item.occasion,
-    formality: item.formality,
-    density: item.density,
-    scheme: item.scheme,
-    best_for: item.best_for,
-    avoid_for: item.avoid_for,
-    slide_count: item.slide_count,
-  }));
-  return JSON.stringify(compact, null, 2);
 }
 
 export async function getFrontendSlidesTemplateDocs(themeId?: string): Promise<FrontendSlidesTemplateDocs> {

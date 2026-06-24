@@ -347,7 +347,6 @@ pub fn run() {
             converters::commands::get_conversions_dir,
             converters::commands::generate_slides_llm,
             converters::commands::generate_html_slides_llm,
-            converters::commands::select_html_slide_template_llm,
             converters::commands::repair_html_slides_llm,
             converters::commands::generate_slide_markdown_draft,
             converters::commands::cancel_slide_job,

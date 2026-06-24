@@ -14,7 +14,7 @@ import { GanttView } from './components/GanttView';
 import { SlideshowView } from './components/SlideshowView';
 import { getSlideshowSettings, setSlideshowSettings as persistSlideshowSettings, type SlideshowSettings } from './lib/slideSplit';
 import { applySlideDesignOptions, BUILTIN_SLIDE_THEMES, DEFAULT_SLIDE_THEME, getSlideTheme, type SlideExportOptions } from './lib/slideTheme';
-import { DEFAULT_HTML_SLIDE_THEME, HTML_SLIDE_AUTO_THEME_ID, getHtmlSlideTheme, isAutoHtmlSlideTheme } from './lib/htmlSlideTheme';
+import { DEFAULT_HTML_SLIDE_THEME, getHtmlSlideTheme } from './lib/htmlSlideTheme';
 import { clampMarkdownSlideDraft, PPTX_MAX_SLIDES, slideImagePolicyMode } from './lib/slideLimits';
 import { markMindPptxDesignRulesText } from './lib/pptxDesignSystem';
 import { Toolbar, EditableFileName, PaneHeader, ViewMode, PaneView, EDITABLE_VIEWS, isPaneView } from './components/Toolbar';
@@ -145,25 +145,6 @@ function siblingPathForRuntime(deckPath: string, runtimePath: string): string | 
   const normalized = normalizeLocalRuntimePath(runtimePath);
   if (!normalized) return null;
   return normalized.split('/').reduce((acc, part) => joinLocalPath(acc, part), parentDirFromPath(deckPath));
-}
-
-function parseHtmlTemplateSelection(raw: string): { slug: string; reason?: string } | null {
-  const trimmed = raw.trim();
-  const jsonStart = trimmed.indexOf('{');
-  const jsonEnd = trimmed.lastIndexOf('}');
-  const candidate = jsonStart >= 0 && jsonEnd > jsonStart ? trimmed.slice(jsonStart, jsonEnd + 1) : trimmed;
-  try {
-    const parsed = JSON.parse(candidate) as { slug?: unknown; reason?: unknown };
-    const slug = typeof parsed.slug === 'string' ? parsed.slug.trim() : '';
-    if (!slug) return null;
-    return {
-      slug,
-      reason: typeof parsed.reason === 'string' ? parsed.reason.trim() : undefined,
-    };
-  } catch {
-    const slug = trimmed.match(/"slug"\s*:\s*"([^"]+)"/)?.[1]?.trim();
-    return slug ? { slug } : null;
-  }
 }
 
 function App() {
@@ -474,8 +455,7 @@ function App() {
     imageSourceMode: 'auto choose stock photos, logos, or generated images based on slide intent',
     fontPreference: 'free multilingual sans font pairing',
     marginPreference: 'theme default balanced margins',
-    htmlThemeId: HTML_SLIDE_AUTO_THEME_ID,
-    htmlTransition: 'default',
+    htmlThemeId: DEFAULT_HTML_SLIDE_THEME.id,
   });
   useEffect(() => {
     if (!isTauri()) return;
@@ -806,7 +786,7 @@ function App() {
         { save },
         { mkdir, writeTextFile },
         { invoke },
-        { buildFrontendSlidesDesignRules, getHtmlSlideRuntimeFilesForHtml, getHtmlSlideTemplateCatalogForPrompt },
+        { buildFrontendSlidesDesignRules, getHtmlSlideRuntimeFilesForHtml },
         {
           applyHtmlNativeAssetRecords,
           ensureHtmlNativeDocument,
@@ -844,42 +824,7 @@ function App() {
           : 'actively add ambient, editorial, and supporting visual intent to most HTML slides, including spacious body slides, cover, section, quote, stat, conclusion, and core argument slides',
         imageSourceMode: pptxOptions.imageSourceMode?.trim() || 'prefer generated images for concepts and ambient visuals, then use stock for factual subjects',
       };
-      let htmlTheme = isAutoHtmlSlideTheme(pptxOptions.htmlThemeId) ? DEFAULT_HTML_SLIDE_THEME : getHtmlSlideTheme(pptxOptions.htmlThemeId);
-      if (isAutoHtmlSlideTheme(pptxOptions.htmlThemeId)) {
-        pushPptxProgressStep(jobId, 'HTML 템플릿 자동 선택 중...', undefined, 'html-template-select');
-        try {
-          const selectedRaw = await invoke<string>('select_html_slide_template_llm', {
-            markdown: content,
-            templateCatalog: getHtmlSlideTemplateCatalogForPrompt(),
-            company: sel.company,
-            auth: sel.auth,
-            model: sel.model,
-            jobId,
-            options: {
-              ...htmlExportOptions,
-              maxOutputTokens: 2048,
-            },
-          });
-          ensurePptxJobActive(jobId);
-          const selection = parseHtmlTemplateSelection(selectedRaw);
-          const selectedTheme = selection ? getHtmlSlideTheme(selection.slug) : DEFAULT_HTML_SLIDE_THEME;
-          if (selection && selectedTheme.id === selection.slug && !isAutoHtmlSlideTheme(selectedTheme.id)) {
-            htmlTheme = selectedTheme;
-            pushPptxProgressStep(
-              jobId,
-              'HTML 템플릿 자동 선택 완료',
-              selection.reason ? `${selectedTheme.name} · ${selection.reason}` : selectedTheme.name,
-              'html-template-select',
-            );
-          } else {
-            pushPptxProgressStep(jobId, 'HTML 템플릿 자동 선택 실패', `${DEFAULT_HTML_SLIDE_THEME.name} 사용`, 'html-template-select');
-          }
-        } catch (selectErr) {
-          if (pptxCancelRequestedRef.current || isUserStoppedError(selectErr)) throw selectErr;
-          console.warn('[export_html_slides] automatic template selection failed:', selectErr);
-          pushPptxProgressStep(jobId, 'HTML 템플릿 자동 선택 실패', `${DEFAULT_HTML_SLIDE_THEME.name} 사용`, 'html-template-select');
-        }
-      }
+      const htmlTheme = getHtmlSlideTheme(pptxOptions.htmlThemeId);
       const slideTheme = applySlideDesignOptions(getSlideTheme(pptxOptions.themeId), htmlExportOptions);
       const frontendSlidesDesignRules = await buildFrontendSlidesDesignRules(htmlTheme.id, 'html');
       const htmlDesignRules = [

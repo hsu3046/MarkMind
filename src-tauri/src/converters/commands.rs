@@ -153,15 +153,6 @@ const HTML_SLIDES_REPAIR_SYSTEM: &str = concat!(
     "Before output, perform a final QA pass for closed tags, slide count, placeholder coverage, overflow risk, contrast, and template fidelity."
 );
 
-const HTML_TEMPLATE_SELECTOR_SYSTEM: &str = concat!(
-    "You are choosing one beautiful-html-templates HTML slide template for MarkMind. ",
-    "Use the provided compact template catalog as the source of truth. ",
-    "Match the source document, audience, tone, language, density, and occasion to template mood, tone, best_for, avoid_for, formality, density, and scheme. ",
-    "Prefer a distinctive fit over a generic safe choice, but do not choose a template whose avoid_for clearly conflicts with the user's content or audience. ",
-    "Output STRICT minified JSON only, no markdown and no prose: {\"slug\":\"template-slug\",\"reason\":\"short reason\"}. ",
-    "The slug must exactly match one of the catalog slugs. Never invent a slug."
-);
-
 const SLIDE_MARKDOWN_DRAFT_SYSTEM: &str = concat!(
     "You are a slide manuscript agent for a Markdown-first editor. ",
     "Create a reviewable slide draft, not a PowerPoint file and not JSON. ",
@@ -1150,51 +1141,6 @@ pub async fn generate_html_slides_llm(
     emitter.emit("✅ HTML 응답 정리 완료", None);
     emitter.emit("✅ AI HTML 생성 완료", None);
     Ok(cleaned)
-}
-
-#[tauri::command]
-pub async fn select_html_slide_template_llm(
-    app: AppHandle,
-    markdown: String,
-    template_catalog: String,
-    company: crate::subscription_auth::AICompany,
-    auth: crate::subscription_auth::ClaudeAuthMode,
-    model: Option<String>,
-    options: Option<SlideGenerationOptions>,
-    job_id: Option<String>,
-) -> Result<String, String> {
-    let emitter = new_emitter(app, job_id);
-    let _cancel_guard = super::cancel::job_guard(emitter.job_id());
-    let opt_block = slide_options_prompt(options.as_ref());
-    let (outline_block, source_sections, source_map) = slide_generation_source_context(&markdown);
-    emitter.emit(
-        "✅ HTML 템플릿 자동 선택 준비 완료",
-        Some(format!("소스 섹션 {}개", source_sections.len())),
-    );
-
-    let prompt = format!(
-        "Choose exactly one HTML slide template slug from the catalog for this deck.\n\n<template_catalog>\n{}\n</template_catalog>\n\n{}\n\n{}\n\n{}",
-        template_catalog,
-        opt_block,
-        outline_block,
-        source_map
-    );
-    let raw = call_slides_llm_with_progress(
-        &emitter,
-        "html-template-select-llm",
-        "⏳ AI가 HTML 템플릿을 선택하는 중…",
-        "✅ HTML 템플릿 선택 완료",
-        company,
-        auth,
-        model.as_deref(),
-        HTML_TEMPLATE_SELECTOR_SYSTEM,
-        &prompt,
-        None,
-        2048,
-    )
-    .await?;
-
-    Ok(extract_json_object(&raw))
 }
 
 #[tauri::command]

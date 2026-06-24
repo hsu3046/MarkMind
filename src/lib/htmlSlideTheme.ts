@@ -2,8 +2,6 @@ import beautifulIndexJson from './htmlSlides/vendor/beautiful-html-templates/ind
 
 export type HtmlSlideThemeId = string;
 
-export const HTML_SLIDE_AUTO_THEME_ID = 'auto';
-
 export interface BeautifulHtmlTemplateMetadata {
   slug: string;
   name: string;
@@ -30,6 +28,7 @@ export interface HtmlSlideTheme {
   name: string;
   description: string;
   sourceUrl: string;
+  previewImageUrl?: string;
   fontLinks: string[];
   renderer: 'professional' | 'grid' | 'signal' | 'native';
   mood?: string[];
@@ -65,6 +64,12 @@ export const BEAUTIFUL_HTML_TEMPLATES_SOURCE = 'https://github.com/zarazhangrui/
 const parsedIndex = JSON.parse(beautifulIndexJson) as BeautifulHtmlTemplateIndex;
 
 export const BEAUTIFUL_HTML_TEMPLATE_METADATA: BeautifulHtmlTemplateMetadata[] = parsedIndex.templates;
+
+const previewImageModules = import.meta.glob<string>('./htmlSlides/vendor/beautiful-html-templates/screenshots/*.png', {
+  query: '?url',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
 
 const DEFAULT_FONT_LINKS = [
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap',
@@ -185,6 +190,10 @@ function fallbackColors(scheme?: string): HtmlSlideTheme['colors'] {
   return SCHEME_COLORS[scheme || ''] ?? SCHEME_COLORS.light;
 }
 
+function previewImageUrl(slug: string): string | undefined {
+  return previewImageModules[`./htmlSlides/vendor/beautiful-html-templates/screenshots/${slug}.png`];
+}
+
 function themeFromMetadata(meta: BeautifulHtmlTemplateMetadata): HtmlSlideTheme {
   const override = LEGACY_OVERRIDES[meta.slug] ?? {};
   return {
@@ -192,6 +201,7 @@ function themeFromMetadata(meta: BeautifulHtmlTemplateMetadata): HtmlSlideTheme 
     name: meta.name,
     description: meta.tagline,
     sourceUrl: `${BEAUTIFUL_HTML_TEMPLATES_SOURCE}/tree/main/templates/${meta.slug}`,
+    previewImageUrl: previewImageUrl(meta.slug),
     fontLinks: override.fontLinks ?? DEFAULT_FONT_LINKS,
     renderer: override.renderer ?? 'native',
     mood: meta.mood,
@@ -216,27 +226,13 @@ export const HTML_SLIDE_THEMES: HtmlSlideTheme[] = BEAUTIFUL_HTML_TEMPLATE_METAD
 
 export const DEFAULT_HTML_SLIDE_THEME = HTML_SLIDE_THEMES.find((theme) => theme.id === 'blue-professional') ?? HTML_SLIDE_THEMES[0];
 
-export const AUTO_HTML_SLIDE_THEME: HtmlSlideTheme = {
-  ...DEFAULT_HTML_SLIDE_THEME,
-  id: HTML_SLIDE_AUTO_THEME_ID,
-  name: '자동',
-  description: '문서의 목적, 톤, 정보 밀도에 맞춰 템플릿을 자동 선택',
-  mood: ['auto'],
-  tone: ['auto'],
-};
-
-export const HTML_SLIDE_THEME_OPTIONS: HtmlSlideTheme[] = [AUTO_HTML_SLIDE_THEME, ...HTML_SLIDE_THEMES];
+export const HTML_SLIDE_THEME_OPTIONS: HtmlSlideTheme[] = HTML_SLIDE_THEMES;
 
 export function getHtmlSlideTheme(themeId?: string): HtmlSlideTheme {
-  if (themeId === HTML_SLIDE_AUTO_THEME_ID) return AUTO_HTML_SLIDE_THEME;
   return HTML_SLIDE_THEMES.find((theme) => theme.id === themeId) ?? DEFAULT_HTML_SLIDE_THEME;
 }
 
 export function getConcreteHtmlSlideTheme(themeId?: string): HtmlSlideTheme {
-  if (!themeId || themeId === HTML_SLIDE_AUTO_THEME_ID) return DEFAULT_HTML_SLIDE_THEME;
+  if (!themeId) return DEFAULT_HTML_SLIDE_THEME;
   return getHtmlSlideTheme(themeId);
-}
-
-export function isAutoHtmlSlideTheme(themeId?: string): boolean {
-  return themeId === HTML_SLIDE_AUTO_THEME_ID;
 }

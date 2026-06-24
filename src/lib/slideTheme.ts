@@ -71,7 +71,6 @@ export interface SlideExportOptions {
   fontFamily?: string;
   marginPreference?: string;
   htmlThemeId?: string;
-  htmlTransition?: string;
   extraInstructions?: string;
   designRules?: string;
 }

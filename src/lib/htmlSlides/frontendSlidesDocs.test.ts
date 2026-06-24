@@ -3,8 +3,8 @@ import {
   buildFrontendSlidesDesignRules,
   getFrontendSlidesTemplateDocs,
   getHtmlSlideRuntimeFilesForHtml,
-  getHtmlSlideTemplateCatalogForPrompt,
 } from './frontendSlidesDocs';
+import { getHtmlSlideTheme } from '../htmlSlideTheme';
 
 describe('frontendSlidesDocs', () => {
   it('loads the selected beautiful-html-templates docs', async () => {
@@ -27,13 +27,12 @@ describe('frontendSlidesDocs', () => {
     expect(docs.beautifulDesignMd).toContain('Blue Professional');
   });
 
-  it('exposes a compact template catalog for automatic selection', () => {
-    const catalog = getHtmlSlideTemplateCatalogForPrompt();
-    const parsed = JSON.parse(catalog) as Array<{ slug: string }>;
+  it('exposes GitHub screenshot previews on HTML themes', () => {
+    const signal = getHtmlSlideTheme('signal');
+    const softEditorial = getHtmlSlideTheme('soft-editorial');
 
-    expect(parsed.length).toBeGreaterThan(20);
-    expect(parsed.some((item) => item.slug === 'signal')).toBe(true);
-    expect(catalog).toContain('"best_for"');
+    expect(signal.previewImageUrl).toContain('signal.png');
+    expect(softEditorial.previewImageUrl).toContain('soft-editorial.png');
   });
 
   it('builds an HTML slide prompt from selected template docs', async () => {
