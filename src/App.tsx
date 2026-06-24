@@ -799,6 +799,7 @@ function App() {
         },
         { resolveSlideAssets },
         { saveSlideAssetBundle },
+        { rebaseHtmlSourceImageReferences },
       ] = await Promise.all([
         import('@tauri-apps/plugin-dialog'),
         import('@tauri-apps/plugin-fs'),
@@ -807,6 +808,7 @@ function App() {
         import('./lib/htmlSlides/nativeHtmlSlides'),
         import('./services/slideAssets'),
         import('./services/slideAssetBundle'),
+        import('./lib/htmlSlides/sourceImageRebase'),
       ]);
       const path = await save({
         defaultPath: `${baseName}.html`,
@@ -845,7 +847,7 @@ function App() {
           'If the source has lists, criteria, comparisons, processes, tables, evidence, or numeric-looking claims, use the selected repository template\'s table/chart/process/matrix/diagram patterns rather than generic bullets.',
         ].join('\n'),
         sourceOnlyImages
-          ? 'Image rule: preserve source image paths when they exist, but do not invent new image intents.'
+          ? 'Image rule: reuse existing Markdown image paths for source images when they exist, but do not invent new image intents. MarkMind will copy and rebase local source image files next to the exported HTML.'
           : 'Image rule: add image placeholders to roughly 70-90 percent of slides. Prefer body slides with empty visual regions, section openers, quote/stat slides, cover, conclusion, and core argument slides over generic bullet-only slides.',
         'Keep content concise: no long notes, no implementation explanation visible in the deck, and no repeated source prose.',
         'Run a self-check for overflow, contrast, placeholder coverage, layout diversity, runtime behavior, and template fidelity before returning HTML.',
@@ -1034,6 +1036,22 @@ function App() {
 
       pushPptxProgressStep(jobId, 'HTML 파일 생성 중...', undefined, 'html-build');
       ensurePptxJobActive(jobId);
+      if (sourceOnlyImages) {
+        const rebased = await rebaseHtmlSourceImageReferences(html, {
+          sourceDocPath: filePath,
+          htmlPath: path,
+        });
+        html = rebased.html;
+        if (rebased.rewritten > 0) {
+          pushPptxProgressStep(
+            jobId,
+            'HTML 원본 이미지 준비 완료',
+            `${rebased.copied}개 복사 · ${rebased.rewritten}개 경로 보정`,
+            'html-source-images',
+          );
+        }
+        ensurePptxJobActive(jobId);
+      }
       pushPptxProgressStep(jobId, 'HTML 저장 중...', undefined, 'html-save');
       await writeTextFile(path, html);
       ensurePptxJobActive(jobId);
@@ -1074,7 +1092,7 @@ function App() {
     } finally {
       clearPptxProgress();
     }
-  }, [beginPptxProgress, clearPptxProgress, content, ensurePptxJobActive, fileName, pptxOptions, pushPptxProgressStep]);
+  }, [beginPptxProgress, clearPptxProgress, content, ensurePptxJobActive, fileName, filePath, pptxOptions, pushPptxProgressStep]);
 
   // AI
   const ai = useAI();

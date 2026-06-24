@@ -884,8 +884,14 @@ async fn call_slides_llm(
                 ClaudeAuthMode::ApiKey => "api_key",
             };
             let key = grok_bearer(auth_id)?;
-            llm::grok::generate_text_without_total_timeout(&key, model_id, Some(system), prompt)
-                .await
+            llm::grok::generate_text_without_total_timeout(
+                &key,
+                model_id,
+                Some(system),
+                prompt,
+                Some(max_tokens),
+            )
+            .await
         }
     }
 }
