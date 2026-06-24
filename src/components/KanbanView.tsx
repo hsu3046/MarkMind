@@ -416,6 +416,7 @@ function KanbanCardView({ card, editable, editing, dragging, onFinishEdit, onPat
     const [dueDraft, setDueDraft] = useState(inputDate(card.due));
     const [progressDraft, setProgressDraft] = useState(card.progress === null ? '' : String(card.progress));
     const [datePickerOpen, setDatePickerOpen] = useState(false);
+    const skipBlurCommitRef = useRef(false);
     const title = [
         card.label,
         card.section ? `섹션: ${card.section}` : '',
@@ -430,6 +431,7 @@ function KanbanCardView({ card, editable, editing, dragging, onFinishEdit, onPat
     useEffect(() => { setProgressDraft(card.progress === null ? '' : String(card.progress)); }, [card.id, card.progress]);
 
     const commitLabel = () => {
+        if (skipBlurCommitRef.current) return;
         const next = labelDraft.replace(/\s+/g, ' ').trim();
         if (!next) {
             setLabelDraft(card.label);
@@ -438,6 +440,7 @@ function KanbanCardView({ card, editable, editing, dragging, onFinishEdit, onPat
         if (next !== card.label) onPatch({ label: next });
     };
     const commitProgress = () => {
+        if (skipBlurCommitRef.current) return;
         const current = card.progress === null ? '' : String(card.progress);
         if (progressDraft === current) return;
         const raw = progressDraft.trim();
@@ -467,12 +470,17 @@ function KanbanCardView({ card, editable, editing, dragging, onFinishEdit, onPat
     const blurOnEnter = (e: ReactKeyboardEvent<HTMLInputElement | HTMLSelectElement>) => {
         if (e.key === 'Enter') e.currentTarget.blur();
         if (e.key === 'Escape') {
+            skipBlurCommitRef.current = true;
             setLabelDraft(card.label);
             setStartDraft(inputDate(card.start));
             setDueDraft(inputDate(card.due));
             setProgressDraft(card.progress === null ? '' : String(card.progress));
             setDatePickerOpen(false);
+            onFinishEdit();
             e.currentTarget.blur();
+            window.setTimeout(() => {
+                skipBlurCommitRef.current = false;
+            }, 0);
         }
     };
     const finishOnDoubleClick = (e: ReactMouseEvent<HTMLElement>) => {
