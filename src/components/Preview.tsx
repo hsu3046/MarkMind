@@ -1,4 +1,14 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+    forwardRef,
+    useCallback,
+    useEffect,
+    useImperativeHandle,
+    useMemo,
+    useRef,
+    useState,
+    type ClipboardEvent as ReactClipboardEvent,
+    type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -120,6 +130,22 @@ const StrikeNoExpel = StrikeMark.extend({
         return { markdown: { serialize: { open: '~~', close: '~~', mixable: true, expelEnclosingWhitespace: false }, parse: {} } };
     },
 });
+
+const COPY_HELPER_CHARS_RE = /[\u200b\u200c\u200d\ufeff]/g;
+
+function cleanCopiedPlainText(text: string): string {
+    return text.replace(COPY_HELPER_CHARS_RE, '').replace(/\u00a0/g, ' ');
+}
+
+function writePlainTextSelectionToClipboard(event: ClipboardEvent | ReactClipboardEvent<HTMLElement>): boolean {
+    const clipboard = event.clipboardData;
+    const plain = cleanCopiedPlainText(window.getSelection()?.toString() ?? '');
+    if (!clipboard || !plain) return false;
+    event.preventDefault();
+    clipboard.clearData();
+    clipboard.setData('text/plain', plain);
+    return true;
+}
 
 // CommonMark 의 emphasis right-flanking 규칙 때문에 닫는 `**` 다음에
 // 비공백/비구두점 글자 (CJK 포함) 가 바로 붙으면 bold 인식 실패.
@@ -423,6 +449,7 @@ function ReadOnlyView({
         <div
             className="markdown-body fade-in"
             style={{ fontSize: `${fontSize}px` }}
+            onCopy={writePlainTextSelectionToClipboard}
         >
             {fields.length > 0 && (
                 <aside className="markdown-frontmatter">
@@ -920,16 +947,10 @@ function RichEditor({
             // NOTE: 파일 드롭은 Tauri native(dragDropEnabled 기본 true)가 webview DOM drop 을
             // 가로채므로 여기 handleDrop 은 파일에 안 불린다. 드롭은 App 의 onDragDropEvent 가
             // 받아 viewMode 에 맞는 에디터(여기 Tiptap)로 insertImageMarkdown 라우팅(#56).
-            // copy 시 fixEmphasis 의 zero-width 가 사용자 클립보드에 섞이지 않도록 제거
+            // 외부 앱으로 복사할 때 ProseMirror/ReactMarkdown HTML 조각 대신 보이는 텍스트만 전달한다.
             handleDOMEvents: {
                 copy: (_view, event) => {
-                    const sel = window.getSelection()?.toString() ?? '';
-                    if (sel && sel.includes('​')) {
-                        event.preventDefault();
-                        event.clipboardData?.setData('text/plain', sel.replace(/​/g, ''));
-                        return true;
-                    }
-                    return false;
+                    return writePlainTextSelectionToClipboard(event);
                 },
             },
         },
