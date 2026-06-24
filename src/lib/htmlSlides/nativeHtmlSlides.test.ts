@@ -5,7 +5,6 @@ import {
   htmlNativeDeckFromLlmHtml,
   normalizeHtmlNativeAssetIntents,
   sanitizeHtmlNativeSlides,
-  shouldRepairHtmlNativeSlides,
   slidesFromHtmlNativeAssetIntents,
   validateHtmlNativeSlides,
   validateHtmlNativeSlidesForTemplate,
@@ -81,31 +80,32 @@ describe('nativeHtmlSlides', () => {
     expect(applied.insertedIds.has('cover-hero')).toBe(true);
   });
 
-  it('sanitizes dangerous tags and validates fixed-stage slides', () => {
-    const dirty = `${nativeHtml}<script src="https://example.com/x.js"></script><iframe src="https://example.com"></iframe><a onclick="x()" href="javascript:alert(1)">x</a>`;
+  it('sanitizes dangerous tags while preserving supported local runtime scripts', () => {
+    const dirty = `${nativeHtml}<script src="./deck-stage.js"></script><script src="https://example.com/x.js"></script><iframe src="https://example.com"></iframe><a onclick="x()" href="javascript:alert(1)">x</a>`;
     const clean = ensureHtmlNativeDocument(sanitizeHtmlNativeSlides(dirty));
     const report = validateHtmlNativeSlides(clean);
 
-    expect(clean).not.toContain('script src=');
+    expect(clean).toContain('src="./deck-stage.js"');
+    expect(clean).not.toContain('https://example.com/x.js');
     expect(clean).not.toContain('<iframe');
     expect(clean).not.toContain('onclick=');
     expect(report.errors).toEqual([]);
     expect(report.slideCount).toBe(2);
   });
 
-  it('accepts compact deck-stage fragments and wraps them as documents', () => {
+  it('rejects deck-stage fragments from LLM output before accepting them as complete documents', () => {
     const fragment = `<main class="deck-stage">
       <section class="slide s-cover" data-layout="cover"><h1>Opening</h1></section>
       <section class="slide s-chart" data-layout="chart"><h2>Evidence</h2></section>
     </main>`;
     const deck = htmlNativeDeckFromLlmHtml(fragment);
-    const wrapped = ensureHtmlNativeDocument(deck?.html ?? '', 'Fragment Deck');
+    const wrapped = ensureHtmlNativeDocument(fragment, 'Fragment Deck');
     const report = validateHtmlNativeSlidesForTemplate(wrapped, 'neo-grid-bold');
 
-    expect(deck?.html).toContain('<main class="deck-stage">');
+    expect(deck).toBeNull();
     expect(wrapped).toContain('<html lang="ko">');
     expect(report.errors).toEqual([]);
-    expect(report.templateClassHits).toBe(2);
+    expect(report.slideCount).toBe(2);
   });
 
   it('rejects truncated native HTML before accepting partial streamed output', () => {
@@ -115,7 +115,7 @@ describe('nativeHtmlSlides', () => {
     expect(report.errors.join('\n')).toContain('일부 slide section이 닫히지 않았습니다');
   });
 
-  it('flags native HTML that does not trace the selected template class grammar', () => {
+  it('keeps design-style warnings non-fatal', () => {
     const generic = `<!DOCTYPE html><html><head><style>.deck-stage{width:1920px;height:1080px}</style></head><body><main class="deck-stage">
       <section class="slide generic" data-layout="a"></section>
       <section class="slide generic" data-layout="b"></section>
@@ -126,6 +126,22 @@ describe('nativeHtmlSlides', () => {
     const report = validateHtmlNativeSlidesForTemplate(generic, 'neo-grid-bold');
 
     expect(report.templateClassHits).toBe(0);
-    expect(shouldRepairHtmlNativeSlides(report)).toBe(true);
+    expect(report.errors).toEqual([]);
+  });
+
+  it('allows local deck-stage runtime but rejects remote or unknown scripts', () => {
+    const localRuntime = validateHtmlNativeSlides(
+      '<!DOCTYPE html><html><head><script src=deck-stage.js></script></head><body><section class="slide"></section></body></html>',
+    );
+    const unknownRuntime = validateHtmlNativeSlides(
+      '<!DOCTYPE html><html><head><script src="custom.js"></script></head><body><section class="slide"></section></body></html>',
+    );
+    const remoteRuntime = validateHtmlNativeSlides(
+      '<!DOCTYPE html><html><head><script src="https://example.com/deck-stage.js"></script></head><body><section class="slide"></section></body></html>',
+    );
+
+    expect(localRuntime.errors).toEqual([]);
+    expect(unknownRuntime.errors.join('\n')).toContain('지원하지 않는 script src');
+    expect(remoteRuntime.errors.join('\n')).toContain('지원하지 않는 script src');
   });
 });

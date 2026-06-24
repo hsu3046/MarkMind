@@ -31,7 +31,7 @@ export const HTML_SLIDE_THEMES: HtmlSlideTheme[] = [
     id: 'blue-professional',
     name: 'Blue Professional',
     description: '크림 배경과 코발트 단일 포인트의 컨설팅/보고서형 HTML 슬라이드',
-    sourceUrl: 'https://github.com/zarazhangrui/frontend-slides/tree/main/bold-template-pack/templates/blue-professional',
+    sourceUrl: 'https://github.com/zarazhangrui/beautiful-html-templates/tree/main/templates/blue-professional',
     renderer: 'professional',
     fontLinks: [
       'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap',
@@ -58,7 +58,7 @@ export const HTML_SLIDE_THEMES: HtmlSlideTheme[] = [
     id: 'neo-grid-bold',
     name: 'Neo-Grid Bold',
     description: '12x8 그리드, 블랙/에크루/네온 옐로우 패널의 에디토리얼 포스터형',
-    sourceUrl: 'https://github.com/zarazhangrui/frontend-slides/tree/main/bold-template-pack/templates/neo-grid-bold',
+    sourceUrl: 'https://github.com/zarazhangrui/beautiful-html-templates/tree/main/templates/neo-grid-bold',
     renderer: 'grid',
     fontLinks: [
       'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;700;900&family=Space+Grotesk:wght@400;500;700&display=swap',
@@ -85,7 +85,7 @@ export const HTML_SLIDE_THEMES: HtmlSlideTheme[] = [
     id: 'signal',
     name: 'Signal',
     description: '딥 네이비/크림 이중 표면과 골드 헤어라인의 기관형 에디토리얼 슬라이드',
-    sourceUrl: 'https://github.com/zarazhangrui/frontend-slides/tree/main/bold-template-pack/templates/signal',
+    sourceUrl: 'https://github.com/zarazhangrui/beautiful-html-templates/tree/main/templates/signal',
     renderer: 'signal',
     fontLinks: [
       'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap',

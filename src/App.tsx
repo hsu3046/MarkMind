@@ -114,6 +114,39 @@ function isUserStoppedError(err: unknown): boolean {
   return /(사용자가 작업을 정지|aborted|aborterror|cancelled|canceled)/i.test(message);
 }
 
+function pathSeparatorFor(path: string): '/' | '\\' {
+  return path.lastIndexOf('\\') > path.lastIndexOf('/') ? '\\' : '/';
+}
+
+function joinLocalPath(parent: string, child: string): string {
+  if (!parent) return child;
+  const sep = pathSeparatorFor(parent);
+  const trimmed = parent.replace(/[\\/]+$/, '');
+  if (!trimmed) return `${sep}${child}`;
+  return `${trimmed}${sep}${child}`;
+}
+
+function parentDirFromPath(path: string): string {
+  const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  if (idx < 0) return '';
+  if (idx === 0) return path[0] ?? '';
+  return path.slice(0, idx);
+}
+
+function normalizeLocalRuntimePath(path: string): string | null {
+  const clean = path.split(/[?#]/, 1)[0]?.trim().replace(/\\/g, '/').replace(/^\.\//, '') ?? '';
+  if (!clean || /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(clean)) return null;
+  const parts = clean.split('/').filter((part) => part && part !== '.');
+  if (parts.includes('..')) return null;
+  return parts.join('/');
+}
+
+function siblingPathForRuntime(deckPath: string, runtimePath: string): string | null {
+  const normalized = normalizeLocalRuntimePath(runtimePath);
+  if (!normalized) return null;
+  return normalized.split('/').reduce((acc, part) => joinLocalPath(acc, part), parentDirFromPath(deckPath));
+}
+
 function App() {
   const { theme, setThemeTransient, resetThemeToOS } = useTheme();
   const auth = useAuth();
@@ -752,20 +785,18 @@ function App() {
     try {
       const [
         { save },
-        { writeTextFile },
+        { mkdir, writeTextFile },
         { invoke },
-        { buildFrontendSlidesDesignRules },
+        { buildFrontendSlidesDesignRules, getHtmlSlideRuntimeFilesForHtml },
         {
           applyHtmlNativeAssetRecords,
           ensureHtmlNativeDocument,
           htmlNativeDeckFromLlmHtml,
           normalizeHtmlNativeAssetIntents,
           slidesFromHtmlNativeAssetIntents,
-          shouldRepairHtmlNativeSlides,
           summarizeHtmlNativeValidation,
           validateHtmlNativeSlidesForTemplate,
         },
-        { applyFrontendTemplateRuntime },
         { resolveSlideAssets },
         { saveSlideAssetBundle },
       ] = await Promise.all([
@@ -774,7 +805,6 @@ function App() {
         import('@tauri-apps/api/core'),
         import('./lib/htmlSlides/frontendSlidesDocs'),
         import('./lib/htmlSlides/nativeHtmlSlides'),
-        import('./lib/htmlSlides/templateRuntime'),
         import('./services/slideAssets'),
         import('./services/slideAssetBundle'),
       ]);
@@ -799,32 +829,29 @@ function App() {
       const slideTheme = applySlideDesignOptions(getSlideTheme(pptxOptions.themeId), htmlExportOptions);
       const frontendSlidesDesignRules = buildFrontendSlidesDesignRules(htmlTheme.id, 'html');
       const htmlDesignRules = [
-        'Target renderer is fixed-stage HTML slides: 1920x1080 canvas scaled uniformly to viewport.',
-        'Use browser-slide affordances more boldly than PPTX: full-bleed image panels, poster grids, large editorial type, asymmetric panels, strong section openers, and sparse text.',
-        'Autonomous design mode: do not ask for style previews or user selection. Infer one visual thesis for the whole deck from the document, audience, tone, and selected template, then distribute slide roles and visual intensity yourself.',
-        'Before writing HTML, decide which pages are cover, section beat, core argument, evidence, contrast, quote, stat, image essay, and closing. Encode that decision in section classes, data-layout values, hierarchy, and image slots.',
-        'Output compact HTML markup directly. Prefer starting with <main class="deck-stage"> and omit <html>, <head>, large <style>, and custom navigation scripts; MarkMind will wrap the document.',
-        'Do not output MarkMind Slide[] JSON, PptxGenJS options, or markdown.',
-        'MarkMind will inject the selected template runtime CSS/JS after generation. Your priority is to emit template-native section classes and DOM/component grammar that the runtime can style.',
-        'Trace mode: treat the selected beautiful-html-templates template.html as the primary implementation pattern. Reuse its slide class names and component DOM grammar whenever the content fits.',
+        'Use beautiful-html-templates as the HTML generation contract.',
+        'The selected template is already chosen. Skip style preview selection and adapt the selected template directly.',
+        'Output one complete HTML document with <!DOCTYPE html>, <html>, <head>, template CSS/runtime, and all slides.',
+        'Do not output partial section fragments, MarkMind Slide[] JSON, PptxGenJS options, or markdown.',
+        'Preserve the selected beautiful-html-templates sizing model, whether viewport-fluid, deck-stage, or inline keyboard runtime.',
+        'Local sibling runtime files are allowed for provided template files such as deck-stage.js. Unknown local JavaScript and remote JavaScript are not allowed.',
+        'Treat the selected beautiful-html-templates AGENTS.md, design.md, template.json, and template.html as the implementation reference. Preserve the repository template system while replacing demo content with the user document.',
         `HTML template recipe: ${htmlTheme.name}. ${htmlTheme.description}`,
         frontendSlidesDesignRules,
         [
-          'HTML-native structure rule: every <section class="slide ..."> must include data-layout with a meaningful template-specific layout name.',
-          'Use template-specific components instead of generic cards: Blue must reuse layout-dashboard/layout-detail/layout-bars/layout-metrics/layout-agenda; Neo must reuse s-stats/s-chart/s-process2/s-matrix2/s-consult; Signal must reuse slide--chart/slide--diagram/slide--pyramid/slide--cycle/slide--vtimeline when applicable.',
-          'Do not repeat the same visual pattern on adjacent body slides. In decks with 7 or more slides, use at least 4 visibly different section data-layout values unless the source content is extremely short.',
+          'Every slide must use class="slide" so the frontend-slides export scripts can find slides.',
           'Plan image slots while designing each slide. Use {{markmind_asset:asset-id}} placeholders and the markmind-asset-intents JSON script for every stock/logo/generated visual.',
-          'Place the markmind-asset-intents JSON script after </main>. Do not put a long <style> block before the slides; the slide sections must appear near the beginning of the response.',
-          'If the source has lists, criteria, comparisons, processes, tables, evidence, or numeric-looking claims, convert them into table/chart/process/matrix/diagram HTML rather than bullets.',
+          'The markmind-asset-intents script may appear near the end of <body>; it is for MarkMind image resolution only and should not drive presentation runtime behavior.',
+          'If the source has lists, criteria, comparisons, processes, tables, evidence, or numeric-looking claims, use the selected repository template\'s table/chart/process/matrix/diagram patterns rather than generic bullets.',
         ].join('\n'),
         sourceOnlyImages
           ? 'Image rule: preserve source image paths when they exist, but do not invent new image intents.'
           : 'Image rule: add image placeholders to roughly 70-90 percent of slides. Prefer body slides with empty visual regions, section openers, quote/stat slides, cover, conclusion, and core argument slides over generic bullet-only slides.',
         'Keep content concise: no long notes, no implementation explanation visible in the deck, and no repeated source prose.',
-        'Run a self-check for overflow, contrast, placeholder coverage, layout diversity, and fixed-stage behavior before returning HTML.',
+        'Run a self-check for overflow, contrast, placeholder coverage, layout diversity, runtime behavior, and template fidelity before returning HTML.',
       ].join('\n');
       const buildHtmlLlmOptions = (retryInstruction?: string, maxOutputTokens = 28000) => ({
-        designLayout: htmlExportOptions.designLayout?.trim() || 'HTML-first editorial layout mix with image-focus, section, stat, quote, grid, and asymmetric content slides',
+        designLayout: htmlExportOptions.designLayout?.trim() || 'follow the selected beautiful-html-templates layout system',
         visualDensity: htmlExportOptions.visualDensity?.trim() || null,
         imagePolicy: htmlExportOptions.imagePolicy?.trim() || null,
         imageSourceMode: htmlExportOptions.imageSourceMode?.trim() || null,
@@ -837,7 +864,7 @@ function App() {
         themeName: htmlTheme.name,
         themeRules: [
           htmlTheme.description,
-          'Use the selected HTML template as the actual HTML/CSS design system. Author template-specific sections, components, panels, charts, image regions, and deck controls directly.',
+          'Use the selected beautiful-html-templates files as the actual HTML/CSS/JS implementation pattern.',
         ],
       });
 
@@ -867,10 +894,10 @@ function App() {
             options: buildHtmlLlmOptions(
               [
                 'The previous HTML-native response failed while the app was reading the response body.',
-                'Return a compact but complete <main class="deck-stage"> fragment first, followed only by the markmind-asset-intents JSON script if images are used.',
+                'Return one complete HTML document.',
                 'Target 6-10 slides unless the source explicitly requires fewer.',
-                'Do not write custom CSS, navigation JavaScript, verbose comments, duplicated rules, oversized inline scripts, or decorative code bloat.',
-                'Still preserve the selected template grammar, layout diversity, and markmind asset placeholders/intents.',
+                'Keep CSS concise while still following the selected beautiful-html-templates template. A local deck-stage.js reference is allowed when the template uses it.',
+                'Preserve markmind asset placeholders/intents.',
               ].join(' '),
               28000,
             ),
@@ -890,10 +917,10 @@ function App() {
       let htmlAssetRecords: Awaited<ReturnType<typeof resolveSlideAssets>>['assets'] = [];
       if (nativeDeck) {
         let initialReport = validateHtmlNativeSlidesForTemplate(nativeDeck.html, htmlTheme.id);
-        if (shouldRepairHtmlNativeSlides(initialReport)) {
+        if (initialReport.errors.length > 0) {
           const summary = summarizeHtmlNativeValidation(initialReport);
           console.warn('[export_html_slides] native HTML QA requested repair:\n' + summary);
-          pushPptxProgressStep(jobId, 'HTML-native 재작성 중...', '원본 템플릿 구조로 보정', 'html-native-repair');
+          pushPptxProgressStep(jobId, 'HTML-native 재작성 중...', '완성 HTML 문서로 보정', 'html-native-repair');
           try {
             const repairedRaw = await invoke<string>('repair_html_slides_llm', {
               markdown: content,
@@ -902,14 +929,13 @@ function App() {
                 summary,
                 `Slide count: ${initialReport.slideCount}`,
                 `Layout count: ${initialReport.layoutCount}`,
-                `Template class hits: ${initialReport.templateClassHits}`,
               ].join('\n'),
               company: sel.company,
               auth: sel.auth,
               model: sel.model,
               jobId,
               options: buildHtmlLlmOptions(
-                'Repair or reconstruct the current HTML as compact <main class="deck-stage"> markup, not MarkMind Slide[] JSON. If the current HTML is truncated or lacks slide sections, rebuild from the source map. Increase template class usage, layout diversity, table/chart/process/matrix/diagram usage, and fidelity to the selected template.html. Keep the deck compact enough to return completely.',
+                'Repair or reconstruct the current response as one complete HTML document, not MarkMind Slide[] JSON and not partial slide sections. If the current HTML is truncated or lacks slide sections, rebuild from the source map. Preserve selected beautiful-html-templates fidelity, local runtime references, and markmind asset placeholders/intents.',
                 36000,
               ),
             });
@@ -923,7 +949,7 @@ function App() {
                 pushPptxProgressStep(
                   jobId,
                   'HTML-native 재작성 완료',
-                  `${repairedReport.slideCount}장 · 템플릿 클래스 ${repairedReport.templateClassHits}종`,
+                  `${repairedReport.slideCount}장`,
                   'html-native-repair',
                 );
               } else {
@@ -962,7 +988,8 @@ function App() {
           });
           ensurePptxJobActive(jobId);
           const applied = applyHtmlNativeAssetRecords(nativeDeck.html, assetResult.assets);
-          html = ensureHtmlNativeDocument(applyFrontendTemplateRuntime(applied.html, htmlTheme.id), baseName);
+          html = ensureHtmlNativeDocument(applied.html, baseName);
+          const runtimeFiles = getHtmlSlideRuntimeFilesForHtml(html);
           const finalReport = validateHtmlNativeSlidesForTemplate(html, htmlTheme.id);
           if (finalReport.errors.length > 0) {
             const summary = summarizeHtmlNativeValidation(finalReport);
@@ -977,10 +1004,13 @@ function App() {
               ...record,
               inserted: applied.insertedIds.has(record.slideId),
             }));
+            if (runtimeFiles.length > 0) {
+              pushPptxProgressStep(jobId, 'HTML 런타임 파일 준비 완료', `${runtimeFiles.length}개`, 'html-runtime-plan');
+            }
             pushPptxProgressStep(
               jobId,
               'HTML-native 레이아웃 검증 완료',
-              `${finalReport.slideCount}장 · 레이아웃 ${finalReport.layoutCount || '확인 불가'}종 · 템플릿 ${finalReport.templateClassHits}종`,
+              `${finalReport.slideCount}장 · 레이아웃 ${finalReport.layoutCount || '확인 불가'}종`,
               'html-native-final-qa',
             );
           }
@@ -999,6 +1029,20 @@ function App() {
       pushPptxProgressStep(jobId, 'HTML 저장 중...', undefined, 'html-save');
       await writeTextFile(path, html);
       ensurePptxJobActive(jobId);
+      const runtimeFiles = getHtmlSlideRuntimeFilesForHtml(html);
+      if (runtimeFiles.length > 0) {
+        pushPptxProgressStep(jobId, 'HTML 런타임 파일 저장 중...', `${runtimeFiles.length}개`, 'html-runtime-save');
+        for (const runtimeFile of runtimeFiles) {
+          const targetPath = siblingPathForRuntime(path, runtimeFile.path);
+          if (!targetPath) continue;
+          const targetDir = parentDirFromPath(targetPath);
+          if (targetDir && targetDir !== parentDirFromPath(path)) {
+            await mkdir(targetDir, { recursive: true });
+          }
+          await writeTextFile(targetPath, runtimeFile.content);
+        }
+        ensurePptxJobActive(jobId);
+      }
       if (htmlAssetRecords.length > 0) {
         pushPptxProgressStep(jobId, '이미지 에셋 저장 중...', `${htmlAssetRecords.length}개`, 'html-assets-save');
         try {

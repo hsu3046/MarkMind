@@ -5,6 +5,12 @@ The files in this directory are vendored from `zarazhangrui/frontend-slides`.
 - Source repository: https://github.com/zarazhangrui/frontend-slides
 - License: MIT, preserved in `LICENSE`
 - Vendored on: 2026-06-23
-- Usage in MarkMind: design-system and template reference for HTML slide generation
+- Usage in MarkMind: source skill, design-system, and template reference for HTML slide generation
 
-MarkMind treats these files as reference design documents. Runtime code may load the selected template's `preview.md` and `design.md` to guide HTML slide planning, while MarkMind's own renderer remains responsible for final HTML, CSS, interaction, and asset handling.
+For HTML generation, MarkMind follows the `frontend-slides` contract as closely
+as practical inside the desktop app: the LLM is asked to return one complete
+self-contained HTML deck with inline CSS and JavaScript using the selected
+template's `design.md` and `template.html` as the implementation authority.
+MarkMind keeps only its app-specific responsibilities: provider/model invocation,
+stock/generated image asset resolution, placeholder replacement, local asset
+bundle saving, and basic validation that the returned file is complete.

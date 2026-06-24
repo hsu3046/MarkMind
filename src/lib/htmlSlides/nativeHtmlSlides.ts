@@ -1,6 +1,5 @@
 import type { Slide, SlideImageLicenseStrictness, SlideImageRole, SlideImageSourcePreference } from '../markdownToSlides';
 import type { ResolvedSlideAsset, SlideAssetRecord, SlideImageIntent } from '../../services/slideAssets';
-import { getFrontendSlidesTemplateProfile } from './templateProfiles';
 
 export interface HtmlNativeAssetIntentInput {
   id?: unknown;
@@ -85,6 +84,19 @@ function keepHtmlDocument(raw: string): string {
   return unfenced.trim();
 }
 
+function scriptSrcs(html: string): string[] {
+  return [...html.matchAll(/<script\b(?=[^>]*\bsrc\s*=)[^>]*\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>/gi)]
+    .map((match) => (match[1] ?? match[2] ?? match[3])?.trim())
+    .filter((src): src is string => Boolean(src));
+}
+
+function isAllowedLocalRuntimeScript(src: string): boolean {
+  const clean = src.split(/[?#]/, 1)[0]?.trim().replace(/\\/g, '/') ?? '';
+  if (!clean || /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(clean)) return false;
+  if (clean.split('/').includes('..')) return false;
+  return /(?:^|\/)deck-stage\.js$/i.test(clean);
+}
+
 function extractAssetIntents(html: string): HtmlNativeAssetIntentInput[] {
   const scriptMatch = html.match(/<script\b(?=[^>]*\bid=(["'])markmind-asset-intents\1)[^>]*>([\s\S]*?)<\/script>/i);
   if (!scriptMatch) return [];
@@ -100,7 +112,7 @@ function extractAssetIntents(html: string): HtmlNativeAssetIntentInput[] {
 
 export function htmlNativeDeckFromLlmHtml(raw: string): HtmlNativeDeck | null {
   const html = keepHtmlDocument(raw);
-  if (!html || !/<(?:!doctype\s+html|html[\s>]|section[\s>])/i.test(html)) return null;
+  if (!html || !/<html[\s>]/i.test(html)) return null;
   return { html, assetIntents: extractAssetIntents(html) };
 }
 
@@ -244,7 +256,10 @@ export function slidesFromHtmlNativeAssetIntents(intents: SlideImageIntent[]): S
 
 export function sanitizeHtmlNativeSlides(html: string): string {
   return html
-    .replace(/<script\b(?=[^>]*\bsrc\s*=)[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<script\b(?=[^>]*\bsrc\s*=)[^>]*>[\s\S]*?<\/script>/gi, (script) => {
+      const src = scriptSrcs(script)[0];
+      return src && isAllowedLocalRuntimeScript(src) ? script : '';
+    })
     .replace(/<\s*(iframe|object|embed|applet)\b[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
     .replace(/<\s*(iframe|object|embed|applet)\b[^>]*\/?>/gi, '')
     .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
@@ -253,8 +268,8 @@ export function sanitizeHtmlNativeSlides(html: string): string {
 }
 
 export function ensureHtmlNativeDocument(html: string, title = 'MarkMind HTML Slides'): string {
-  const sanitized = sanitizeHtmlNativeSlides(keepHtmlDocument(html));
-  if (/<html[\s>]/i.test(sanitized)) return sanitized;
+  const kept = keepHtmlDocument(html);
+  if (/<html[\s>]/i.test(kept)) return kept;
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -263,7 +278,7 @@ export function ensureHtmlNativeDocument(html: string, title = 'MarkMind HTML Sl
   <title>${title.replace(/[<>&"]/g, '')}</title>
 </head>
 <body>
-${sanitized}
+${kept}
 </body>
 </html>`;
 }
@@ -271,7 +286,7 @@ ${sanitized}
 export function validateHtmlNativeSlides(html: string): HtmlNativeValidationReport {
   const errors: string[] = [];
   const warnings: string[] = [];
-  const slideMatches = html.match(/<section\b(?=[^>]*\bclass=(["'])[^"']*\bslide\b[^"']*\1)[^>]*>/gi);
+  const slideMatches = html.match(/<(?:section|div)\b(?=[^>]*\bclass=(["'])[^"']*\bslide\b[^"']*\1)[^>]*>/gi);
   const fallbackSections = html.match(/<section\b/gi);
   const slideCount = slideMatches?.length ?? fallbackSections?.length ?? 0;
   const layouts = new Set<string>();
@@ -280,15 +295,17 @@ export function validateHtmlNativeSlides(html: string): HtmlNativeValidationRepo
     if (layout) layouts.add(layout);
   }
 
-  if (slideCount === 0) errors.push('슬라이드 section을 찾지 못했습니다.');
-  if (!/\bdeck-stage\b/.test(html)) errors.push('고정 16:9 stage(.deck-stage)가 없습니다.');
+  if (slideCount === 0) errors.push('슬라이드를 찾지 못했습니다.');
   if (/<html[\s>]/i.test(html) && !/<\/html>/i.test(html)) errors.push('HTML 문서가 끝까지 닫히지 않았습니다.');
   if (/<style\b/i.test(html) && !/<\/style>/i.test(html)) errors.push('style 태그가 닫히지 않았습니다.');
   if (/<script\b/i.test(html) && !/<\/script>/i.test(html)) errors.push('script 태그가 닫히지 않았습니다.');
+  const sectionOpenCount = html.match(/<section\b/gi)?.length ?? 0;
   const sectionCloseCount = html.match(/<\/section>/gi)?.length ?? 0;
-  if (slideCount > 0 && sectionCloseCount < slideCount) errors.push('일부 slide section이 닫히지 않았습니다.');
-  if (!/1920/.test(html) || !/1080/.test(html)) warnings.push('1920x1080 기준 크기 토큰이 보이지 않습니다.');
-  if (/<script\b(?=[^>]*\bsrc\s*=)/i.test(html)) errors.push('외부 script src는 허용하지 않습니다.');
+  if (sectionOpenCount > 0 && sectionCloseCount < sectionOpenCount) errors.push('일부 slide section이 닫히지 않았습니다.');
+  const blockedScriptSrcs = scriptSrcs(html).filter((src) => !isAllowedLocalRuntimeScript(src));
+  if (blockedScriptSrcs.length > 0) {
+    errors.push(`지원하지 않는 script src가 있습니다: ${blockedScriptSrcs.join(', ')}`);
+  }
   if (/<\s*(iframe|object|embed|applet)\b/i.test(html)) errors.push('iframe/object/embed/applet 태그는 허용하지 않습니다.');
   if (/\{\{\s*markmind_asset:/i.test(html) || /markmind-asset:\/\//i.test(html)) {
     warnings.push('치환되지 않은 이미지 placeholder가 남아 있습니다.');
@@ -300,41 +317,9 @@ export function validateHtmlNativeSlides(html: string): HtmlNativeValidationRepo
   return { slideCount, layoutCount: layouts.size, templateClassHits: 0, templateClassHitRatio: 0, errors, warnings };
 }
 
-function sectionClassValues(html: string): string[] {
-  return [...html.matchAll(/<section\b[^>]*\bclass=(["'])(.*?)\1[^>]*>/gi)]
-    .map((match) => match[2] ?? '')
-    .filter(Boolean);
-}
-
-export function validateHtmlNativeSlidesForTemplate(html: string, themeId?: string): HtmlNativeValidationReport {
+export function validateHtmlNativeSlidesForTemplate(html: string, _themeId?: string): HtmlNativeValidationReport {
   const report = validateHtmlNativeSlides(html);
-  const profile = getFrontendSlidesTemplateProfile(themeId);
-  const sectionClasses = sectionClassValues(html);
-  const hits = profile.layoutClasses.filter((className) =>
-    sectionClasses.some((classes) => new RegExp(`\\b${className.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(classes)),
-  );
-  const hitRatio = profile.layoutClasses.length > 0 ? hits.length / profile.layoutClasses.length : 0;
-  report.templateClassHits = hits.length;
-  report.templateClassHitRatio = hitRatio;
-
-  if (report.slideCount >= 5 && hits.length < 3) {
-    report.warnings.push(`선택 템플릿의 원본 레이아웃 클래스 사용이 부족합니다 (${hits.length}종).`);
-  }
-  if (report.slideCount >= 7 && hits.length < 4) {
-    report.warnings.push('frontend-slides 템플릿 리듬을 충분히 트레이스하지 못했습니다.');
-  }
-  if (report.slideCount >= 5 && report.layoutCount < 3 && hits.length < 3) {
-    report.warnings.push('레이아웃 다양성과 템플릿 클래스 다양성이 모두 낮습니다.');
-  }
-
   return report;
-}
-
-export function shouldRepairHtmlNativeSlides(report: HtmlNativeValidationReport): boolean {
-  if (report.errors.length > 0) return true;
-  return report.warnings.some((warning) =>
-    /레이아웃 종류|원본 레이아웃 클래스|템플릿 리듬|다양성이 모두 낮/i.test(warning),
-  );
 }
 
 export function summarizeHtmlNativeValidation(report: HtmlNativeValidationReport): string {

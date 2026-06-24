@@ -9,6 +9,9 @@ describe('frontendSlidesDocs', () => {
     expect(docs.previewPath).toContain('neo-grid-bold/preview.md');
     expect(docs.designPath).toContain('neo-grid-bold/design.md');
     expect(docs.designMd).toContain('Neo-Grid Bold');
+    expect(docs.beautifulDesignMd).toContain('Neo-Grid Bold');
+    expect(docs.templateJson).toContain('"slug": "neo-grid-bold"');
+    expect(docs.templateHtml).toContain('<deck-stage');
     expect(docs.designMd.length).toBeGreaterThan(10_000);
   });
 
@@ -22,20 +25,37 @@ describe('frontendSlidesDocs', () => {
   it('builds an HTML slide prompt from common docs and the selected design.md', () => {
     const prompt = buildFrontendSlidesDesignRules('signal');
 
-    expect(prompt).toContain('fixed-stage');
-    expect(prompt).toContain('html-template.md');
-    expect(prompt).toContain('viewport-base.css');
-    expect(prompt).toContain('animation-patterns.md');
+    expect(prompt).toContain('beautiful-html-templates AGENTS.md');
+    expect(prompt).toContain('AGENTS.md');
+    expect(prompt).toContain('index.json');
+    expect(prompt).toContain('template.json');
     expect(prompt).toContain('templates/signal/design.md');
+    expect(prompt).toContain('templates/signal/template.html');
     expect(prompt).toContain('Signal');
-    expect(prompt).toContain('beautiful-html-template-profile');
     expect(prompt).toContain('slide--pyramid');
+    expect(prompt).toContain('sizing model, viewport behavior');
+    expect(prompt).toContain('deck-stage.js');
   });
 
   it('can build native HTML rules without the JSON-only renderer constraint', () => {
     const prompt = buildFrontendSlidesDesignRules('signal', 'html');
 
-    expect(prompt).toContain('output the final HTML/CSS/JS deck directly');
+    expect(prompt).toContain('output one complete HTML document directly');
+    expect(prompt).toContain('<!DOCTYPE html>');
+    expect(prompt).toContain('Local sibling JavaScript files are allowed');
+    expect(prompt).toContain('Do not output MarkMind Slide[] JSON');
+    expect(prompt).toContain('partial fragment');
     expect(prompt).not.toContain('Output JSON only. Do not output raw HTML/CSS');
+  });
+
+  it('detects local template runtime files referenced by generated HTML', async () => {
+    const { getHtmlSlideRuntimeFilesForHtml } = await import('./frontendSlidesDocs');
+    const files = getHtmlSlideRuntimeFilesForHtml(
+      '<html><head><script src="./deck-stage.js"></script><script src=deck-stage.js></script></head></html>',
+    );
+
+    expect(files).toHaveLength(1);
+    expect(files[0].path).toBe('deck-stage.js');
+    expect(files[0].content).toContain('customElements.define');
   });
 });
