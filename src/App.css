@@ -3573,9 +3573,39 @@ code.hljs {
   gap: 10px;
   min-width: 0;
 }
-.pptx-busy-head span {
+.pptx-busy-head > span {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pptx-stop-button {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--border-primary);
+  border-radius: 7px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: 600 13px/1 var(--font-sans);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.pptx-stop-button:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+.pptx-stop-button:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+.pptx-stop-button span {
+  overflow: visible;
+  text-overflow: clip;
   white-space: nowrap;
 }
 .pptx-busy-card .spinning {

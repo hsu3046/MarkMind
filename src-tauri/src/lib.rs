@@ -349,6 +349,7 @@ pub fn run() {
             converters::commands::generate_html_slides_llm,
             converters::commands::repair_html_slides_llm,
             converters::commands::generate_slide_markdown_draft,
+            converters::commands::cancel_slide_job,
             converters::commands::ai_generate_claude,
             converters::commands::ai_generate_codex,
             converters::commands::ai_generate_gemini_agy,

@@ -13,7 +13,9 @@ use std::time::Duration;
 
 const CHAT_URL: &str = "https://api.x.ai/v1/chat/completions";
 const IMAGE_URL: &str = "https://api.x.ai/v1/images/generations";
-/// 이미지는 2K 생성 시 수십 초 소요 가능 → 넉넉히 5분(텍스트는 별도 180s).
+const CONNECT_TIMEOUT_SECS: u64 = 30;
+const REQUEST_TIMEOUT_SECS: u64 = 180;
+/// 이미지는 2K 생성 시 수십 초 소요 가능 → 넉넉히 5분.
 const IMAGE_TIMEOUT_SECS: u64 = 300;
 
 // ───────────────────────── 텍스트 (chat completions) ─────────────────────────
@@ -56,6 +58,25 @@ pub async fn generate_text(
     system: Option<&str>,
     prompt: &str,
 ) -> Result<String, String> {
+    generate_text_inner(api_key, model, system, prompt, false).await
+}
+
+pub async fn generate_text_without_total_timeout(
+    api_key: &str,
+    model: &str,
+    system: Option<&str>,
+    prompt: &str,
+) -> Result<String, String> {
+    generate_text_inner(api_key, model, system, prompt, true).await
+}
+
+async fn generate_text_inner(
+    api_key: &str,
+    model: &str,
+    system: Option<&str>,
+    prompt: &str,
+    without_total_timeout: bool,
+) -> Result<String, String> {
     let mut messages = Vec::new();
     if let Some(s) = system {
         if !s.is_empty() {
@@ -76,8 +97,12 @@ pub async fn generate_text(
         max_tokens: Some(16000),
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(180))
+    let mut builder =
+        reqwest::Client::builder().connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS));
+    if !without_total_timeout {
+        builder = builder.timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS));
+    }
+    let client = builder
         .build()
         .map_err(|e| format!("HTTP 클라이언트 생성 실패: {e}"))?;
 

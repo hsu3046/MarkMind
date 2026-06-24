@@ -65,6 +65,11 @@ pub fn get_conversions_dir() -> String {
     super::conversions_dir().to_string_lossy().into_owned()
 }
 
+#[tauri::command]
+pub fn cancel_slide_job(job_id: String) -> bool {
+    super::cancel::cancel_job(&job_id)
+}
+
 // ─── PPTX 스마트 레이아웃 (이슈 #6) ─────────────────────────────
 //
 // 마크다운을 슬라이드용으로 "재구성"해 과밀 슬라이드를 막는다(규칙 기반의 약점
@@ -120,9 +125,11 @@ const SLIDES_SYSTEM: &str = concat!(
 );
 
 const HTML_SLIDES_SYSTEM: &str = concat!(
-    "You are a senior frontend presentation designer. Create a complete self-contained HTML slide deck, not PPTX JSON and not a manuscript. ",
+    "You are a senior frontend presentation designer. Create compact MarkMind HTML slide markup, not PPTX JSON and not a manuscript. ",
     "Output raw HTML only: no prose, no markdown fence, no JSON wrapper. ",
-    "Every deck must be a single HTML document with inline CSS and inline JavaScript only. No npm, no build tools, no external scripts, no iframe/object/embed, and no remote image URLs. MarkMind will also inject the selected template runtime CSS/JS after your output, so prioritize correct template section classes and DOM grammar over inventing large custom CSS. ",
+    "Prefer a compact fragment that starts immediately with <main class=\"deck-stage\"> and contains all slides; a full HTML document is allowed only if it stays compact. ",
+    "Do not write large CSS or custom navigation JavaScript. MarkMind wraps the final document and injects the selected template runtime CSS/JS after your output, so prioritize correct template section classes, component DOM grammar, concise content, and asset intent JSON. ",
+    "No npm, no build tools, no external scripts, no iframe/object/embed, and no remote image URLs. ",
     "Use a fixed 1920x1080 .deck-stage scaled uniformly to the viewport. Do not reflow slides responsively. Each slide must be a <section class=\"slide ...\" data-layout=\"...\">. ",
     "Apply the selected frontend-slides / beautiful-html-templates design.md and template profile as the actual visual grammar, not as a loose inspiration: preserve its typography roles, color discipline, spacing rhythm, component vocabulary, panel grammar, and distinctive decorative motifs. ",
     "Design HTML-native slides directly: use editorial grids, dashboards, charts, matrices, timelines, section dividers, image essays, pull quotes, poster layouts, and template-specific components when the content calls for them. Avoid a chain of title-plus-bullets cards. ",
@@ -130,18 +137,20 @@ const HTML_SLIDES_SYSTEM: &str = concat!(
     "Each asset intent must include id, slideIndex, slideTitle, role(cover/hero/support/logo/icon/background), query or prompt, aspect, sourcePreference(auto/stock/logo/generated/none), licenseStrictness(presentation/open/internal-only), importance, and optional style/textSummary. ",
     "Use stock/logo intents for factual subjects, companies, products, real places, and logos. Use generated-image prompts for abstract concepts, atmosphere, section backgrounds, and emotional metaphors. Prompts must describe composition, mood, style, and constraints; search queries must stay short. ",
     "Do not use placeholders without matching asset intents. Do not include base64 images. Do not invent factual claims, numbers, citations, people, or logos. Preserve the document language unless export options ask otherwise. ",
-    "Include keyboard navigation, page count/progress, fullscreen behavior, and presentation-safe controls. Hide controls in fullscreen unless user interaction reveals them. ",
+    "Do not implement keyboard navigation, page count, progress, fullscreen behavior, or controls yourself; MarkMind runtime owns those behaviors. ",
     "Before output, perform a visual QA pass: check slide fit, text overflow risk, layout diversity, image placeholder coverage, fixed-stage rules, contrast, and template fidelity. Repair the HTML yourself before returning it."
 );
 
 const HTML_SLIDES_REPAIR_SYSTEM: &str = concat!(
     "You are repairing a single-file HTML slide deck created for MarkMind. ",
     "Output raw HTML only: no prose, no markdown fence, no JSON wrapper. ",
-    "Keep the deck as a self-contained 1920x1080 fixed-stage HTML presentation with inline CSS and inline JavaScript only. ",
+    "Prefer a compact fragment that starts immediately with <main class=\"deck-stage\"> and contains all slides. ",
+    "Do not write large CSS or custom navigation JavaScript; MarkMind injects the selected template runtime CSS/JS after your output. ",
     "Do not return MarkMind Slide[] JSON. Do not use external scripts, iframes, object/embed tags, remote image URLs, or base64 images. ",
     "Your job is to make the deck trace the selected frontend-slides / beautiful-html-templates template.html more closely. ",
-    "Prefer rewriting section markup and CSS to use the selected template's original class names, layout families, component grammar, visual rhythm, and chart/table/process/diagram structures. ",
+    "Prefer rewriting section markup to use the selected template's original class names, layout families, component grammar, visual rhythm, and chart/table/process/diagram structures. ",
     "Preserve factual content and document language. Keep or improve markmind asset placeholders and the markmind-asset-intents JSON script. ",
+    "If the current HTML is truncated, lacks slide sections, or has an unclosed style/head/body/html tag, reconstruct a complete compact <main class=\"deck-stage\"> deck from the source map instead of patching the broken prefix. ",
     "If validation reports low layout diversity or low template class usage, replace generic slides with template-native sections instead of making minor cosmetic tweaks. ",
     "Before output, perform a final QA pass for closed tags, slide count, placeholder coverage, overflow risk, contrast, and template fidelity."
 );
@@ -789,12 +798,16 @@ async fn call_slides_llm(
                         max_output_tokens: Some(max_tokens),
                         temperature: Some(0.25),
                     };
-                    Ok(
-                        llm::gemini::generate_text(&key, model_id, &full, Vec::new(), Some(cfg))
-                            .await
-                            .map_err(err_to_string)?
-                            .text,
+                    Ok(llm::gemini::generate_text_without_total_timeout(
+                        &key,
+                        model_id,
+                        &full,
+                        Vec::new(),
+                        Some(cfg),
                     )
+                    .await
+                    .map_err(err_to_string)?
+                    .text)
                 }
             }
         }
@@ -807,7 +820,7 @@ async fn call_slides_llm(
             let result = match auth {
                 ClaudeAuthMode::Subscription => {
                     let token = crate::subscription_auth::claude_access_token().await?;
-                    llm::anthropic::generate_text(
+                    llm::anthropic::generate_text_without_total_timeout(
                         llm::anthropic::ClaudeAuth::Subscription(&token),
                         model_id,
                         prompt,
@@ -822,7 +835,7 @@ async fn call_slides_llm(
                             "Claude API 키가 없습니다. Settings 에서 등록하거나 구독 로그인을 사용하세요."
                                 .to_string()
                         })?;
-                    llm::anthropic::generate_text(
+                    llm::anthropic::generate_text_without_total_timeout(
                         llm::anthropic::ClaudeAuth::ApiKey(&key),
                         model_id,
                         prompt,
@@ -838,7 +851,7 @@ async fn call_slides_llm(
             let result = match auth {
                 ClaudeAuthMode::Subscription => {
                     let tokens = crate::subscription_auth::read_codex_tokens()?;
-                    llm::openai_codex::generate_text(
+                    llm::openai_codex::generate_text_without_total_timeout(
                         &tokens.access_token,
                         tokens.account_id.as_deref(),
                         model_id,
@@ -854,7 +867,7 @@ async fn call_slides_llm(
                         .ok_or_else(|| {
                             "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string()
                         })?;
-                    llm::openai_api::generate_text(
+                    llm::openai_api::generate_text_without_total_timeout(
                         &key,
                         model_id,
                         Some(system),
@@ -873,7 +886,8 @@ async fn call_slides_llm(
                 ClaudeAuthMode::ApiKey => "api_key",
             };
             let key = grok_bearer(auth_id)?;
-            llm::grok::generate_text(&key, model_id, Some(system), prompt).await
+            llm::grok::generate_text_without_total_timeout(&key, model_id, Some(system), prompt)
+                .await
         }
     }
 }
@@ -972,7 +986,12 @@ async fn call_slides_llm_with_progress(
         }
     });
 
-    let result = call_slides_llm(company, auth, model, system, prompt, max_tokens).await;
+    let cancel_token = super::cancel::register_job(emitter.job_id());
+    let result = tokio::select! {
+        result = call_slides_llm(company, auth, model, system, prompt, max_tokens) => result,
+        _ = cancel_token.cancelled() => Err("사용자가 작업을 정지했습니다.".to_string()),
+    };
+    super::cancel::unregister_job(emitter.job_id());
     stop.store(true, Ordering::Relaxed);
     heartbeat.abort();
 
@@ -996,6 +1015,7 @@ pub async fn generate_slides_llm(
     job_id: Option<String>,
 ) -> Result<String, String> {
     let emitter = new_emitter(app, job_id);
+    let _cancel_guard = super::cancel::job_guard(emitter.job_id());
     let opt_block = slide_options_prompt(options.as_ref());
     let (outline_block, source_sections, source_map) = slide_generation_source_context(&markdown);
     emitter.emit(
@@ -1084,6 +1104,7 @@ pub async fn generate_html_slides_llm(
     job_id: Option<String>,
 ) -> Result<String, String> {
     let emitter = new_emitter(app, job_id);
+    let _cancel_guard = super::cancel::job_guard(emitter.job_id());
     let opt_block = slide_options_prompt(options.as_ref());
     let (outline_block, source_sections, source_map) = slide_generation_source_context(&markdown);
     emitter.emit(
@@ -1137,6 +1158,7 @@ pub async fn repair_html_slides_llm(
     job_id: Option<String>,
 ) -> Result<String, String> {
     let emitter = new_emitter(app, job_id);
+    let _cancel_guard = super::cancel::job_guard(emitter.job_id());
     let opt_block = slide_options_prompt(options.as_ref());
     let (outline_block, source_sections, source_map) = slide_generation_source_context(&markdown);
     emitter.emit(
@@ -1189,6 +1211,7 @@ pub async fn generate_slide_markdown_draft(
     job_id: Option<String>,
 ) -> Result<String, String> {
     let emitter = new_emitter(app, job_id);
+    let _cancel_guard = super::cancel::job_guard(emitter.job_id());
     let is_existing_draft = has_slide_draft_marker(&markdown);
     let markdown_body = strip_slide_draft_marker(&markdown);
     let opt_block = slide_options_prompt(options.as_ref());

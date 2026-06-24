@@ -13,6 +13,8 @@ const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const API_VERSION: &str = "2023-06-01";
 const DEFAULT_MAX_TOKENS: u32 = 16000;
 const MAX_RETRIES: u32 = 3;
+const CONNECT_TIMEOUT_SECS: u64 = 30;
+const REQUEST_TIMEOUT_SECS: u64 = 300;
 
 /// 구독(OAuth) 모드 헤더 — Claude Code 가 보내는 beta 플래그 쌍.
 const OAUTH_BETA: &str = "claude-code-20250219,oauth-2025-04-20";
@@ -102,6 +104,25 @@ pub async fn generate_text(
     prompt: &str,
     options: Option<ClaudeOptions>,
 ) -> ConverterResult<GenerateResult> {
+    generate_text_inner(auth, model, prompt, options, false).await
+}
+
+pub async fn generate_text_without_total_timeout(
+    auth: ClaudeAuth<'_>,
+    model: &str,
+    prompt: &str,
+    options: Option<ClaudeOptions>,
+) -> ConverterResult<GenerateResult> {
+    generate_text_inner(auth, model, prompt, options, true).await
+}
+
+async fn generate_text_inner(
+    auth: ClaudeAuth<'_>,
+    model: &str,
+    prompt: &str,
+    options: Option<ClaudeOptions>,
+    without_total_timeout: bool,
+) -> ConverterResult<GenerateResult> {
     let opts = options.unwrap_or_default();
     let max_tokens = opts.max_output_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
 
@@ -136,9 +157,12 @@ pub async fn generate_text(
         }],
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(300))
-        .build()?;
+    let mut builder =
+        reqwest::Client::builder().connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS));
+    if !without_total_timeout {
+        builder = builder.timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS));
+    }
+    let client = builder.build()?;
 
     let mut last_err: Option<ConverterError> = None;
     for attempt in 1..=MAX_RETRIES {

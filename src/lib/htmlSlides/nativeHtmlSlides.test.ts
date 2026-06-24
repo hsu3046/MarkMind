@@ -93,6 +93,21 @@ describe('nativeHtmlSlides', () => {
     expect(report.slideCount).toBe(2);
   });
 
+  it('accepts compact deck-stage fragments and wraps them as documents', () => {
+    const fragment = `<main class="deck-stage">
+      <section class="slide s-cover" data-layout="cover"><h1>Opening</h1></section>
+      <section class="slide s-chart" data-layout="chart"><h2>Evidence</h2></section>
+    </main>`;
+    const deck = htmlNativeDeckFromLlmHtml(fragment);
+    const wrapped = ensureHtmlNativeDocument(deck?.html ?? '', 'Fragment Deck');
+    const report = validateHtmlNativeSlidesForTemplate(wrapped, 'neo-grid-bold');
+
+    expect(deck?.html).toContain('<main class="deck-stage">');
+    expect(wrapped).toContain('<html lang="ko">');
+    expect(report.errors).toEqual([]);
+    expect(report.templateClassHits).toBe(2);
+  });
+
   it('rejects truncated native HTML before accepting partial streamed output', () => {
     const report = validateHtmlNativeSlides('<html><head><style>.deck-stage{width:1920px;height:1080px}</style></head><body><div class="deck-stage"><section class="slide" data-layout="cover">');
 

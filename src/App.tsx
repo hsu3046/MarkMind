@@ -45,7 +45,7 @@ import { isTauri } from './services/platform';
 import { useNativeMenu } from './hooks/useNativeMenu';
 import { getCallbackPath } from './services/knowaiAuth';
 import { TUTORIAL_CONTENT } from './constants/tutorial';
-import { Sparkles, Loader2, ArrowLeftRight } from 'lucide-react';
+import { Sparkles, Loader2, ArrowLeftRight, Square } from 'lucide-react';
 import type { DroppedFile } from './components/convert/types';
 // 본문 명조(뷰어 설정) — Noto Serif KR 한글 서브셋 번들(영문은 Georgia 폴백). ~2MB.
 import '@fontsource/noto-serif-kr/korean-400.css';
@@ -107,6 +107,11 @@ function isRetryableHtmlNativeError(err: unknown): boolean {
   return /(network|네트워크|decoding response body|body decode|timeout|timed out|connection|reset|closed|incomplete|unexpected eof)/i.test(
     message,
   );
+}
+
+function isUserStoppedError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /(사용자가 작업을 정지|aborted|aborterror|cancelled|canceled)/i.test(message);
 }
 
 function App() {
@@ -401,6 +406,8 @@ function App() {
   const [pptxBusy, setPptxBusy] = useState<string | null>(null);
   const [pptxProgress, setPptxProgress] = useState<JobState>({ phase: 'idle', steps: [] });
   const pptxProgressJobIdRef = useRef<string | null>(null);
+  const [pptxCanceling, setPptxCanceling] = useState(false);
+  const pptxCancelRequestedRef = useRef(false);
   const [pptxOptions, setPptxOptions] = useState<SlideExportOptions>({
     themeId: DEFAULT_SLIDE_THEME.id,
     language: '',
@@ -475,6 +482,8 @@ function App() {
   const beginPptxProgress = useCallback((label: string): string => {
     const jobId = createSlideProgressJobId();
     pptxProgressJobIdRef.current = jobId;
+    pptxCancelRequestedRef.current = false;
+    setPptxCanceling(false);
     setPptxBusy(label);
     setPptxProgress({ phase: 'running', steps: [] });
     return jobId;
@@ -496,10 +505,32 @@ function App() {
     });
   }, []);
 
+  const handleStopPptxJob = useCallback(async () => {
+    const jobId = pptxProgressJobIdRef.current;
+    if (!jobId || pptxCancelRequestedRef.current) return;
+    pptxCancelRequestedRef.current = true;
+    setPptxCanceling(true);
+    pushPptxProgressStep(jobId, '정지 요청됨', '현재 요청을 중단하는 중...', 'slide-job-cancel');
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('cancel_slide_job', { jobId });
+    } catch (err) {
+      console.warn('[slide_progress] cancel failed:', err);
+    }
+  }, [pushPptxProgressStep]);
+
   const clearPptxProgress = useCallback(() => {
     pptxProgressJobIdRef.current = null;
+    pptxCancelRequestedRef.current = false;
+    setPptxCanceling(false);
     setPptxBusy(null);
     setPptxProgress({ phase: 'idle', steps: [] });
+  }, []);
+
+  const ensurePptxJobActive = useCallback((jobId: string) => {
+    if (pptxCancelRequestedRef.current || pptxProgressJobIdRef.current !== jobId) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
   }, []);
 
   // 슬라이드 초안 생성 — AI는 편집 가능한 Markdown 페이지만 생성한다.
@@ -543,6 +574,7 @@ function App() {
           extraInstructions: pptxOptions.extraInstructions?.trim() || null,
         },
       });
+      ensurePptxJobActive(jobId);
       let next = draft.trim();
       if (!next) throw new Error('AI가 빈 슬라이드 초안을 반환했습니다.');
       const clamped = clampMarkdownSlideDraft(next);
@@ -560,12 +592,16 @@ function App() {
       setViewMode('slideshow');
       pushPptxProgressStep(jobId, '✅ 슬라이드 초안 반영 완료');
     } catch (err) {
+      if (pptxCancelRequestedRef.current || isUserStoppedError(err)) {
+        console.info('[slide_draft] stopped by user');
+        return;
+      }
       console.error('[slide_draft] failed:', err);
       alert(`슬라이드 초안 생성에 실패했습니다.\n${err instanceof Error ? err.message : String(err)}`);
     } finally {
       clearPptxProgress();
     }
-  }, [beginPptxProgress, clearPptxProgress, content, isDirty, pptxOptions, pushPptxProgressStep, updateContent]);
+  }, [beginPptxProgress, clearPptxProgress, content, ensurePptxJobActive, isDirty, pptxOptions, pushPptxProgressStep, updateContent]);
 
   // 고급: PPTX 내보내기 — AI가 최종 슬라이드 JSON까지 만든다.
   const handleExportPptx = useCallback(async () => {
@@ -630,6 +666,7 @@ function App() {
           themeRules: slideTheme.rules,
         },
       });
+      ensurePptxJobActive(jobId);
       pushPptxProgressStep(jobId, '🔍 AI 응답 검증 중...', undefined, 'pptx-validate-response');
       const aiDeck = slideDeckFromLlmJson(raw);
       let slides = aiDeck?.slides ?? null;
@@ -666,11 +703,14 @@ function App() {
         theme: slideTheme,
         onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
       });
+      ensurePptxJobActive(jobId);
       slides = assetResult.slides;
       pushPptxProgressStep(jobId, '💾 PPTX 파일 생성 중...', undefined, 'pptx-build');
       const buf = await buildPptx(slides, { title: baseName, baseDir, theme: slideTheme, masterSpec: aiDeck?.masterSpec });
+      ensurePptxJobActive(jobId);
       pushPptxProgressStep(jobId, '💾 PPTX 저장 중...', undefined, 'pptx-save');
       await invoke('save_pptx', { path, data: Array.from(new Uint8Array(buf)) });
+      ensurePptxJobActive(jobId);
       if (assetResult.assets.length > 0) {
         pushPptxProgressStep(jobId, '💾 이미지 에셋 저장 중...', `${assetResult.assets.length}개`, 'pptx-assets-save');
         try {
@@ -685,12 +725,16 @@ function App() {
       }
       pushPptxProgressStep(jobId, '✅ 파워포인트 생성 완료');
     } catch (err) {
+      if (pptxCancelRequestedRef.current || isUserStoppedError(err)) {
+        console.info('[export_pptx] stopped by user');
+        return;
+      }
       console.error('[export_pptx] failed:', err);
       alert(`PPTX 내보내기에 실패했습니다.\n${err instanceof Error ? err.message : String(err)}`);
     } finally {
       clearPptxProgress();
     }
-  }, [beginPptxProgress, clearPptxProgress, content, fileName, filePath, pptxOptions, pushPptxProgressStep]);
+  }, [beginPptxProgress, clearPptxProgress, content, ensurePptxJobActive, fileName, filePath, pptxOptions, pushPptxProgressStep]);
 
   // HTML 슬라이드 내보내기 — PPTX와 같은 Slide[]/이미지 파이프라인을 공유하고 최종 렌더러만 HTML로 교체한다.
   const handleExportHtmlSlides = useCallback(async () => {
@@ -710,8 +754,6 @@ function App() {
         { save },
         { writeTextFile },
         { invoke },
-        { markdownToSlides, preserveSourceImagesForPptx },
-        { buildHtmlSlides },
         { buildFrontendSlidesDesignRules },
         {
           applyHtmlNativeAssetRecords,
@@ -724,19 +766,15 @@ function App() {
           validateHtmlNativeSlidesForTemplate,
         },
         { applyFrontendTemplateRuntime },
-        { normalizeSlidesForPptx, validateSlideDeck, summarizeSlideIssues },
         { resolveSlideAssets },
         { saveSlideAssetBundle },
       ] = await Promise.all([
         import('@tauri-apps/plugin-dialog'),
         import('@tauri-apps/plugin-fs'),
         import('@tauri-apps/api/core'),
-        import('./lib/markdownToSlides'),
-        import('./lib/buildHtmlSlides'),
         import('./lib/htmlSlides/frontendSlidesDocs'),
         import('./lib/htmlSlides/nativeHtmlSlides'),
         import('./lib/htmlSlides/templateRuntime'),
-        import('./lib/slideValidation'),
         import('./services/slideAssets'),
         import('./services/slideAssetBundle'),
       ]);
@@ -765,7 +803,8 @@ function App() {
         'Use browser-slide affordances more boldly than PPTX: full-bleed image panels, poster grids, large editorial type, asymmetric panels, strong section openers, and sparse text.',
         'Autonomous design mode: do not ask for style previews or user selection. Infer one visual thesis for the whole deck from the document, audience, tone, and selected template, then distribute slide roles and visual intensity yourself.',
         'Before writing HTML, decide which pages are cover, section beat, core argument, evidence, contrast, quote, stat, image essay, and closing. Encode that decision in section classes, data-layout values, hierarchy, and image slots.',
-        'Output a complete HTML document directly. Do not output MarkMind Slide[] JSON, PptxGenJS options, or markdown.',
+        'Output compact HTML markup directly. Prefer starting with <main class="deck-stage"> and omit <html>, <head>, large <style>, and custom navigation scripts; MarkMind will wrap the document.',
+        'Do not output MarkMind Slide[] JSON, PptxGenJS options, or markdown.',
         'MarkMind will inject the selected template runtime CSS/JS after generation. Your priority is to emit template-native section classes and DOM/component grammar that the runtime can style.',
         'Trace mode: treat the selected beautiful-html-templates template.html as the primary implementation pattern. Reuse its slide class names and component DOM grammar whenever the content fits.',
         `HTML template recipe: ${htmlTheme.name}. ${htmlTheme.description}`,
@@ -775,6 +814,7 @@ function App() {
           'Use template-specific components instead of generic cards: Blue must reuse layout-dashboard/layout-detail/layout-bars/layout-metrics/layout-agenda; Neo must reuse s-stats/s-chart/s-process2/s-matrix2/s-consult; Signal must reuse slide--chart/slide--diagram/slide--pyramid/slide--cycle/slide--vtimeline when applicable.',
           'Do not repeat the same visual pattern on adjacent body slides. In decks with 7 or more slides, use at least 4 visibly different section data-layout values unless the source content is extremely short.',
           'Plan image slots while designing each slide. Use {{markmind_asset:asset-id}} placeholders and the markmind-asset-intents JSON script for every stock/logo/generated visual.',
+          'Place the markmind-asset-intents JSON script after </main>. Do not put a long <style> block before the slides; the slide sections must appear near the beginning of the response.',
           'If the source has lists, criteria, comparisons, processes, tables, evidence, or numeric-looking claims, convert them into table/chart/process/matrix/diagram HTML rather than bullets.',
         ].join('\n'),
         sourceOnlyImages
@@ -783,7 +823,7 @@ function App() {
         'Keep content concise: no long notes, no implementation explanation visible in the deck, and no repeated source prose.',
         'Run a self-check for overflow, contrast, placeholder coverage, layout diversity, and fixed-stage behavior before returning HTML.',
       ].join('\n');
-      const buildHtmlLlmOptions = (retryInstruction?: string, maxOutputTokens = 48000) => ({
+      const buildHtmlLlmOptions = (retryInstruction?: string, maxOutputTokens = 28000) => ({
         designLayout: htmlExportOptions.designLayout?.trim() || 'HTML-first editorial layout mix with image-focus, section, stat, quote, grid, and asymmetric content slides',
         visualDensity: htmlExportOptions.visualDensity?.trim() || null,
         imagePolicy: htmlExportOptions.imagePolicy?.trim() || null,
@@ -811,7 +851,9 @@ function App() {
           jobId,
           options: buildHtmlLlmOptions(),
         });
+        ensurePptxJobActive(jobId);
       } catch (nativeErr) {
+        if (pptxCancelRequestedRef.current || isUserStoppedError(nativeErr)) throw nativeErr;
         if (!isRetryableHtmlNativeError(nativeErr)) throw nativeErr;
         console.warn('[export_html_slides] native HTML request failed, retrying compact mode:', nativeErr);
         pushPptxProgressStep(jobId, 'HTML-native 응답 실패', 'compact HTML로 재시도', 'html-native-retry');
@@ -825,24 +867,26 @@ function App() {
             options: buildHtmlLlmOptions(
               [
                 'The previous HTML-native response failed while the app was reading the response body.',
-                'Return a compact but complete single HTML document.',
+                'Return a compact but complete <main class="deck-stage"> fragment first, followed only by the markmind-asset-intents JSON script if images are used.',
                 'Target 6-10 slides unless the source explicitly requires fewer.',
-                'Keep CSS concise by reusing classes; avoid verbose comments, duplicated rules, oversized inline scripts, and decorative code bloat.',
+                'Do not write custom CSS, navigation JavaScript, verbose comments, duplicated rules, oversized inline scripts, or decorative code bloat.',
                 'Still preserve the selected template grammar, layout diversity, and markmind asset placeholders/intents.',
               ].join(' '),
               28000,
             ),
           });
+          ensurePptxJobActive(jobId);
         } catch (retryErr) {
+          if (pptxCancelRequestedRef.current || isUserStoppedError(retryErr)) throw retryErr;
           if (!isRetryableHtmlNativeError(retryErr)) throw retryErr;
-          console.warn('[export_html_slides] compact native HTML retry failed, falling back:', retryErr);
-          pushPptxProgressStep(jobId, 'HTML-native 재시도 실패', '기존 렌더러 안전망으로 전환', 'html-native-retry');
+          console.warn('[export_html_slides] compact native HTML retry failed:', retryErr);
+          pushPptxProgressStep(jobId, 'HTML-native 재시도 실패', 'fallback 없이 중단', 'html-native-retry');
+          throw new Error(`HTML-native 생성 재시도 실패: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`);
         }
       }
-      const baseDir = filePath ? filePath.replace(/\/[^/]*$/, '') : undefined;
       pushPptxProgressStep(jobId, 'HTML 응답 검증 중...', undefined, 'html-validate-response');
       let nativeDeck = raw ? htmlNativeDeckFromLlmHtml(raw) : null;
-      let html: string | null = null;
+      let html = '';
       let htmlAssetRecords: Awaited<ReturnType<typeof resolveSlideAssets>>['assets'] = [];
       if (nativeDeck) {
         let initialReport = validateHtmlNativeSlidesForTemplate(nativeDeck.html, htmlTheme.id);
@@ -865,10 +909,11 @@ function App() {
               model: sel.model,
               jobId,
               options: buildHtmlLlmOptions(
-                'Repair the current HTML instead of starting from MarkMind Slide[] JSON. Increase template class usage, layout diversity, table/chart/process/matrix/diagram usage, and fidelity to the selected template.html. Keep the deck compact enough to return completely.',
+                'Repair or reconstruct the current HTML as compact <main class="deck-stage"> markup, not MarkMind Slide[] JSON. If the current HTML is truncated or lacks slide sections, rebuild from the source map. Increase template class usage, layout diversity, table/chart/process/matrix/diagram usage, and fidelity to the selected template.html. Keep the deck compact enough to return completely.',
                 36000,
               ),
             });
+            ensurePptxJobActive(jobId);
             const repairedDeck = htmlNativeDeckFromLlmHtml(repairedRaw);
             if (repairedDeck) {
               const repairedReport = validateHtmlNativeSlidesForTemplate(repairedDeck.html, htmlTheme.id);
@@ -886,15 +931,19 @@ function App() {
               }
             }
           } catch (repairErr) {
+            if (pptxCancelRequestedRef.current || isUserStoppedError(repairErr)) throw repairErr;
             if (!isRetryableHtmlNativeError(repairErr)) throw repairErr;
-            console.warn('[export_html_slides] native HTML repair failed, falling back:', repairErr);
-            pushPptxProgressStep(jobId, 'HTML-native 재작성 실패', '기존 렌더러 안전망으로 전환', 'html-native-repair');
+            console.warn('[export_html_slides] native HTML repair failed:', repairErr);
+            pushPptxProgressStep(jobId, 'HTML-native 재작성 실패', 'fallback 없이 중단', 'html-native-repair');
+            throw new Error(`HTML-native 재작성 실패: ${repairErr instanceof Error ? repairErr.message : String(repairErr)}`);
           }
         }
 
         if (initialReport.errors.length > 0) {
-          console.warn('[export_html_slides] native HTML QA failed:\n' + summarizeHtmlNativeValidation(initialReport));
-          pushPptxProgressStep(jobId, 'HTML-native 검증 실패', '기존 렌더러 안전망으로 전환', 'html-native-qa');
+          const summary = summarizeHtmlNativeValidation(initialReport);
+          console.warn('[export_html_slides] native HTML QA failed:\n' + summary);
+          pushPptxProgressStep(jobId, 'HTML-native 검증 실패', 'fallback 없이 중단', 'html-native-qa');
+          throw new Error(`HTML-native 검증 실패\n${summary}`);
         } else {
           if (initialReport.warnings.length > 0) {
             console.warn('[export_html_slides] native HTML QA warnings:\n' + summarizeHtmlNativeValidation(initialReport));
@@ -911,13 +960,15 @@ function App() {
             theme: slideTheme,
             onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
           });
+          ensurePptxJobActive(jobId);
           const applied = applyHtmlNativeAssetRecords(nativeDeck.html, assetResult.assets);
           html = ensureHtmlNativeDocument(applyFrontendTemplateRuntime(applied.html, htmlTheme.id), baseName);
           const finalReport = validateHtmlNativeSlidesForTemplate(html, htmlTheme.id);
           if (finalReport.errors.length > 0) {
-            console.warn('[export_html_slides] native HTML final QA failed:\n' + summarizeHtmlNativeValidation(finalReport));
-            pushPptxProgressStep(jobId, 'HTML-native 최종 검증 실패', '기존 렌더러 안전망으로 전환', 'html-native-final-qa');
-            html = null;
+            const summary = summarizeHtmlNativeValidation(finalReport);
+            console.warn('[export_html_slides] native HTML final QA failed:\n' + summary);
+            pushPptxProgressStep(jobId, 'HTML-native 최종 검증 실패', 'fallback 없이 중단', 'html-native-final-qa');
+            throw new Error(`HTML-native 최종 검증 실패\n${summary}`);
           } else {
             if (finalReport.warnings.length > 0) {
               console.warn('[export_html_slides] native HTML final QA warnings:\n' + summarizeHtmlNativeValidation(finalReport));
@@ -936,47 +987,18 @@ function App() {
         }
       } else {
         console.warn('[export_html_slides] native HTML response parsing failed. Raw:', raw);
-        pushPptxProgressStep(jobId, 'HTML-native 응답 해석 실패', '기존 렌더러 안전망으로 전환', 'html-native-parse');
+        pushPptxProgressStep(jobId, 'HTML-native 응답 해석 실패', 'fallback 없이 중단', 'html-native-parse');
+        const snippet = raw.trim().slice(0, 700) || '(empty response)';
+        throw new Error(`HTML-native 응답 해석 실패\n응답 앞부분:\n${snippet}`);
       }
 
-      if (!html) {
-        let slides = markdownToSlides(content);
-        if (slideImagePolicyMode(htmlExportOptions.imagePolicy) === 'sourceOnly') {
-          slides = preserveSourceImagesForPptx(slides, content);
-        }
-        pushPptxProgressStep(jobId, '기존 HTML 렌더러 안전망 실행 중...', undefined, 'html-fallback');
-        slides = normalizeSlidesForPptx(slides);
-        if (slides.length > PPTX_MAX_SLIDES) {
-          const originalCount = slides.length;
-          slides = slides.slice(0, PPTX_MAX_SLIDES);
-          pushPptxProgressStep(
-            jobId,
-            '슬라이드 장수 제한 적용',
-            `${originalCount}장 → ${PPTX_MAX_SLIDES}장`,
-            'html-slide-limit',
-          );
-        }
-        const report = validateSlideDeck(slides);
-        const issueSummary = summarizeSlideIssues(report);
-        if (issueSummary) console.warn('[export_html_slides] fallback slide QA warnings:\n' + issueSummary);
-        const fallbackAssetResult = await resolveSlideAssets(slides, htmlExportOptions, {
-          theme: slideTheme,
-          onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
-        });
-        htmlAssetRecords = fallbackAssetResult.assets;
-        html = await buildHtmlSlides(fallbackAssetResult.slides, {
-          title: baseName,
-          baseDir,
-          theme: htmlTheme,
-          fontFamily: htmlExportOptions.fontFamily,
-          transition: htmlExportOptions.htmlTransition,
-          editable: true,
-        });
-      }
+      if (!html.trim()) throw new Error('HTML-native 생성 결과가 비어 있습니다.');
 
       pushPptxProgressStep(jobId, 'HTML 파일 생성 중...', undefined, 'html-build');
+      ensurePptxJobActive(jobId);
       pushPptxProgressStep(jobId, 'HTML 저장 중...', undefined, 'html-save');
       await writeTextFile(path, html);
+      ensurePptxJobActive(jobId);
       if (htmlAssetRecords.length > 0) {
         pushPptxProgressStep(jobId, '이미지 에셋 저장 중...', `${htmlAssetRecords.length}개`, 'html-assets-save');
         try {
@@ -991,12 +1013,16 @@ function App() {
       }
       pushPptxProgressStep(jobId, 'HTML 생성 완료');
     } catch (err) {
+      if (pptxCancelRequestedRef.current || isUserStoppedError(err)) {
+        console.info('[export_html_slides] stopped by user');
+        return;
+      }
       console.error('[export_html_slides] failed:', err);
       alert(`HTML 생성에 실패했습니다.\n${err instanceof Error ? err.message : String(err)}`);
     } finally {
       clearPptxProgress();
     }
-  }, [beginPptxProgress, clearPptxProgress, content, fileName, filePath, pptxOptions, pushPptxProgressStep]);
+  }, [beginPptxProgress, clearPptxProgress, content, ensurePptxJobActive, fileName, pptxOptions, pushPptxProgressStep]);
 
   // AI
   const ai = useAI();
@@ -2505,6 +2531,17 @@ function App() {
             <div className="pptx-busy-head">
               <Loader2 size={20} className="spinning" />
               <span>{pptxBusy}</span>
+              <button
+                type="button"
+                className="pptx-stop-button"
+                onClick={handleStopPptxJob}
+                disabled={pptxCanceling}
+                title="정지"
+                aria-label="정지"
+              >
+                <Square size={14} />
+                <span>{pptxCanceling ? '정지 중' : '정지'}</span>
+              </button>
             </div>
             <ProgressPanel
               state={pptxProgress}

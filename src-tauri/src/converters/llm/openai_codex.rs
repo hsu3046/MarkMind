@@ -11,6 +11,8 @@ use futures_util::StreamExt;
 use std::time::Duration;
 
 const CODEX_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
+const CONNECT_TIMEOUT_SECS: u64 = 30;
+const REQUEST_TIMEOUT_SECS: u64 = 180;
 
 pub async fn generate_text(
     access_token: &str,
@@ -19,6 +21,28 @@ pub async fn generate_text(
     system: Option<&str>,
     prompt: &str,
     _max_output_tokens: Option<u32>,
+) -> ConverterResult<GenerateResult> {
+    generate_text_inner(access_token, account_id, model, system, prompt, false).await
+}
+
+pub async fn generate_text_without_total_timeout(
+    access_token: &str,
+    account_id: Option<&str>,
+    model: &str,
+    system: Option<&str>,
+    prompt: &str,
+    _max_output_tokens: Option<u32>,
+) -> ConverterResult<GenerateResult> {
+    generate_text_inner(access_token, account_id, model, system, prompt, true).await
+}
+
+async fn generate_text_inner(
+    access_token: &str,
+    account_id: Option<&str>,
+    model: &str,
+    system: Option<&str>,
+    prompt: &str,
+    without_total_timeout: bool,
 ) -> ConverterResult<GenerateResult> {
     // chatgpt.com Codex backend is not the public Responses API and currently rejects
     // `max_output_tokens` with HTTP 400. Keep the argument for call-site parity, but do
@@ -31,8 +55,12 @@ pub async fn generate_text(
         "store": false,
     });
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(180))
+    let mut builder =
+        reqwest::Client::builder().connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS));
+    if !without_total_timeout {
+        builder = builder.timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS));
+    }
+    let client = builder
         .build()
         .map_err(|e| ConverterError::Network(e.to_string()))?;
     let session_id = uuid::Uuid::new_v4().to_string();
@@ -93,19 +121,19 @@ async fn parse_sse_output_stream(resp: reqwest::Response) -> ConverterResult<Str
     let mut pending = String::new();
     let mut out = String::new();
     let mut head = String::new();
+    let mut completed = false;
+    let mut terminal_error: Option<String> = None;
 
     while let Some(chunk) = stream.next().await {
         let chunk = match chunk {
             Ok(chunk) => chunk,
             Err(err) => {
-                if !out.trim().is_empty() {
-                    eprintln!(
-                        "[codex] SSE stream ended with a body decode/read error after partial output: {}",
-                        err
-                    );
-                    return Ok(out);
-                }
-                return Err(ConverterError::Network(err.to_string()));
+                let suffix = if out.trim().is_empty() {
+                    String::new()
+                } else {
+                    " after partial output; partial output was discarded".to_string()
+                };
+                return Err(ConverterError::Network(format!("{err}{suffix}")));
             }
         };
         let text = String::from_utf8_lossy(&chunk);
@@ -119,14 +147,30 @@ async fn parse_sse_output_stream(resp: reqwest::Response) -> ConverterResult<Str
         while let Some(pos) = pending.find('\n') {
             let line = pending[..pos].trim_end_matches('\r').trim().to_string();
             pending = pending[pos + 1..].to_string();
-            parse_sse_line_into(&line, &mut out);
+            parse_sse_line_into(&line, &mut out, &mut completed, &mut terminal_error);
+            if let Some(err) = terminal_error.take() {
+                return Err(ConverterError::Codex(err));
+            }
         }
     }
     if !pending.trim().is_empty() {
-        parse_sse_line_into(pending.trim(), &mut out);
+        parse_sse_line_into(
+            pending.trim(),
+            &mut out,
+            &mut completed,
+            &mut terminal_error,
+        );
+    }
+    if let Some(err) = terminal_error {
+        return Err(ConverterError::Codex(err));
     }
     if out.trim().is_empty() {
         eprintln!("[codex] 빈 출력 — SSE 앞부분: {}", head);
+    }
+    if !completed {
+        return Err(ConverterError::Codex(
+            "SSE stream ended before response.completed; partial output was discarded.".into(),
+        ));
     }
     Ok(out)
 }
@@ -136,13 +180,20 @@ async fn parse_sse_output_stream(resp: reqwest::Response) -> ConverterResult<Str
 /// 중첩 output 구조에서 fallback 추출한다(형식 변형 관용 흡수).
 fn parse_sse_output(sse: &str) -> String {
     let mut out = String::new();
+    let mut completed = false;
+    let mut terminal_error = None;
     for line in sse.lines() {
-        parse_sse_line_into(line, &mut out);
+        parse_sse_line_into(line, &mut out, &mut completed, &mut terminal_error);
     }
     out
 }
 
-fn parse_sse_line_into(line: &str, out: &mut String) {
+fn parse_sse_line_into(
+    line: &str,
+    out: &mut String,
+    completed: &mut bool,
+    terminal_error: &mut Option<String>,
+) {
     let line = line.trim();
     let Some(data) = line.strip_prefix("data:") else {
         return;
@@ -162,14 +213,29 @@ fn parse_sse_line_into(line: &str, out: &mut String) {
             }
         }
         "response.completed" | "response.output_item.done" => {
+            if t == "response.completed" {
+                *completed = true;
+            }
             if out.is_empty() {
                 if let Some(txt) = extract_completed_text(&v) {
                     out.push_str(&txt);
                 }
             }
         }
+        "response.failed" | "response.incomplete" | "error" => {
+            *terminal_error = Some(extract_terminal_error(&v));
+        }
         _ => {}
     }
+}
+
+fn extract_terminal_error(v: &serde_json::Value) -> String {
+    v.pointer("/response/error/message")
+        .or_else(|| v.pointer("/error/message"))
+        .or_else(|| v.pointer("/response/incomplete_details/reason"))
+        .and_then(|x| x.as_str())
+        .map(|msg| format!("Codex SSE terminal event: {msg}"))
+        .unwrap_or_else(|| "Codex SSE terminal error event".to_string())
 }
 
 /// 완료 이벤트의 중첩 구조에서 output_text 텍스트를 긁어온다.

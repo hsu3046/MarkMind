@@ -16,6 +16,8 @@ const UPLOAD_URL: &str = "https://generativelanguage.googleapis.com/upload/v1bet
 
 const MAX_RETRIES: u32 = 4;
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
+const CONNECT_TIMEOUT_SECS: u64 = 30;
+const REQUEST_TIMEOUT_SECS: u64 = 600;
 
 pub struct InlineData {
     pub mime_type: String,
@@ -153,6 +155,27 @@ pub async fn generate_text(
     inline: Vec<InlineData>,
     config: Option<GenerationConfig>,
 ) -> ConverterResult<GenerateResult> {
+    generate_text_inner(api_key, model, prompt, inline, config, false).await
+}
+
+pub async fn generate_text_without_total_timeout(
+    api_key: &str,
+    model: &str,
+    prompt: &str,
+    inline: Vec<InlineData>,
+    config: Option<GenerationConfig>,
+) -> ConverterResult<GenerateResult> {
+    generate_text_inner(api_key, model, prompt, inline, config, true).await
+}
+
+async fn generate_text_inner(
+    api_key: &str,
+    model: &str,
+    prompt: &str,
+    inline: Vec<InlineData>,
+    config: Option<GenerationConfig>,
+    without_total_timeout: bool,
+) -> ConverterResult<GenerateResult> {
     let mut parts: Vec<Part> = inline
         .into_iter()
         .map(|d| Part::InlineData {
@@ -177,7 +200,14 @@ pub async fn generate_text(
     };
 
     let url = format!("{}/{}:generateContent?key={}", GENERATE_URL, model, api_key);
-    call_generate(&url, &body, model, &format!("generateContent({})", model)).await
+    call_generate(
+        &url,
+        &body,
+        model,
+        &format!("generateContent({})", model),
+        without_total_timeout,
+    )
+    .await
 }
 
 pub async fn generate_text_with_file_api(
@@ -262,6 +292,7 @@ pub async fn generate_text_with_file_api(
         &body,
         model,
         &format!("generateContent(file {})", model),
+        false,
     )
     .await;
 
@@ -283,7 +314,7 @@ async fn upload_file(
         .unwrap_or("upload")
         .to_string();
 
-    let client = build_client()?;
+    let client = build_client(false)?;
     let mime_owned = mime_type.to_string();
 
     // Resumable upload protocol — start, then upload.
@@ -366,7 +397,7 @@ async fn get_file_status(api_key: &str, name: &str) -> ConverterResult<GeminiFil
         "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
         name, api_key
     );
-    let client = build_client()?;
+    let client = build_client(false)?;
     let resp = client.get(&url).send().await.map_err(http_to_converter)?;
     if !resp.status().is_success() {
         let body = resp.text().await.unwrap_or_default();
@@ -387,7 +418,7 @@ async fn delete_file(api_key: &str, name: &str) -> ConverterResult<()> {
         "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
         name, api_key
     );
-    let client = build_client()?;
+    let client = build_client(false)?;
     let _ = client.delete(&url).send().await;
     Ok(())
 }
@@ -399,8 +430,9 @@ async fn call_generate(
     body: &GenerateRequest,
     model: &str,
     label: &str,
+    without_total_timeout: bool,
 ) -> ConverterResult<GenerateResult> {
-    let client = build_client()?;
+    let client = build_client(without_total_timeout)?;
     let body_bytes = serde_json::to_vec(body)?;
     let url_owned = url.to_string();
     let resp = with_retry(label, || {
@@ -453,11 +485,13 @@ async fn call_generate(
     })
 }
 
-fn build_client() -> ConverterResult<reqwest::Client> {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(600))
-        .build()
-        .map_err(ConverterError::from)
+fn build_client(without_total_timeout: bool) -> ConverterResult<reqwest::Client> {
+    let mut builder =
+        reqwest::Client::builder().connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS));
+    if !without_total_timeout {
+        builder = builder.timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS));
+    }
+    builder.build().map_err(ConverterError::from)
 }
 
 async fn with_retry<F, Fut, T>(label: &str, mut f: F) -> ConverterResult<T>
