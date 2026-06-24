@@ -247,7 +247,8 @@ export function kanbanToMarkdown(board: GeneratedKanban): string {
     }
 
     const out: string[] = [`# ${title}`];
-    for (const section of order) {
+    const sections = bySection.has('') ? ['', ...order.filter((section) => section !== '')] : order;
+    for (const section of sections) {
         out.push('');
         if (section) out.push(`## ${section}`);
         out.push(...bySection.get(section)!);

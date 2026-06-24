@@ -82,11 +82,12 @@ describe('kanbanToMarkdown', () => {
         expect(md).toContain('@start(2026-07-01)');
         expect(md).not.toContain('2026-13-40');
         const { cards } = parseKanban(md);
-        expect(cards[0].label).toBe('리뷰');
-        expect(cards[0].section).toBe('QA');
-        expect(cards[0].status).toBe('review');
-        expect(cards[1].status).toBe('todo');
-        expect(cards[1].priority).toBeNull();
+        const review = cards.find((card) => card.label === '리뷰');
+        const unknown = cards.find((card) => card.label === '알 수 없음');
+        expect(review?.section).toBe('QA');
+        expect(review?.status).toBe('review');
+        expect(unknown?.status).toBe('todo');
+        expect(unknown?.priority).toBeNull();
     });
 
     it('normalizes Korean status aliases with spaces from generated JSON', () => {
@@ -131,6 +132,18 @@ describe('kanbanToMarkdown', () => {
         expect(cards[0].section).toBe('');
         expect(cards[1].section).toBe('');
         expect(cards[2].section).toBe('결제');
+    });
+
+    it('keeps unsectioned cards at root even when generated after a section', () => {
+        const md = kanbanToMarkdown({
+            cards: [
+                { name: 'API 구현', section: '개발', status: 'doing' },
+                { name: '루트 작업', status: 'todo' },
+            ],
+        });
+        const { cards } = parseKanban(md);
+        expect(cards.find((card) => card.label === 'API 구현')?.section).toBe('개발');
+        expect(cards.find((card) => card.label === '루트 작업')?.section).toBe('');
     });
 
     it('defaults the title and skips empty card names', () => {
