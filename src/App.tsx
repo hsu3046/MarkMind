@@ -795,6 +795,7 @@ function App() {
           sanitizeHtmlNativeSlides,
           slidesFromHtmlNativeAssetIntents,
           summarizeHtmlNativeValidation,
+          unresolvedHtmlNativeAssetPlaceholders,
           validateHtmlNativeSlidesForTemplate,
         },
         { resolveSlideAssets },
@@ -998,6 +999,19 @@ function App() {
           });
           ensurePptxJobActive(jobId);
           const applied = applyHtmlNativeAssetRecords(nativeDeck.html, assetResult.assets);
+          const unresolvedAssetIds = unresolvedHtmlNativeAssetPlaceholders(applied.html);
+          if (unresolvedAssetIds.length > 0) {
+            const previewIds = unresolvedAssetIds.slice(0, 8).join(', ');
+            const suffix = unresolvedAssetIds.length > 8 ? ` 외 ${unresolvedAssetIds.length - 8}개` : '';
+            console.warn('[export_html_slides] unresolved native HTML asset placeholders:', unresolvedAssetIds);
+            pushPptxProgressStep(
+              jobId,
+              'HTML 이미지 에셋 검증 실패',
+              `${unresolvedAssetIds.length}개 미해결`,
+              'html-native-assets-qa',
+            );
+            throw new Error(`HTML 이미지 에셋을 준비하지 못했습니다: ${previewIds}${suffix}`);
+          }
           html = ensureHtmlNativeDocument(sanitizeHtmlNativeSlides(applied.html), baseName);
           const runtimeFiles = getHtmlSlideRuntimeFilesForHtml(html, htmlTheme.id);
           const finalReport = validateHtmlNativeSlidesForTemplate(html, htmlTheme.id);

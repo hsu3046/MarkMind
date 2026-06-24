@@ -1,6 +1,6 @@
 import type { Slide, SlideImageLicenseStrictness, SlideImageRole, SlideImageSourcePreference } from '../markdownToSlides';
 import type { ResolvedSlideAsset, SlideAssetRecord, SlideImageIntent } from '../../services/slideAssets';
-import { hasDangerousUrlScheme, normalizeRuntimeScriptSrc } from './htmlUrlSafety';
+import { decodeHtmlAttributeValue, hasDangerousUrlScheme, normalizeRuntimeScriptSrc } from './htmlUrlSafety';
 
 export interface HtmlNativeAssetIntentInput {
   id?: unknown;
@@ -101,6 +101,10 @@ function isAllowedTemplateRuntimeScript(src: string): boolean {
 }
 
 const URL_ATTRIBUTE_RE = /\b(href|src|xlink:href|formaction)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi;
+const MARKMIND_ASSET_PLACEHOLDER_RE = /\{\{\s*markmind_asset:([\w.-]+)\s*\}\}|markmind-asset:\/\/([\w.-]+)/gi;
+const INLINE_CLICK_RE = /\s+onclick\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/i;
+const TRUSTED_NAV_TAG_RE = /<(?:button|a)\b[^>]*>/gi;
+const TRUSTED_TEMPLATE_NAV_BINDINGS_ID = 'markmind-template-nav-bindings';
 
 function hasInlineEventHandlerAttribute(html: string): boolean {
   return /\s+on[a-z][\w:-]*\s*=/i.test(html);
@@ -108,6 +112,78 @@ function hasInlineEventHandlerAttribute(html: string): boolean {
 
 function hasDangerousUrlAttribute(html: string): boolean {
   return [...html.matchAll(URL_ATTRIBUTE_RE)].some((match) => hasDangerousUrlScheme(match[2] ?? ''));
+}
+
+function unquoteAttributeValue(raw: string): string {
+  const trimmed = raw.trim();
+  const quote = trimmed[0];
+  if ((quote === '"' || quote === "'") && trimmed.endsWith(quote)) return trimmed.slice(1, -1);
+  return trimmed;
+}
+
+function trustedTemplateNavAction(rawValue: string): 'prev' | 'next' | null {
+  const value = decodeHtmlAttributeValue(unquoteAttributeValue(rawValue)).replace(/[\u0000-\u001f\u007f\s;]+/g, '');
+  if (/^prevSlide\(\)$/i.test(value)) return 'prev';
+  if (/^nextSlide\(\)$/i.test(value)) return 'next';
+  const changeSlide = value.match(/^changeSlide\(([+-]?\d+)\)$/i);
+  if (!changeSlide) return null;
+  const delta = Number(changeSlide[1]);
+  if (delta === -1) return 'prev';
+  if (delta === 1) return 'next';
+  return null;
+}
+
+function rewriteTrustedTemplateNavHandlers(html: string): { html: string; rewritten: boolean } {
+  let rewritten = false;
+  const next = html.replace(TRUSTED_NAV_TAG_RE, (tag) => {
+    let navAction: 'prev' | 'next' | null = null;
+    const withoutInlineClick = tag.replace(INLINE_CLICK_RE, (full, rawValue: string) => {
+      const action = trustedTemplateNavAction(rawValue);
+      if (!action) return full;
+      navAction = action;
+      return '';
+    });
+    if (!navAction) return tag;
+    rewritten = true;
+    if (/\sdata-markmind-nav\s*=/i.test(withoutInlineClick)) return withoutInlineClick;
+    return withoutInlineClick.replace(/\s*>$/, ` data-markmind-nav="${navAction}">`);
+  });
+  return { html: next, rewritten };
+}
+
+function ensureTrustedTemplateNavBindings(html: string, shouldBind: boolean): string {
+  if (!shouldBind || new RegExp(`\\bid=(["'])${TRUSTED_TEMPLATE_NAV_BINDINGS_ID}\\1`, 'i').test(html)) return html;
+  const script = `<script id="${TRUSTED_TEMPLATE_NAV_BINDINGS_ID}">
+(function () {
+  function callTemplateNav(action) {
+    if (action === 'prev') {
+      if (typeof window.prevSlide === 'function') { window.prevSlide(); return; }
+      if (typeof window.changeSlide === 'function') { window.changeSlide(-1); }
+      return;
+    }
+    if (action === 'next') {
+      if (typeof window.nextSlide === 'function') { window.nextSlide(); return; }
+      if (typeof window.changeSlide === 'function') { window.changeSlide(1); }
+    }
+  }
+  function bindTemplateNav() {
+    document.querySelectorAll('[data-markmind-nav="prev"], [data-markmind-nav="next"]').forEach(function (el) {
+      if (el.dataset.markmindNavBound === 'true') return;
+      el.dataset.markmindNavBound = 'true';
+      el.addEventListener('click', function () {
+        callTemplateNav(el.getAttribute('data-markmind-nav'));
+      });
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindTemplateNav, { once: true });
+  } else {
+    bindTemplateNav();
+  }
+})();
+</script>`;
+  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, `${script}\n</body>`);
+  return `${html}\n${script}`;
 }
 
 function extractAssetIntents(html: string): HtmlNativeAssetIntentInput[] {
@@ -238,6 +314,15 @@ export function applyHtmlNativeAssetRecords(
   );
 }
 
+export function unresolvedHtmlNativeAssetPlaceholders(html: string): string[] {
+  const ids = new Set<string>();
+  for (const match of html.matchAll(MARKMIND_ASSET_PLACEHOLDER_RE)) {
+    const id = match[1] ?? match[2];
+    if (id) ids.add(id);
+  }
+  return [...ids];
+}
+
 export function slidesFromHtmlNativeAssetIntents(intents: SlideImageIntent[]): Slide[] {
   return intents.map((intent): Slide => ({
     title: intent.title,
@@ -268,7 +353,8 @@ export function slidesFromHtmlNativeAssetIntents(intents: SlideImageIntent[]): S
 }
 
 export function sanitizeHtmlNativeSlides(html: string): string {
-  return html
+  const nav = rewriteTrustedTemplateNavHandlers(html);
+  return ensureTrustedTemplateNavBindings(nav.html, nav.rewritten)
     .replace(/<script\b(?=[^>]*\bsrc\s*=)[^>]*>[\s\S]*?<\/script>/gi, (script) => {
       const src = scriptSrcs(script)[0];
       return src && isAllowedTemplateRuntimeScript(src) ? script : '';
@@ -324,7 +410,8 @@ export function validateHtmlNativeSlides(html: string): HtmlNativeValidationRepo
   if (/<\s*(iframe|object|embed|applet)\b/i.test(html)) errors.push('iframe/object/embed/applet 태그는 허용하지 않습니다.');
   if (hasInlineEventHandlerAttribute(html)) errors.push('inline on* 이벤트 핸들러 속성은 허용하지 않습니다.');
   if (hasDangerousUrlAttribute(html)) errors.push('javascript: URL 속성은 허용하지 않습니다.');
-  if (/\{\{\s*markmind_asset:/i.test(html) || /markmind-asset:\/\//i.test(html)) {
+  const unresolvedAssetIds = unresolvedHtmlNativeAssetPlaceholders(html);
+  if (unresolvedAssetIds.length > 0) {
     warnings.push('치환되지 않은 이미지 placeholder가 남아 있습니다.');
   }
   if (slideCount >= 6 && layouts.size > 0 && layouts.size < 3) {

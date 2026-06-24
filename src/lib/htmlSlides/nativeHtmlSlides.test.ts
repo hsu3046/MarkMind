@@ -6,6 +6,7 @@ import {
   normalizeHtmlNativeAssetIntents,
   sanitizeHtmlNativeSlides,
   slidesFromHtmlNativeAssetIntents,
+  unresolvedHtmlNativeAssetPlaceholders,
   validateHtmlNativeSlides,
   validateHtmlNativeSlidesForTemplate,
 } from './nativeHtmlSlides';
@@ -80,6 +81,13 @@ describe('nativeHtmlSlides', () => {
     expect(applied.insertedIds.has('cover-hero')).toBe(true);
   });
 
+  it('reports unresolved MarkMind asset placeholders after asset application', () => {
+    const applied = applyHtmlNativeAssetRecords(nativeHtml, []);
+
+    expect(unresolvedHtmlNativeAssetPlaceholders(applied.html)).toEqual(['cover-hero']);
+    expect(validateHtmlNativeSlides(applied.html).warnings.join('\n')).toContain('이미지 placeholder');
+  });
+
   it('sanitizes dangerous tags while preserving supported local runtime scripts', () => {
     const dirty = [
       nativeHtml,
@@ -108,6 +116,32 @@ describe('nativeHtmlSlides', () => {
     expect(clean).toContain('formaction="#"');
     expect(report.errors).toEqual([]);
     expect(report.slideCount).toBe(2);
+  });
+
+  it('rewrites trusted template navigation handlers without allowing arbitrary inline events', () => {
+    const dirty = `<!DOCTYPE html><html><body>
+      <section class="slide active" data-layout="cover"></section>
+      <button class="nav-btn" onclick="changeSlide(-1)">Prev</button>
+      <button class="nav-btn" onclick="changeSlide(1)">Next</button>
+      <a class="nav-btn" onclick="prevSlide()">Previous link</a>
+      <button class="nav-btn" onclick="nextSlide()">Next button</button>
+      <button class="bad" onclick="alert(1)">Bad</button>
+      <script>
+        function changeSlide(dir) {}
+        function prevSlide() {}
+        function nextSlide() {}
+      </script>
+    </body></html>`;
+
+    const clean = ensureHtmlNativeDocument(sanitizeHtmlNativeSlides(dirty));
+    const report = validateHtmlNativeSlides(clean);
+
+    expect(clean.match(/<(?:button|a)\b[^>]*data-markmind-nav="prev"/g)).toHaveLength(2);
+    expect(clean.match(/<(?:button|a)\b[^>]*data-markmind-nav="next"/g)).toHaveLength(2);
+    expect(clean).toContain('markmind-template-nav-bindings');
+    expect(clean).not.toContain('onclick=');
+    expect(clean).not.toContain('alert(1)');
+    expect(report.errors).toEqual([]);
   });
 
   it('rejects unsanitized inline event handlers and javascript URLs', () => {
