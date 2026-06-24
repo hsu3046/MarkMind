@@ -75,6 +75,16 @@ describe('updateKanbanCardLine', () => {
         expect(parseGantt(next).tasks[0].progress).toBe(100);
     });
 
+    it('clears inferred 100% progress when moving a card out of done', () => {
+        const md = `# Board
+- 릴리스 @start(2026-07-10) @progress(100)
+`;
+        const next = updateKanbanCardLine(md, 2, { status: 'todo' });
+        expect(next.split('\n')[1]).toBe('- [ ] 릴리스 @status(todo) @start(2026-07-10)');
+        expect(parseKanban(next).cards[0].status).toBe('todo');
+        expect(parseGantt(next).tasks[0].progress).toBe(0);
+    });
+
     it('returns the original markdown for invalid line coordinates', () => {
         const md = '# Board\n- [ ] 작업 @status(todo)\n';
         expect(updateKanbanCardLine(md, 0, { status: 'done' })).toBe(md);

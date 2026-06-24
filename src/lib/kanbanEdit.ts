@@ -146,9 +146,12 @@ function buildLine(parsed: ParsedLine, patch: KanbanCardPatch): string {
     const priority = patch.priority !== undefined ? patch.priority : parsed.priority;
     const start = patch.start !== undefined ? normalizeDate(patch.start) : parsed.start;
     let due = patch.due !== undefined ? normalizeDate(patch.due) : parsed.due;
-    const progress = patch.progress !== undefined ? normalizeProgress(patch.progress) : parsed.progress;
+    let progress = patch.progress !== undefined ? normalizeProgress(patch.progress) : parsed.progress;
     const order = patch.order !== undefined ? normalizeOrder(patch.order) : parsed.order;
     if (start && due && due < start) due = null;
+    if (patch.status !== undefined && patch.status !== 'done' && patch.progress === undefined && progress === 100) {
+        progress = null;
+    }
 
     const markers: string[] = [];
     if (status) markers.push(`@status(${status})`);
