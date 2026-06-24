@@ -723,6 +723,7 @@ function App() {
           summarizeHtmlNativeValidation,
           validateHtmlNativeSlidesForTemplate,
         },
+        { applyFrontendTemplateRuntime },
         { normalizeSlidesForPptx, validateSlideDeck, summarizeSlideIssues },
         { resolveSlideAssets },
         { saveSlideAssetBundle },
@@ -734,6 +735,7 @@ function App() {
         import('./lib/buildHtmlSlides'),
         import('./lib/htmlSlides/frontendSlidesDocs'),
         import('./lib/htmlSlides/nativeHtmlSlides'),
+        import('./lib/htmlSlides/templateRuntime'),
         import('./lib/slideValidation'),
         import('./services/slideAssets'),
         import('./services/slideAssetBundle'),
@@ -764,6 +766,7 @@ function App() {
         'Autonomous design mode: do not ask for style previews or user selection. Infer one visual thesis for the whole deck from the document, audience, tone, and selected template, then distribute slide roles and visual intensity yourself.',
         'Before writing HTML, decide which pages are cover, section beat, core argument, evidence, contrast, quote, stat, image essay, and closing. Encode that decision in section classes, data-layout values, hierarchy, and image slots.',
         'Output a complete HTML document directly. Do not output MarkMind Slide[] JSON, PptxGenJS options, or markdown.',
+        'MarkMind will inject the selected template runtime CSS/JS after generation. Your priority is to emit template-native section classes and DOM/component grammar that the runtime can style.',
         'Trace mode: treat the selected beautiful-html-templates template.html as the primary implementation pattern. Reuse its slide class names and component DOM grammar whenever the content fits.',
         `HTML template recipe: ${htmlTheme.name}. ${htmlTheme.description}`,
         frontendSlidesDesignRules,
@@ -909,7 +912,7 @@ function App() {
             onProgress: (step, detail, stepId) => pushPptxProgressStep(jobId, step, detail, stepId),
           });
           const applied = applyHtmlNativeAssetRecords(nativeDeck.html, assetResult.assets);
-          html = ensureHtmlNativeDocument(applied.html, baseName);
+          html = ensureHtmlNativeDocument(applyFrontendTemplateRuntime(applied.html, htmlTheme.id), baseName);
           const finalReport = validateHtmlNativeSlidesForTemplate(html, htmlTheme.id);
           if (finalReport.errors.length > 0) {
             console.warn('[export_html_slides] native HTML final QA failed:\n' + summarizeHtmlNativeValidation(finalReport));

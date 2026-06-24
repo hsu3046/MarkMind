@@ -300,10 +300,19 @@ export function validateHtmlNativeSlides(html: string): HtmlNativeValidationRepo
   return { slideCount, layoutCount: layouts.size, templateClassHits: 0, templateClassHitRatio: 0, errors, warnings };
 }
 
+function sectionClassValues(html: string): string[] {
+  return [...html.matchAll(/<section\b[^>]*\bclass=(["'])(.*?)\1[^>]*>/gi)]
+    .map((match) => match[2] ?? '')
+    .filter(Boolean);
+}
+
 export function validateHtmlNativeSlidesForTemplate(html: string, themeId?: string): HtmlNativeValidationReport {
   const report = validateHtmlNativeSlides(html);
   const profile = getFrontendSlidesTemplateProfile(themeId);
-  const hits = profile.layoutClasses.filter((className) => new RegExp(`\\b${className.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(html));
+  const sectionClasses = sectionClassValues(html);
+  const hits = profile.layoutClasses.filter((className) =>
+    sectionClasses.some((classes) => new RegExp(`\\b${className.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(classes)),
+  );
   const hitRatio = profile.layoutClasses.length > 0 ? hits.length / profile.layoutClasses.length : 0;
   report.templateClassHits = hits.length;
   report.templateClassHitRatio = hitRatio;
