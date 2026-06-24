@@ -18,6 +18,7 @@ const IMAGE_SRC_RE = /(<(?:img|source)\b[^>]*\bsrc\s*=\s*)(?:"([^"]*)"|'([^']*)'
 const CSS_URL_RE = /(url\(\s*)(?:"([^"]*)"|'([^']*)'|([^'")\s]+))(\s*\))/gi;
 const STYLE_TAG_RE = /(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi;
 const STYLE_ATTR_RE = /(\bstyle\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
+const MARKDOWN_IMAGE_RE = /!\[[^\]]*]\(([^)]+)\)/g;
 const IMAGE_EXT_RE = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp|ico)(?:[?#].*)?$/i;
 const PASS_THROUGH_URL_RE = /^(?:https?:|data:|blob:|asset:|tauri:|mailto:|#|javascript:|vbscript:|markmind-asset:)/i;
 
@@ -90,6 +91,57 @@ function localSourcePathCandidates(rawValue: string, sourceDocDir: string | null
     resolved.push(resolveRelativePath(candidate, sourceDocDir));
   }
   return resolved.filter((candidate, index, all) => all.indexOf(candidate) === index);
+}
+
+function maskCodeFences(content: string): string {
+  const lines = content.split('\n');
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const open = lines[i].match(/^[ ]{0,3}(([`~])\2{2,})/);
+    if (open) {
+      const ch = open[2];
+      const minLen = open[1].length;
+      const closeRe = new RegExp(`^[ ]{0,3}${ch === '`' ? '`' : '~'}{${minLen},}[ \\t]*$`);
+      i += 1;
+      while (i < lines.length && !closeRe.test(lines[i])) i += 1;
+      if (i < lines.length) i += 1;
+      out.push('');
+      continue;
+    }
+    out.push(lines[i]);
+    i += 1;
+  }
+  return out.join('\n');
+}
+
+function markdownImageDestination(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('<')) {
+    const end = trimmed.indexOf('>');
+    return end >= 0 ? trimmed.slice(1, end).trim() : trimmed;
+  }
+  const titleMatch = trimmed.match(/^(\S+)(?:\s+["'][\s\S]*["'])$/);
+  return (titleMatch?.[1] ?? trimmed).trim();
+}
+
+function collectKnownSourceImagePaths(sourceMarkdown: string | null | undefined, sourceDocDir: string | null): Set<string> {
+  const known = new Set<string>();
+  if (!sourceMarkdown || !sourceDocDir) return known;
+  const markdown = maskCodeFences(sourceMarkdown);
+  for (const match of markdown.matchAll(MARKDOWN_IMAGE_RE)) {
+    const raw = markdownImageDestination(match[1] ?? '');
+    for (const candidate of localSourcePathCandidates(raw, sourceDocDir, true)) {
+      known.add(candidate);
+    }
+  }
+  for (const match of markdown.matchAll(IMAGE_SRC_RE)) {
+    const raw = match[2] ?? match[3] ?? match[4] ?? '';
+    for (const candidate of localSourcePathCandidates(raw, sourceDocDir, true)) {
+      known.add(candidate);
+    }
+  }
+  return known;
 }
 
 function htmlAttr(value: string): string {
@@ -204,15 +256,19 @@ export async function rebaseHtmlSourceImageReferences(
   html: string,
   {
     sourceDocPath,
+    sourceMarkdown,
     htmlPath,
     deps,
   }: {
     sourceDocPath?: string | null;
+    sourceMarkdown?: string | null;
     htmlPath: string;
     deps?: HtmlSourceImageRebaseDeps;
   },
 ): Promise<HtmlSourceImageRebaseResult> {
   const sourceDocDir = sourceDirFromPath(sourceDocPath);
+  const knownSourceImages = collectKnownSourceImagePaths(sourceMarkdown, sourceDocDir);
+  if (knownSourceImages.size === 0) return { html, copied: 0, rewritten: 0 };
   const htmlDir = parentDirFromPath(htmlPath);
   const bundleDirName = `${deckStemFromPath(htmlPath)}.assets`;
   const targetRelDir = `${bundleDirName}/source`;
@@ -234,7 +290,10 @@ export async function rebaseHtmlSourceImageReferences(
   let mkdirDone = false;
 
   for (const [raw, candidates] of rawToCandidates) {
-    const sourcePath = await firstExistingPath(candidates, d.exists);
+    const sourcePath = await firstExistingPath(
+      candidates.filter((candidate) => knownSourceImages.has(candidate)),
+      d.exists,
+    );
     if (!sourcePath) continue;
     rawToSource.set(raw, sourcePath);
     if (sourceToRel.has(sourcePath)) continue;

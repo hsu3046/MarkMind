@@ -17,6 +17,7 @@ type AssetSourceKind = 'stock' | 'generated';
 export interface SlideImageIntent {
   slideIndex: number;
   slideId: string;
+  rawSlideId?: string;
   title: string;
   role: SlideImageRole;
   query?: string;
@@ -46,6 +47,7 @@ export interface SlideAssetRecord {
   slideIndex: number;
   slideTitle: string;
   slideId: string;
+  rawSlideId?: string;
   role: SlideImageRole;
   sourceMode: AssetSourceKind;
   provider: AssetProvider;
@@ -455,6 +457,7 @@ function makeAssetRecord(
     slideIndex: intent.slideIndex,
     slideTitle: intent.title,
     slideId: intent.slideId,
+    rawSlideId: intent.rawSlideId,
     role: intent.role,
     sourceMode,
     provider: asset.provider,

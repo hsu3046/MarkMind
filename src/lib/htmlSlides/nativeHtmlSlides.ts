@@ -101,7 +101,7 @@ function isAllowedTemplateRuntimeScript(src: string): boolean {
 }
 
 const URL_ATTRIBUTE_RE = /\b(href|src|xlink:href|formaction)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi;
-const MARKMIND_ASSET_PLACEHOLDER_RE = /\{\{\s*markmind_asset:([\w.-]+)\s*\}\}|markmind-asset:\/\/([\w.-]+)/gi;
+const MARKMIND_ASSET_PLACEHOLDER_RE = /\{\{\s*markmind_asset:([^}]+?)\s*\}\}|markmind-asset:\/\/([^"'\s)<]+)/gi;
 const INLINE_CLICK_RE = /\s+onclick\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/i;
 const TRUSTED_NAV_TAG_RE = /<(?:button|a)\b[^>]*>/gi;
 const TRUSTED_TEMPLATE_NAV_BINDINGS_ID = 'markmind-template-nav-bindings';
@@ -223,7 +223,8 @@ function normalizeLicense(value: unknown): SlideImageLicenseStrictness {
 export function normalizeHtmlNativeAssetIntents(inputs: HtmlNativeAssetIntentInput[]): SlideImageIntent[] {
   return inputs
     .map((input, index): SlideImageIntent | null => {
-      const id = safeAssetId(input.id, index);
+      const rawId = stringValue(input.id);
+      const id = safeAssetId(rawId, index);
       const slideIndex = Math.max(0, Math.round(numberValue(input.slideIndex) ?? index));
       const title = stringValue(input.slideTitle) ?? stringValue(input.title) ?? `Slide ${slideIndex + 1}`;
       const query = stringValue(input.query);
@@ -234,6 +235,7 @@ export function normalizeHtmlNativeAssetIntents(inputs: HtmlNativeAssetIntentInp
       return {
         slideIndex,
         slideId: id,
+        rawSlideId: rawId && rawId !== id ? rawId : undefined,
         title,
         role: normalizeRole(input.role, slideIndex === 0 ? 'cover' : 'support'),
         query,
@@ -252,12 +254,17 @@ export function normalizeHtmlNativeAssetIntents(inputs: HtmlNativeAssetIntentInp
     .filter((intent): intent is SlideImageIntent => Boolean(intent));
 }
 
-function tokenPatterns(id: string): RegExp[] {
-  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return [
-    new RegExp(`\\{\\{\\s*markmind_asset:${escaped}\\s*\\}\\}`, 'g'),
-    new RegExp(`markmind-asset://${escaped}`, 'g'),
-  ];
+function tokenPatterns(ids: Array<string | undefined>): RegExp[] {
+  return ids
+    .filter((id): id is string => Boolean(id?.trim()))
+    .filter((id, index, all) => all.indexOf(id) === index)
+    .flatMap((id) => {
+      const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return [
+        new RegExp(`\\{\\{\\s*markmind_asset:${escaped}\\s*\\}\\}`, 'g'),
+        new RegExp(`markmind-asset://${escaped}`, 'g'),
+      ];
+    });
 }
 
 export function applyHtmlNativeAssets(
@@ -269,7 +276,7 @@ export function applyHtmlNativeAssets(
   for (const item of resolvedAssets) {
     const id = item.intent.slideId;
     let inserted = false;
-    for (const pattern of tokenPatterns(id)) {
+    for (const pattern of tokenPatterns([id, item.intent.rawSlideId])) {
       if (pattern.test(next)) {
         inserted = true;
         next = next.replace(pattern, item.asset.dataUrl);
@@ -290,6 +297,7 @@ export function applyHtmlNativeAssetRecords(
       intent: {
         slideIndex: record.slideIndex,
         slideId: record.slideId,
+        rawSlideId: record.rawSlideId,
         title: record.slideTitle,
         role: record.role,
         query: record.query,
@@ -317,7 +325,7 @@ export function applyHtmlNativeAssetRecords(
 export function unresolvedHtmlNativeAssetPlaceholders(html: string): string[] {
   const ids = new Set<string>();
   for (const match of html.matchAll(MARKMIND_ASSET_PLACEHOLDER_RE)) {
-    const id = match[1] ?? match[2];
+    const id = (match[1] ?? match[2])?.trim();
     if (id) ids.add(id);
   }
   return [...ids];

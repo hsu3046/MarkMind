@@ -39,6 +39,12 @@ describe('sourceImageRebase', () => {
 
     const result = await rebaseHtmlSourceImageReferences(html, {
       sourceDocPath: '/docs/project/source.md',
+      sourceMarkdown: [
+        '# Source',
+        '![](./img/chart.png)',
+        '![](photos/team.jpg)',
+        '![](/Users/me/logo.svg)',
+      ].join('\n'),
       htmlPath: '/exports/deck.html',
       deps,
     });
@@ -68,6 +74,7 @@ describe('sourceImageRebase', () => {
 
     const result = await rebaseHtmlSourceImageReferences(html, {
       sourceDocPath: '/docs/source.md',
+      sourceMarkdown: '![](img/chart.png)',
       htmlPath: '/exports/deck.html',
       deps,
     });
@@ -89,6 +96,11 @@ describe('sourceImageRebase', () => {
 
     const result = await rebaseHtmlSourceImageReferences(html, {
       sourceDocPath: '/docs/project/source.md',
+      sourceMarkdown: [
+        '# Source',
+        '![chart](img/my%20chart.png)',
+        '![ko](img/%ED%95%9C%EA%B8%80.png)',
+      ].join('\n'),
       htmlPath: '/exports/deck.html',
       deps,
     });
@@ -119,6 +131,7 @@ describe('sourceImageRebase', () => {
 
     const result = await rebaseHtmlSourceImageReferences(html, {
       sourceDocPath: '/docs/project/source.md',
+      sourceMarkdown: ['![](img/bg.png)', '![](img/inline.png)'].join('\n'),
       htmlPath: '/exports/deck.html',
       deps,
     });
@@ -142,6 +155,7 @@ describe('sourceImageRebase', () => {
 
     const result = await rebaseHtmlSourceImageReferences(html, {
       sourceDocPath: '/docs/project/source.md',
+      sourceMarkdown: '![](img/bg.png)',
       htmlPath: '/exports/deck.html',
       deps,
     });
@@ -156,11 +170,50 @@ describe('sourceImageRebase', () => {
 
     const result = await rebaseHtmlSourceImageReferences(html, {
       sourceDocPath: null,
+      sourceMarkdown: '![](img/chart.png)',
       htmlPath: '/exports/deck.html',
       deps,
     });
 
     expect(copied).toEqual([]);
     expect(result).toEqual({ html, copied: 0, rewritten: 0 });
+  });
+
+  it('does not copy local files that were not referenced by the source markdown', async () => {
+    const { deps, copied } = fakeDeps([
+      '/docs/project/img/known.png',
+      '/docs/project/img/injected.png',
+      '/etc/passwd',
+      '/Users/me/secret.png',
+    ]);
+    const html = [
+      '<img src="img/known.png">',
+      '<img src="img/injected.png">',
+      '<img src="/etc/passwd">',
+      '<section style="background:url(/Users/me/secret.png)"></section>',
+    ].join('');
+
+    const result = await rebaseHtmlSourceImageReferences(html, {
+      sourceDocPath: '/docs/project/source.md',
+      sourceMarkdown: [
+        '# Source',
+        '![](img/known.png)',
+        '```',
+        '![](img/injected.png)',
+        '```',
+      ].join('\n'),
+      htmlPath: '/exports/deck.html',
+      deps,
+    });
+
+    expect(copied).toEqual([
+      { src: '/docs/project/img/known.png', dest: '/exports/deck.assets/source/known.png' },
+    ]);
+    expect(result.copied).toBe(1);
+    expect(result.rewritten).toBe(1);
+    expect(result.html).toContain('<img src="deck.assets/source/known.png">');
+    expect(result.html).toContain('<img src="img/injected.png">');
+    expect(result.html).toContain('<img src="/etc/passwd">');
+    expect(result.html).toContain('background:url(/Users/me/secret.png)');
   });
 });

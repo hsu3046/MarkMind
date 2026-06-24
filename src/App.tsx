@@ -1053,6 +1053,7 @@ function App() {
       if (sourceOnlyImages) {
         const rebased = await rebaseHtmlSourceImageReferences(html, {
           sourceDocPath: filePath,
+          sourceMarkdown: content,
           htmlPath: path,
         });
         html = rebased.html;

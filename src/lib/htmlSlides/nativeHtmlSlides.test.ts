@@ -81,11 +81,47 @@ describe('nativeHtmlSlides', () => {
     expect(applied.insertedIds.has('cover-hero')).toBe(true);
   });
 
+  it('replaces raw asset placeholders when normalized ids differ', () => {
+    const deck = htmlNativeDeckFromLlmHtml(`<!DOCTYPE html><html><body>
+      <section class="slide"><img src="{{markmind_asset:cover hero}}" alt=""></section>
+      <script type="application/json" id="markmind-asset-intents">[
+        {"id":"cover hero","slideIndex":0,"slideTitle":"Opening","prompt":"cover image"}
+      ]</script>
+    </body></html>`);
+    const intents = normalizeHtmlNativeAssetIntents(deck?.assetIntents ?? []);
+    const record: SlideAssetRecord = {
+      slideIndex: 0,
+      slideTitle: 'Opening',
+      slideId: 'cover-hero',
+      rawSlideId: 'cover hero',
+      role: 'cover',
+      sourceMode: 'generated',
+      provider: 'openai',
+      inserted: false,
+      importance: 70,
+      imageScore: 70,
+      dataUrl: 'data:image/png;base64,BBBB',
+    };
+
+    const applied = applyHtmlNativeAssetRecords(deck?.html ?? '', [record]);
+
+    expect(intents[0].slideId).toBe('cover-hero');
+    expect(intents[0].rawSlideId).toBe('cover hero');
+    expect(applied.html).toContain('data:image/png;base64,BBBB');
+    expect(unresolvedHtmlNativeAssetPlaceholders(applied.html)).toEqual([]);
+  });
+
   it('reports unresolved MarkMind asset placeholders after asset application', () => {
     const applied = applyHtmlNativeAssetRecords(nativeHtml, []);
 
     expect(unresolvedHtmlNativeAssetPlaceholders(applied.html)).toEqual(['cover-hero']);
     expect(validateHtmlNativeSlides(applied.html).warnings.join('\n')).toContain('이미지 placeholder');
+  });
+
+  it('reports malformed unresolved MarkMind asset placeholders', () => {
+    const html = '<section class="slide"><img src="{{markmind_asset:cover hero}}"><img src="markmind-asset://wide-hero"></section>';
+
+    expect(unresolvedHtmlNativeAssetPlaceholders(html)).toEqual(['cover hero', 'wide-hero']);
   });
 
   it('sanitizes dangerous tags while preserving supported local runtime scripts', () => {
