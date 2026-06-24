@@ -591,8 +591,7 @@ export async function resolveSlideAssets(
   }
 
   const remainingGenerated = Math.max(0, generatedLimit - queues.generated.length);
-  const generatedFallbackCapacity =
-    remainingGenerated > 0 ? remainingGenerated : Math.min(3, Math.ceil(stockUnresolved.length / 2));
+  const generatedFallbackCapacity = remainingGenerated;
   const shouldGeneratedFallback = sourceMode !== 'generatedOnly' && sourceMode !== 'stockOnly' && generatedFallbackCapacity > 0;
   if (shouldGeneratedFallback) {
     const fallbackQueue = stockUnresolved.filter(canGenerate).slice(0, generatedFallbackCapacity);

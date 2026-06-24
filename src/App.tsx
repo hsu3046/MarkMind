@@ -792,6 +792,7 @@ function App() {
           ensureHtmlNativeDocument,
           htmlNativeDeckFromLlmHtml,
           normalizeHtmlNativeAssetIntents,
+          sanitizeHtmlNativeSlides,
           slidesFromHtmlNativeAssetIntents,
           summarizeHtmlNativeValidation,
           validateHtmlNativeSlidesForTemplate,
@@ -915,6 +916,10 @@ function App() {
       let html = '';
       let htmlAssetRecords: Awaited<ReturnType<typeof resolveSlideAssets>>['assets'] = [];
       if (nativeDeck) {
+        nativeDeck = {
+          ...nativeDeck,
+          html: ensureHtmlNativeDocument(sanitizeHtmlNativeSlides(nativeDeck.html), baseName),
+        };
         let initialReport = validateHtmlNativeSlidesForTemplate(nativeDeck.html, htmlTheme.id);
         if (initialReport.errors.length > 0) {
           const summary = summarizeHtmlNativeValidation(initialReport);
@@ -939,8 +944,12 @@ function App() {
               ),
             });
             ensurePptxJobActive(jobId);
-            const repairedDeck = htmlNativeDeckFromLlmHtml(repairedRaw);
+            let repairedDeck = htmlNativeDeckFromLlmHtml(repairedRaw);
             if (repairedDeck) {
+              repairedDeck = {
+                ...repairedDeck,
+                html: ensureHtmlNativeDocument(sanitizeHtmlNativeSlides(repairedDeck.html), baseName),
+              };
               const repairedReport = validateHtmlNativeSlidesForTemplate(repairedDeck.html, htmlTheme.id);
               if (repairedReport.errors.length === 0) {
                 nativeDeck = repairedDeck;
@@ -987,7 +996,7 @@ function App() {
           });
           ensurePptxJobActive(jobId);
           const applied = applyHtmlNativeAssetRecords(nativeDeck.html, assetResult.assets);
-          html = ensureHtmlNativeDocument(applied.html, baseName);
+          html = ensureHtmlNativeDocument(sanitizeHtmlNativeSlides(applied.html), baseName);
           const runtimeFiles = getHtmlSlideRuntimeFilesForHtml(html, htmlTheme.id);
           const finalReport = validateHtmlNativeSlidesForTemplate(html, htmlTheme.id);
           if (finalReport.errors.length > 0) {

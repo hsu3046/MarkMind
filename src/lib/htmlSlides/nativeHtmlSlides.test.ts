@@ -81,7 +81,7 @@ describe('nativeHtmlSlides', () => {
   });
 
   it('sanitizes dangerous tags while preserving supported local runtime scripts', () => {
-    const dirty = `${nativeHtml}<script src="./deck-stage.js"></script><script src="https://example.com/x.js"></script><iframe src="https://example.com"></iframe><a onclick="x()" href="javascript:alert(1)">x</a>`;
+    const dirty = `${nativeHtml}<script src="./deck-stage.js"></script><script src="https://example.com/x.js"></script><iframe src="https://example.com"></iframe><a onclick="x()" href="javascript:alert(1)">x</a><img onerror=alert(1) src=javascript:alert(2)>`;
     const clean = ensureHtmlNativeDocument(sanitizeHtmlNativeSlides(dirty));
     const report = validateHtmlNativeSlides(clean);
 
@@ -89,8 +89,19 @@ describe('nativeHtmlSlides', () => {
     expect(clean).not.toContain('https://example.com/x.js');
     expect(clean).not.toContain('<iframe');
     expect(clean).not.toContain('onclick=');
+    expect(clean).not.toContain('onerror=');
+    expect(clean).not.toContain('javascript:');
     expect(report.errors).toEqual([]);
     expect(report.slideCount).toBe(2);
+  });
+
+  it('rejects unsanitized inline event handlers and javascript URLs', () => {
+    const report = validateHtmlNativeSlides(
+      '<!DOCTYPE html><html><body><section class="slide"><img src=x onerror="alert(1)"><a href=javascript:alert(1)>x</a></section></body></html>',
+    );
+
+    expect(report.errors.join('\n')).toContain('inline on* 이벤트 핸들러');
+    expect(report.errors.join('\n')).toContain('javascript: URL');
   });
 
   it('rejects deck-stage fragments from LLM output before accepting them as complete documents', () => {

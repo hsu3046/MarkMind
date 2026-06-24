@@ -99,6 +99,26 @@ function isAllowedTemplateRuntimeScript(src: string): boolean {
   return /(?:^|\/)deck-stage\.js$/i.test(clean);
 }
 
+const DANGEROUS_PROTOCOL_RE_SRC = String.raw`j\s*a\s*v\s*a\s*s\s*c\s*r\s*i\s*p\s*t\s*:`;
+
+function dangerousUrlAttributeRegex(flags = 'i'): RegExp {
+  const attr = String.raw`(href|src|xlink:href|formaction)`;
+  const quoted = String.raw`(?:"\s*${DANGEROUS_PROTOCOL_RE_SRC}[^"]*"|'\s*${DANGEROUS_PROTOCOL_RE_SRC}[^']*')`;
+  const unquoted = String.raw`[^\s>]*${DANGEROUS_PROTOCOL_RE_SRC}[^\s>]*`;
+  return new RegExp(
+    String.raw`\b${attr}\s*=\s*(?:${quoted}|${unquoted})`,
+    flags,
+  );
+}
+
+function hasInlineEventHandlerAttribute(html: string): boolean {
+  return /\s+on[a-z][\w:-]*\s*=/i.test(html);
+}
+
+function hasDangerousUrlAttribute(html: string): boolean {
+  return dangerousUrlAttributeRegex('i').test(html);
+}
+
 function extractAssetIntents(html: string): HtmlNativeAssetIntentInput[] {
   const scriptMatch = html.match(/<script\b(?=[^>]*\bid=(["'])markmind-asset-intents\1)[^>]*>([\s\S]*?)<\/script>/i);
   if (!scriptMatch) return [];
@@ -264,8 +284,8 @@ export function sanitizeHtmlNativeSlides(html: string): string {
     })
     .replace(/<\s*(iframe|object|embed|applet)\b[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
     .replace(/<\s*(iframe|object|embed|applet)\b[^>]*\/?>/gi, '')
-    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/\b(href|src)\s*=\s*(["'])\s*javascript:[\s\S]*?\2/gi, '$1="#"')
+    .replace(/\s+on[a-z][\w:-]*\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(dangerousUrlAttributeRegex('gi'), '$1="#"')
     .trim();
 }
 
@@ -309,6 +329,8 @@ export function validateHtmlNativeSlides(html: string): HtmlNativeValidationRepo
     errors.push(`지원하지 않는 script src가 있습니다: ${blockedScriptSrcs.join(', ')}`);
   }
   if (/<\s*(iframe|object|embed|applet)\b/i.test(html)) errors.push('iframe/object/embed/applet 태그는 허용하지 않습니다.');
+  if (hasInlineEventHandlerAttribute(html)) errors.push('inline on* 이벤트 핸들러 속성은 허용하지 않습니다.');
+  if (hasDangerousUrlAttribute(html)) errors.push('javascript: URL 속성은 허용하지 않습니다.');
   if (/\{\{\s*markmind_asset:/i.test(html) || /markmind-asset:\/\//i.test(html)) {
     warnings.push('치환되지 않은 이미지 placeholder가 남아 있습니다.');
   }

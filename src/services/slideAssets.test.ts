@@ -1,13 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Slide } from '../lib/markdownToSlides';
 import { DEFAULT_SLIDE_THEME } from '../lib/slideTheme';
 import {
   buildGeneratedSlideImagePrompt,
   canResolveStockSearch,
+  resolveSlideAssets,
   routeSlideImageIntent,
   scoreSlideImageCandidate,
   type SlideImageIntent,
 } from './slideAssets';
+
+const { generateImageMock } = vi.hoisted(() => ({
+  generateImageMock: vi.fn(async () => ['data:image/png;base64,AAAA']),
+}));
+
+vi.mock('./imageGen', async () => {
+  const actual = await vi.importActual<typeof import('./imageGen')>('./imageGen');
+  return {
+    ...actual,
+    generateImage: generateImageMock,
+  };
+});
 
 describe('slideAssets', () => {
   it('중요도와 밀도를 합쳐 이미지 후보 점수를 계산', () => {
@@ -101,5 +114,42 @@ describe('slideAssets', () => {
     expect(routeSlideImageIntent({ ...intent, role: 'logo' }, 'generatedOnly')).toBeNull();
     expect(routeSlideImageIntent({ ...intent, sourcePreference: 'logo' }, 'generatedOnly')).toBeNull();
     expect(routeSlideImageIntent({ ...intent, sourcePreference: 'none' }, 'generatedOnly')).toBeNull();
+  });
+
+  it('stock fallback이 생성 이미지 cap을 초과하지 않는다', async () => {
+    generateImageMock.mockClear();
+    const generatedSlides: Slide[] = Array.from({ length: 3 }, (_, index) => ({
+      title: `생성 후보 ${index + 1}`,
+      layout: 'content',
+      sourceIds: [`generated-${index + 1}`],
+      body: [{ kind: 'text', spans: [{ text: '생성 이미지가 필요한 추상 개념 슬라이드' }] }],
+      image: {
+        prompt: `abstract generated concept ${index + 1}`,
+        query: `abstract generated concept ${index + 1}`,
+        sourcePreference: 'generated',
+        role: 'support',
+      },
+    }));
+    const stockSlides: Slide[] = Array.from({ length: 3 }, (_, index) => ({
+      title: `Stock 후보 ${index + 1}`,
+      layout: 'content',
+      sourceIds: [`stock-${index + 1}`],
+      body: [{ kind: 'text', spans: [{ text: 'stock 검색이 실패하면 fallback 후보가 되는 슬라이드' }] }],
+      image: {
+        query: `stock search ${index + 1}`,
+        sourcePreference: 'stock',
+        role: 'support',
+      },
+    }));
+
+    const result = await resolveSlideAssets([...generatedSlides, ...stockSlides], {
+      themeId: DEFAULT_SLIDE_THEME.id,
+      imagePolicy: 'add image intent only when it materially improves the slide',
+      imageSourceMode: 'auto choose stock photos, logos, or generated images based on slide intent',
+    });
+
+    expect(generateImageMock).toHaveBeenCalledTimes(3);
+    expect(result.summary.generatedResolved).toBe(3);
+    expect(result.assets.filter((asset) => asset.sourceMode === 'generated')).toHaveLength(3);
   });
 });
