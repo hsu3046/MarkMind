@@ -160,9 +160,10 @@ export function SlideshowView({
             className="slideshow-root"
             data-font-family={fontFamily}
             data-pad={['small', 'normal', 'large'][padLevel]}
-            // 다크는 App 의 [data-theme=dark] 변수만 재사용(Preview read-only 와 동일 컨텍스트).
-            // custom-bg 는 부여하지 않음 — 부여하면 반투명 규칙이 들어가 Preview 와 달라짐.
-            data-theme={dark ? 'dark' : 'light'}
+            // 다크 토글 ON 일 때만 dark 강제. OFF 는 속성 생략 → App 의 테마(html data-theme,
+            // bgColor luminance 반영)를 상속. light 를 강제하면 다크 bg 에 다크 텍스트로 안 보임(Codex P2).
+            // custom-bg 는 부여 안 함(반투명 규칙이 Preview 와 달라짐).
+            data-theme={dark ? 'dark' : undefined}
             role="dialog"
             aria-modal="true"
             aria-label="슬라이드쇼"
