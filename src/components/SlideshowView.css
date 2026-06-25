@@ -144,10 +144,11 @@
     right: 0.75rem;
 }
 
-/* 좌우 네비 — 평소 숨김(hit-test 제외). data-near-* 일 때만 위 블록에서 pointer-events 켜짐 */
+/* 좌우 네비 — 평소 숨김(hit-test·탭 순서 제외). data-near-* 일 때만 위 블록에서 켜짐 */
 .slideshow-nav {
     opacity: 0;
     pointer-events: none;
+    visibility: hidden;
 }
 .slideshow-nav:not(:disabled):hover {
     opacity: 1;
@@ -200,19 +201,23 @@
 .slideshow-close,
 .slideshow-fontctl button {
     opacity: 0;
-    /* 숨김 시 hit-test 제외 — 보이지 않는 버튼이 탭/클릭/휠 가로채는 것 방지(Codex P2) */
+    /* 숨김 시 hit-test + 탭 순서 + 포커스 모두 제외(Codex P2). visibility 가 한 번에 처리하고
+       pointer-events 는 즉시 hit-test 차단을 명시적으로 보장. */
     pointer-events: none;
+    visibility: hidden;
 }
-/* 마우스가 상단 근처면 상단 버튼 세트 전체가 함께 노출 + 클릭 가능 */
+/* 마우스가 상단 근처면 상단 버튼 세트 전체가 함께 노출 + 클릭/포커스 가능 */
 .slideshow-root[data-near-top] .slideshow-close,
 .slideshow-root[data-near-top] .slideshow-fontctl button {
     opacity: 0.85;
     pointer-events: auto;
+    visibility: visible;
 }
 
-/* 좌/우 근처면 해당 네비 노출 + 클릭 가능(버튼 자체 hover 는 위 .slideshow-nav:hover 가 1 로) */
+/* 좌/우 근처면 해당 네비 노출 + 클릭/포커스 가능(버튼 자체 hover 는 위 .slideshow-nav:hover 가 1 로) */
 .slideshow-root[data-near-left] .slideshow-nav.prev:not(:disabled),
 .slideshow-root[data-near-right] .slideshow-nav.next:not(:disabled) {
     opacity: 0.5;
     pointer-events: auto;
+    visibility: visible;
 }
