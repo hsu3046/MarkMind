@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ChevronLeft, ChevronRight, AArrowDown, AArrowUp } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, AArrowDown, AArrowUp, Moon, Sun, Frame } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
@@ -72,6 +72,28 @@ export function SlideshowView({
     }, [scale]);
     const adjustScale = useCallback((d: number) => {
         setScale((s) => Math.round(Math.max(0.6, Math.min(2, s + d)) * 10) / 10);
+    }, []);
+
+    // 여백 3단계: 0 작게 / 1 표준 / 2 크게 (상하·좌우 함께) — 클릭 시 순환. localStorage 영속.
+    const [padLevel, setPadLevel] = useState(() => {
+        const v = parseInt(localStorage.getItem('markmind-slideshow-pad') || '', 10);
+        return v >= 0 && v <= 2 ? v : 1;
+    });
+    useEffect(() => { localStorage.setItem('markmind-slideshow-pad', String(padLevel)); }, [padLevel]);
+    const cyclePad = useCallback(() => setPadLevel((p) => (p + 1) % 3), []);
+
+    // 다크 모드(발표 배경 반전) — localStorage 영속.
+    const [dark, setDark] = useState(() => localStorage.getItem('markmind-slideshow-dark') === '1');
+    useEffect(() => { localStorage.setItem('markmind-slideshow-dark', dark ? '1' : '0'); }, [dark]);
+
+    // 컨트롤 노출 — 마우스가 상단/좌우 가장자리 근처일 때만. 투명 hover zone 을 stage 위에 두면
+    // 슬라이드 스크롤·스크롤바·링크 클릭을 가로채므로(Codex P2), 좌표로 감지해 이벤트를 안 막는다.
+    const [edge, setEdge] = useState({ top: false, left: false, right: false });
+    const onEdgeMove = useCallback((e: React.MouseEvent) => {
+        const top = e.clientY < 84;
+        const left = e.clientX < 120;
+        const right = e.clientX > window.innerWidth - 120;
+        setEdge((p) => (p.top === top && p.left === left && p.right === right ? p : { top, left, right }));
     }, []);
 
     // 설정/내용 변경으로 슬라이드 수가 줄면 current 가 범위를 벗어날 수 있어 보정.
@@ -147,12 +169,23 @@ export function SlideshowView({
         <div
             className="slideshow-root"
             data-font-family={fontFamily}
+            data-pad={['small', 'normal', 'large'][padLevel]}
+            // 다크 토글 ON 일 때만 dark 강제. OFF 는 속성 생략 → App 의 테마(html data-theme,
+            // bgColor luminance 반영)를 상속. light 를 강제하면 다크 bg 에 다크 텍스트로 안 보임(Codex P2).
+            // custom-bg 는 부여 안 함(반투명 규칙이 Preview 와 달라짐).
+            data-theme={dark ? 'dark' : undefined}
+            data-near-top={edge.top ? '' : undefined}
+            data-near-left={edge.left ? '' : undefined}
+            data-near-right={edge.right ? '' : undefined}
+            onMouseMove={onEdgeMove}
+            onMouseLeave={() => setEdge({ top: false, left: false, right: false })}
             role="dialog"
             aria-modal="true"
             aria-label="슬라이드쇼"
             style={{
                 '--slideshow-scale': String(scale),
-                ...(bgColor ? { '--slideshow-bg': bgColor } : {}),
+                // 라이트만 사용자 bg. 다크는 --preview-bg(#222) 가 배경 처리.
+                ...(bgColor && !dark ? { '--slideshow-bg': bgColor } : {}),
             } as React.CSSProperties}
         >
             <div className="slideshow-stage">
@@ -170,6 +203,12 @@ export function SlideshowView({
             </div>
 
             <div className="slideshow-fontctl">
+                <button onClick={() => setDark((d) => !d)} title={dark ? '라이트 모드' : '다크 모드'} aria-label="다크 모드 토글">
+                    {dark ? <Sun size={18} strokeWidth={1.75} /> : <Moon size={18} strokeWidth={1.75} />}
+                </button>
+                <button onClick={cyclePad} title={`여백: ${['작게', '표준', '크게'][padLevel]} (클릭하여 변경)`} aria-label="여백 조절">
+                    <Frame size={18} strokeWidth={1.75} />
+                </button>
                 <button onClick={() => adjustScale(-0.1)} title="글자 작게 (−)" aria-label="글자 작게">
                     <AArrowDown size={18} strokeWidth={1.75} />
                 </button>

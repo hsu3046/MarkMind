@@ -40,6 +40,8 @@
 .slideshow-content.markdown-body {
     width: 100%;
     max-width: 1080px;
+    /* 본문 색 = 테마 변수(라이트/다크 자동) — Rich Text(Preview) 와 동일 */
+    color: var(--text-primary);
     /* 발표용 기본 크기(뷰포트 기반) × 사용자 배율. 내부 요소는 상대 단위로 따라옴. */
     font-size: calc(clamp(0.95rem, 0.62rem + 0.7vw, 1.25rem) * var(--slideshow-scale, 1));
     line-height: var(--md-line-height, 1.7);
@@ -82,9 +84,11 @@
     opacity: 0.5;
     transition: opacity 0.18s ease, background 0.18s ease;
 }
-.slideshow-close:hover,
 .slideshow-nav:hover {
     opacity: 1;
+    background: var(--bg-active, rgba(0, 0, 0, 0.12));
+}
+.slideshow-close:hover {
     background: var(--bg-active, rgba(0, 0, 0, 0.12));
 }
 .slideshow-nav:disabled {
@@ -106,6 +110,8 @@
     right: 4rem;
     display: flex;
     gap: 0.4rem;
+    /* wrapper 투명 박스도 hit-test 제외 — 버튼만 노출 시 auto 로 켜진다(Codex P2) */
+    pointer-events: none;
 }
 .slideshow-fontctl button {
     width: 36px;
@@ -122,7 +128,6 @@
     transition: opacity 0.18s ease, background 0.18s ease;
 }
 .slideshow-fontctl button:hover {
-    opacity: 1;
     background: var(--bg-active, rgba(0, 0, 0, 0.12));
 }
 
@@ -139,12 +144,11 @@
     right: 0.75rem;
 }
 
-/* 좌우 네비 — 평소 숨김, 화면에 마우스를 올리면 나타남(롤오버) */
+/* 좌우 네비 — 평소 숨김(hit-test·탭 순서 제외). data-near-* 일 때만 위 블록에서 켜짐 */
 .slideshow-nav {
     opacity: 0;
-}
-.slideshow-root:hover .slideshow-nav:not(:disabled) {
-    opacity: 0.45;
+    pointer-events: none;
+    visibility: hidden;
 }
 .slideshow-nav:not(:disabled):hover {
     opacity: 1;
@@ -165,9 +169,55 @@
     font-variant-numeric: tabular-nums;
     opacity: 0.4;
     user-select: none;
+    pointer-events: none;
 }
 
 /* 본문 명조 — App 의 data-font-family 규칙과 동일 패밀리 적용(portal 이라 직접 지정). */
 .slideshow-root[data-font-family='serif'] .slideshow-content {
     font-family: var(--font-serif, 'Noto Serif KR', Georgia, serif);
+}
+
+/* ── 여백 3단계 (상하=padding-block, 좌우=콘텐츠 max-width) — data-pad ── */
+.slideshow-root[data-pad='small'] .slideshow-slide {
+    padding-block: clamp(0.6rem, 1.5vh, 1.2rem);
+}
+.slideshow-root[data-pad='small'] .slideshow-content.markdown-body {
+    max-width: 1200px;
+}
+.slideshow-root[data-pad='large'] .slideshow-slide {
+    padding-block: clamp(3rem, 8vh, 6rem);
+}
+.slideshow-root[data-pad='large'] .slideshow-content.markdown-body {
+    max-width: 960px;
+}
+
+/* 다크 모드는 별도 규칙 없이 root 의 data-theme="dark"(다크 토글 ON) 가 App.css 의
+   검증된 [data-theme=dark] 변수(텍스트·배경·표·코드·인용·marker)를 그대로 적용한다.
+   custom-bg 는 안 씀(반투명 규칙이 Preview 와 달라짐). 컨트롤·indicator 도
+   var(--text-primary)·var(--bg-active) 로 테마 변수 자동 다크. */
+
+/* ── 컨트롤 노출 — root 의 data-near-*(마우스 좌표 기반). 투명 hover zone 을 두지 않아
+   슬라이드 스크롤·스크롤바·링크 이벤트를 가로채지 않는다(Codex P2). ── */
+.slideshow-close,
+.slideshow-fontctl button {
+    opacity: 0;
+    /* 숨김 시 hit-test + 탭 순서 + 포커스 모두 제외(Codex P2). visibility 가 한 번에 처리하고
+       pointer-events 는 즉시 hit-test 차단을 명시적으로 보장. */
+    pointer-events: none;
+    visibility: hidden;
+}
+/* 마우스가 상단 근처면 상단 버튼 세트 전체가 함께 노출 + 클릭/포커스 가능 */
+.slideshow-root[data-near-top] .slideshow-close,
+.slideshow-root[data-near-top] .slideshow-fontctl button {
+    opacity: 0.85;
+    pointer-events: auto;
+    visibility: visible;
+}
+
+/* 좌/우 근처면 해당 네비 노출 + 클릭/포커스 가능(버튼 자체 hover 는 위 .slideshow-nav:hover 가 1 로) */
+.slideshow-root[data-near-left] .slideshow-nav.prev:not(:disabled),
+.slideshow-root[data-near-right] .slideshow-nav.next:not(:disabled) {
+    opacity: 0.5;
+    pointer-events: auto;
+    visibility: visible;
 }

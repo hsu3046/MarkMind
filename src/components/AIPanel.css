@@ -3,6 +3,7 @@
 .ai-panel {
     width: 340px;
     min-width: 340px;
+    flex-shrink: 0; /* main-content flex 에서 340px 절대 보장 — 안 줄고 안 밀림 */
     height: 100%;
     border-left: 1px solid var(--border-primary);
     background: var(--bg-secondary);
