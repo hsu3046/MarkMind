@@ -110,6 +110,8 @@
     right: 4rem;
     display: flex;
     gap: 0.4rem;
+    /* wrapper 투명 박스도 hit-test 제외 — 버튼만 노출 시 auto 로 켜진다(Codex P2) */
+    pointer-events: none;
 }
 .slideshow-fontctl button {
     width: 36px;
