@@ -86,6 +86,16 @@ export function SlideshowView({
     const [dark, setDark] = useState(() => localStorage.getItem('markmind-slideshow-dark') === '1');
     useEffect(() => { localStorage.setItem('markmind-slideshow-dark', dark ? '1' : '0'); }, [dark]);
 
+    // 컨트롤 노출 — 마우스가 상단/좌우 가장자리 근처일 때만. 투명 hover zone 을 stage 위에 두면
+    // 슬라이드 스크롤·스크롤바·링크 클릭을 가로채므로(Codex P2), 좌표로 감지해 이벤트를 안 막는다.
+    const [edge, setEdge] = useState({ top: false, left: false, right: false });
+    const onEdgeMove = useCallback((e: React.MouseEvent) => {
+        const top = e.clientY < 84;
+        const left = e.clientX < 120;
+        const right = e.clientX > window.innerWidth - 120;
+        setEdge((p) => (p.top === top && p.left === left && p.right === right ? p : { top, left, right }));
+    }, []);
+
     // 설정/내용 변경으로 슬라이드 수가 줄면 current 가 범위를 벗어날 수 있어 보정.
     useEffect(() => {
         setCurrent((c) => Math.min(c, Math.max(0, slides.length - 1)));
@@ -164,6 +174,11 @@ export function SlideshowView({
             // bgColor luminance 반영)를 상속. light 를 강제하면 다크 bg 에 다크 텍스트로 안 보임(Codex P2).
             // custom-bg 는 부여 안 함(반투명 규칙이 Preview 와 달라짐).
             data-theme={dark ? 'dark' : undefined}
+            data-near-top={edge.top ? '' : undefined}
+            data-near-left={edge.left ? '' : undefined}
+            data-near-right={edge.right ? '' : undefined}
+            onMouseMove={onEdgeMove}
+            onMouseLeave={() => setEdge({ top: false, left: false, right: false })}
             role="dialog"
             aria-modal="true"
             aria-label="슬라이드쇼"
@@ -186,11 +201,6 @@ export function SlideshowView({
                     </div>
                 ))}
             </div>
-
-            {/* 컨트롤 hover zone — 상단/좌/우 가장자리에 마우스 올릴 때만 컨트롤 노출(평소 숨김) */}
-            <div className="slideshow-hover top" aria-hidden="true" />
-            <div className="slideshow-hover left" aria-hidden="true" />
-            <div className="slideshow-hover right" aria-hidden="true" />
 
             <div className="slideshow-fontctl">
                 <button onClick={() => setDark((d) => !d)} title={dark ? '라이트 모드' : '다크 모드'} aria-label="다크 모드 토글">
