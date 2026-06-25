@@ -107,5 +107,10 @@ export function applyGanttLabel(markdown: string, task: GanttTask, label: string
 export function applyGanttProgress(markdown: string, task: GanttTask, progress: number): string {
     if (typeof task.mdLine !== 'number' || !Number.isFinite(progress)) return markdown;
     const p = Math.min(100, Math.max(0, Math.round(progress)));
-    return updateKanbanCardLine(markdown, task.mdLine, { progress: p });
+    // 100% 는 done 으로 명시한다 — 이미 done 인 작업(@status(done) 만 있고 [x]/@progress 없는 경우)은
+    // buildLine 이 done 일 때 @progress(100) 을 안 쓰고 progress-only patch 는 [x] 도 안 만들어, 결과가
+    // 원문과 같아져 100% 변경이 유실된다(Codex P2). status='done' 을 함께 보내 [x] 로 저장되게 한다.
+    // 100 미만은 progress 만 보내 buildLine 이 done 해제까지 처리(p<100 + done → 해제).
+    const patch: KanbanCardPatch = p >= 100 ? { progress: 100, status: 'done' } : { progress: p };
+    return updateKanbanCardLine(markdown, task.mdLine, patch);
 }

@@ -182,4 +182,12 @@ describe('applyGanttLabel / applyGanttProgress — inline edits via shared engin
         expect(parseKanban(next).cards[0].status).toBe('review');     // review 유지
         expect(parseGantt(next).tasks[0].progress).toBe(60);
     });
+
+    it('explicit done task with no checkbox/@progress saves a 100% edit (Codex P2)', () => {
+        const md = `# Board\n- 배포 @status(done) @start(2026-07-01) @due(2026-07-10)\n`;
+        const next = applyGanttProgress(md, firstTask(md), 100);
+        expect(next).not.toBe(md);                                    // 유실되지 않음
+        expect(parseGantt(next).tasks[0].progress).toBe(100);         // 100% 저장
+        expect(parseKanban(next).cards[0].status).toBe('done');       // done 유지
+    });
 });
