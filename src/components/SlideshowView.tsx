@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ChevronLeft, ChevronRight, AArrowDown, AArrowUp } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, AArrowDown, AArrowUp, Moon, Sun, Frame } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
@@ -73,6 +73,18 @@ export function SlideshowView({
     const adjustScale = useCallback((d: number) => {
         setScale((s) => Math.round(Math.max(0.6, Math.min(2, s + d)) * 10) / 10);
     }, []);
+
+    // 여백 3단계: 0 작게 / 1 표준 / 2 크게 (상하·좌우 함께) — 클릭 시 순환. localStorage 영속.
+    const [padLevel, setPadLevel] = useState(() => {
+        const v = parseInt(localStorage.getItem('markmind-slideshow-pad') || '', 10);
+        return v >= 0 && v <= 2 ? v : 1;
+    });
+    useEffect(() => { localStorage.setItem('markmind-slideshow-pad', String(padLevel)); }, [padLevel]);
+    const cyclePad = useCallback(() => setPadLevel((p) => (p + 1) % 3), []);
+
+    // 다크 모드(발표 배경 반전) — localStorage 영속.
+    const [dark, setDark] = useState(() => localStorage.getItem('markmind-slideshow-dark') === '1');
+    useEffect(() => { localStorage.setItem('markmind-slideshow-dark', dark ? '1' : '0'); }, [dark]);
 
     // 설정/내용 변경으로 슬라이드 수가 줄면 current 가 범위를 벗어날 수 있어 보정.
     useEffect(() => {
@@ -147,12 +159,17 @@ export function SlideshowView({
         <div
             className="slideshow-root"
             data-font-family={fontFamily}
+            data-pad={['small', 'normal', 'large'][padLevel]}
+            // 다크는 App 의 [data-theme=dark] 변수만 재사용(Preview read-only 와 동일 컨텍스트).
+            // custom-bg 는 부여하지 않음 — 부여하면 반투명 규칙이 들어가 Preview 와 달라짐.
+            data-theme={dark ? 'dark' : 'light'}
             role="dialog"
             aria-modal="true"
             aria-label="슬라이드쇼"
             style={{
                 '--slideshow-scale': String(scale),
-                ...(bgColor ? { '--slideshow-bg': bgColor } : {}),
+                // 라이트만 사용자 bg. 다크는 --preview-bg(#222) 가 배경 처리.
+                ...(bgColor && !dark ? { '--slideshow-bg': bgColor } : {}),
             } as React.CSSProperties}
         >
             <div className="slideshow-stage">
@@ -169,7 +186,18 @@ export function SlideshowView({
                 ))}
             </div>
 
+            {/* 컨트롤 hover zone — 상단/좌/우 가장자리에 마우스 올릴 때만 컨트롤 노출(평소 숨김) */}
+            <div className="slideshow-hover top" aria-hidden="true" />
+            <div className="slideshow-hover left" aria-hidden="true" />
+            <div className="slideshow-hover right" aria-hidden="true" />
+
             <div className="slideshow-fontctl">
+                <button onClick={() => setDark((d) => !d)} title={dark ? '라이트 모드' : '다크 모드'} aria-label="다크 모드 토글">
+                    {dark ? <Sun size={18} strokeWidth={1.75} /> : <Moon size={18} strokeWidth={1.75} />}
+                </button>
+                <button onClick={cyclePad} title={`여백: ${['작게', '표준', '크게'][padLevel]} (클릭하여 변경)`} aria-label="여백 조절">
+                    <Frame size={18} strokeWidth={1.75} />
+                </button>
                 <button onClick={() => adjustScale(-0.1)} title="글자 작게 (−)" aria-label="글자 작게">
                     <AArrowDown size={18} strokeWidth={1.75} />
                 </button>

@@ -40,6 +40,8 @@
 .slideshow-content.markdown-body {
     width: 100%;
     max-width: 1080px;
+    /* 본문 색 = 테마 변수(라이트/다크 자동) — Rich Text(Preview) 와 동일 */
+    color: var(--text-primary);
     /* 발표용 기본 크기(뷰포트 기반) × 사용자 배율. 내부 요소는 상대 단위로 따라옴. */
     font-size: calc(clamp(0.95rem, 0.62rem + 0.7vw, 1.25rem) * var(--slideshow-scale, 1));
     line-height: var(--md-line-height, 1.7);
@@ -82,9 +84,11 @@
     opacity: 0.5;
     transition: opacity 0.18s ease, background 0.18s ease;
 }
-.slideshow-close:hover,
 .slideshow-nav:hover {
     opacity: 1;
+    background: var(--bg-active, rgba(0, 0, 0, 0.12));
+}
+.slideshow-close:hover {
     background: var(--bg-active, rgba(0, 0, 0, 0.12));
 }
 .slideshow-nav:disabled {
@@ -122,7 +126,6 @@
     transition: opacity 0.18s ease, background 0.18s ease;
 }
 .slideshow-fontctl button:hover {
-    opacity: 1;
     background: var(--bg-active, rgba(0, 0, 0, 0.12));
 }
 
@@ -142,9 +145,6 @@
 /* 좌우 네비 — 평소 숨김, 화면에 마우스를 올리면 나타남(롤오버) */
 .slideshow-nav {
     opacity: 0;
-}
-.slideshow-root:hover .slideshow-nav:not(:disabled) {
-    opacity: 0.45;
 }
 .slideshow-nav:not(:disabled):hover {
     opacity: 1;
@@ -170,4 +170,49 @@
 /* 본문 명조 — App 의 data-font-family 규칙과 동일 패밀리 적용(portal 이라 직접 지정). */
 .slideshow-root[data-font-family='serif'] .slideshow-content {
     font-family: var(--font-serif, 'Noto Serif KR', Georgia, serif);
+}
+
+/* ── 여백 3단계 (상하=padding-block, 좌우=콘텐츠 max-width) — data-pad ── */
+.slideshow-root[data-pad='small'] .slideshow-slide {
+    padding-block: clamp(0.6rem, 1.5vh, 1.2rem);
+}
+.slideshow-root[data-pad='small'] .slideshow-content.markdown-body {
+    max-width: 1200px;
+}
+.slideshow-root[data-pad='large'] .slideshow-slide {
+    padding-block: clamp(3rem, 8vh, 6rem);
+}
+.slideshow-root[data-pad='large'] .slideshow-content.markdown-body {
+    max-width: 960px;
+}
+
+/* 다크 모드는 별도 규칙 없이 root 의 data-theme="dark" + data-custom-bg 가
+   App.css 의 검증된 [data-theme=dark]·[data-custom-bg] 규칙(변수·표·코드·인용·marker)을
+   그대로 적용한다. 컨트롤(close/nav/fontctl)·indicator 도 var(--text-primary)·var(--bg-active)
+   를 써서 테마 변수로 자동 다크. */
+
+/* ── 컨트롤 hover zone — 상단/좌/우 가장자리 근처에서만 노출(평소 숨김) ── */
+.slideshow-hover {
+    position: absolute;
+}
+.slideshow-hover.top { top: 0; left: 0; right: 0; height: 76px; }
+.slideshow-hover.left { top: 0; bottom: 0; left: 0; width: 110px; }
+.slideshow-hover.right { top: 0; bottom: 0; right: 0; width: 110px; }
+
+/* 상단(닫기·폰트/여백/다크): 평소 숨김 → 상단 zone(또는 버튼 자체) hover 시 노출 */
+.slideshow-close,
+.slideshow-fontctl button {
+    opacity: 0;
+}
+/* 상단 zone 또는 상단 버튼 어느 것에든 마우스가 있으면 세트 전체 노출 유지.
+   (zone 만 보면 버튼 위로 올라간 순간 zone hover 가 풀려 세트가 사라짐) */
+.slideshow-root:has(.slideshow-hover.top:hover, .slideshow-fontctl:hover, .slideshow-close:hover) .slideshow-close,
+.slideshow-root:has(.slideshow-hover.top:hover, .slideshow-fontctl:hover, .slideshow-close:hover) .slideshow-fontctl button {
+    opacity: 0.85;
+}
+
+/* 좌우 네비: 좌/우 zone(또는 버튼 자체) hover 시 노출 */
+.slideshow-root:has(.slideshow-hover.left:hover) .slideshow-nav.prev:not(:disabled):not(:hover),
+.slideshow-root:has(.slideshow-hover.right:hover) .slideshow-nav.next:not(:disabled):not(:hover) {
+    opacity: 0.5;
 }
