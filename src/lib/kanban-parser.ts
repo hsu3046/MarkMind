@@ -21,7 +21,7 @@ const ORDER_RE = /@order\(\s*(\d+)\s*\)/i;
 const CHECKBOX_RE = /^\[([ xX])\]\s*/;
 const MARKER_RE = /@\w+\([^)]*\)/g;
 
-const STATUS_ALIASES: Record<string, KanbanStatus> = {
+export const STATUS_ALIASES: Record<string, KanbanStatus> = {
     backlog: 'todo',
     open: 'todo',
     ready: 'todo',
@@ -108,7 +108,7 @@ function parseLocalDate(y: number, m: number, d: number): Date | null {
     return date;
 }
 
-function cleanToken(value: string): string {
+export function cleanToken(value: string): string {
     return value.trim().toLowerCase().replace(/\s+/g, '-');
 }
 

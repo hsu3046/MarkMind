@@ -19,8 +19,8 @@ export type PaneView = Exclude<ViewMode, 'split' | 'slideshow'>;
 /** 패인 뷰 전체 목록 — localStorage 복원 검증 등에 사용. */
 export const PANE_VIEWS: PaneView[] = ['editor', 'preview', 'mindmap', 'flowchart', 'gantt', 'kanban'];
 
-/** 편집(양방향) 가능한 뷰. flowchart/gantt(read-only)는 미포함 → 항상 미러. */
-export const EDITABLE_VIEWS = new Set<PaneView>(['editor', 'preview', 'mindmap', 'kanban']);
+/** 편집(양방향) 가능한 뷰. flowchart(read-only)는 미포함 → 항상 미러. */
+export const EDITABLE_VIEWS = new Set<PaneView>(['editor', 'preview', 'mindmap', 'kanban', 'gantt']);
 
 /** localStorage 등 외부 문자열을 PaneView 로 안전 검증. */
 export function isPaneView(v: string | null | undefined): v is PaneView {

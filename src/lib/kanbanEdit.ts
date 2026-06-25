@@ -7,6 +7,7 @@
  */
 
 import type { KanbanPriority, KanbanStatus } from '../types/kanban';
+import { STATUS_ALIASES, cleanToken } from './kanban-parser';
 
 export interface KanbanCardPatch {
     label?: string;
@@ -76,6 +77,12 @@ function normalizeOrder(value: number | null | undefined): number | null {
     return Math.max(0, Math.round(value));
 }
 
+/** Extract the inner value of a `@name(value)` marker (for normalizing preserved status aliases). */
+function markerValue(marker: string): string {
+    const m = /\(([^)]*)\)/.exec(marker);
+    return m ? m[1].trim() : '';
+}
+
 function parseLine(line: string): ParsedLine {
     const { prefix, body } = splitLine(line);
     const box = body.match(CHECKBOX_RE);
@@ -142,15 +149,31 @@ function isKanbanPriority(value: string): value is KanbanPriority {
 
 function buildLine(parsed: ParsedLine, patch: KanbanCardPatch): string {
     const label = patch.label !== undefined ? patch.label.replace(/\s+/g, ' ').trim() : parsed.label;
-    const status = patch.status !== undefined ? patch.status : parsed.status;
+    let status = patch.status !== undefined ? patch.status : parsed.status;
     const priority = patch.priority !== undefined ? patch.priority : parsed.priority;
     const start = patch.start !== undefined ? normalizeDate(patch.start) : parsed.start;
     let due = patch.due !== undefined ? normalizeDate(patch.due) : parsed.due;
     let progress = patch.progress !== undefined ? normalizeProgress(patch.progress) : parsed.progress;
     const order = patch.order !== undefined ? normalizeOrder(patch.order) : parsed.order;
+    const wasChecked = parsed.checkbox?.trim().toLowerCase() === '[x]';
+    // preserved status marker 중 done 별칭(완료/closed/complete 등) 위치 — done 판정·제거용.
+    // parseLine 은 정확한 KanbanStatus 만 status 로 흡수하고 별칭은 preserved 로 남기므로(표기 보존),
+    // done 해제 판정엔 별칭을 normalize 해서 함께 본다.
+    const preservedDoneStatusIdx = parsed.preservedMarkers.findIndex(
+        (m) => m.name === 'status' && STATUS_ALIASES[cleanToken(markerValue(m.marker))] === 'done',
+    );
     if (start && due && due < start) due = null;
     if (patch.status !== undefined && patch.status !== 'done' && patch.progress === undefined && progress === 100) {
         progress = null;
+    }
+    // 진행률을 명시적으로 100 미만으로 바꿨는데 라인이 done(@status(done)/done 별칭 또는 [x]) 이면 done 을 해제한다.
+    // 공유 엔진은 status==='done' 일 때 @progress 를 쓰지 않고 [x] 도 유지하므로, 안 풀면 진행률 변경이
+    // 유실되고 Kanban 에서 계속 done 으로 파싱된다(Codex P2). status 를 직접 바꾼 patch 에는 미적용(기존 동작 보존).
+    let releaseDone = false;
+    if (patch.progress !== undefined && patch.status === undefined &&
+        progress !== null && progress < 100 && (status === 'done' || wasChecked || preservedDoneStatusIdx >= 0)) {
+        releaseDone = true;
+        if (status === 'done') status = null; // @status(done) 제거 → progress 로 재추론
     }
 
     const markers: string[] = [];
@@ -170,10 +193,16 @@ function buildLine(parsed: ParsedLine, patch: KanbanCardPatch): string {
     }
     if (patch.progress !== undefined) replaced.add('progress');
     if (patch.order !== undefined) replaced.add('order');
-    markers.push(...parsed.preservedMarkers.filter((m) => !replaced.has(m.name)).map((m) => m.marker));
+    // done 해제 시 done 별칭 status marker 도 함께 제거(그 외 preserved 는 보존)
+    markers.push(
+        ...parsed.preservedMarkers
+            .filter((m, i) => !replaced.has(m.name) && !(releaseDone && i === preservedDoneStatusIdx))
+            .map((m) => m.marker),
+    );
 
-    const wasChecked = parsed.checkbox?.trim().toLowerCase() === '[x]';
-    const shouldCheck = patch.status !== undefined ? status === 'done' : status === 'done' || wasChecked;
+    const shouldCheck = releaseDone
+        ? false
+        : (patch.status !== undefined ? status === 'done' : status === 'done' || wasChecked);
     const checkbox = parsed.checkbox !== null || patch.status !== undefined
         ? `${shouldCheck ? '[x]' : '[ ]'} `
         : '';
