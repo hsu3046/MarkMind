@@ -2443,7 +2443,7 @@ function App() {
       case 'flowchart':
         return <>{mcpBanner}<FlowchartView content={content} fileName={fileName} onChange={updateContent} flowchartPanelOpen={flowchartPanelOpen} onCloseFlowchartPanel={() => setFlowchartPanelOpen(false)} /></>;
       case 'gantt':
-        return <>{mcpBanner}<GanttView content={content} fileName={fileName} onJumpToSource={handleJumpToSource} onChange={updateContent} ganttPanelOpen={ganttPanelOpen} onCloseGanttPanel={() => setGanttPanelOpen(false)} /></>;
+        return <>{mcpBanner}<GanttView content={content} fileName={fileName} onChange={editable ? updateContent : undefined} ganttPanelOpen={ganttPanelOpen} onCloseGanttPanel={() => setGanttPanelOpen(false)} /></>;
       case 'kanban':
         return <>{mcpBanner}<KanbanView content={content} fileName={fileName} onChange={editable ? updateContent : undefined} readOnly={!editable} kanbanPanelOpen={kanbanPanelOpen} onCloseKanbanPanel={() => setKanbanPanelOpen(false)} /></>;
     }

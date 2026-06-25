@@ -28,7 +28,7 @@ export interface GanttTask {
     isMilestone: boolean;
     /** Completion 0–100. From `@progress(n)`, else checkbox ([x]=100 / [ ]=0), else 0. */
     progress: number;
-    /** 1-based source line in the FULL document (for onJumpToSource). */
+    /** 1-based source line in the FULL document (drag edits patch this line). */
     mdLine?: number;
     /** Palette colour for this task's section (consistent per section). */
     color: string;

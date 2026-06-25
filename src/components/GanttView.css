@@ -55,7 +55,16 @@
 }
 .gantt-task-label {
     fill: var(--text-primary, #333333);
-    font-size: 12px;
+    font-size: 13.5px;
+}
+.gantt-task-pct {
+    fill: var(--text-secondary, #888888);
+    font-size: 10px;
+    font-weight: 400;
+}
+.gantt-task-meta {
+    fill: var(--text-secondary, #888888);
+    font-size: 10px;
 }
 
 /* 막대 + 진행률 */
@@ -143,4 +152,89 @@
     max-width: 460px;
     font-size: 12px;
     line-height: 1.7;
+}
+
+/* ── 드래그 편집 (#54 follow-up) ──────────────────────────────────────────── */
+/* 편집 가능 시 막대/마일스톤은 잡아끌 수 있음. resize 영역은 동적이라 공통 grab. */
+.gantt-svg.is-editable .gantt-bar,
+.gantt-svg.is-editable .gantt-bar-progress,
+.gantt-svg.is-editable .gantt-milestone {
+    cursor: grab;
+}
+.gantt-svg.is-dragging,
+.gantt-svg.is-dragging .gantt-row {
+    cursor: grabbing;
+}
+
+/* 드래그 중 막대/마일스톤 강조 (미리보기 위치) */
+.gantt-row.is-dragging .gantt-bar {
+    fill-opacity: 0.55;
+    stroke: var(--text-primary, #333333);
+    stroke-width: 1;
+    stroke-opacity: 0.35;
+}
+.gantt-row.is-dragging .gantt-milestone {
+    stroke: var(--text-primary, #333333);
+    stroke-opacity: 0.5;
+}
+
+/* 드래그 중 날짜 미리보기 — 그리드/막대 위에서도 읽히게 외곽선 페인트 */
+.gantt-drag-tip {
+    fill: var(--text-primary, #222222);
+    font-size: 11px;
+    font-weight: 700;
+    paint-order: stroke;
+    stroke: var(--bg-primary, #ffffff);
+    stroke-width: 3px;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+
+/* 드래그 중 전역 텍스트 선택/커서 잠금 (KanbanView 와 동일 패턴) */
+body.gantt-drag-select-block,
+body.gantt-drag-select-block * {
+    cursor: grabbing !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+}
+
+/* ── 인라인 편집 (라벨 클릭=이름 / 막대 클릭=진행률) — foreignObject 안 HTML ── */
+.gantt-edit-input {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0 6px;
+    border: 1.5px solid var(--accent-primary, #3b82f6);
+    border-radius: 4px;
+    background: var(--bg-primary, #ffffff);
+    color: var(--text-primary, #222222);
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+}
+.gantt-edit-progress {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 0 8px;
+    border: 1.5px solid var(--accent-primary, #3b82f6);
+    border-radius: 4px;
+    background: var(--bg-primary, #ffffff);
+}
+.gantt-edit-progress input[type="range"] {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--accent-primary, #3b82f6);
+}
+.gantt-edit-progress-val {
+    flex: none;
+    min-width: 30px;
+    text-align: right;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-primary, #222222);
 }
