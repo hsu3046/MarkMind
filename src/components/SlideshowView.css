@@ -142,9 +142,10 @@
     right: 0.75rem;
 }
 
-/* 좌우 네비 — 평소 숨김, 화면에 마우스를 올리면 나타남(롤오버) */
+/* 좌우 네비 — 평소 숨김(hit-test 제외). data-near-* 일 때만 위 블록에서 pointer-events 켜짐 */
 .slideshow-nav {
     opacity: 0;
+    pointer-events: none;
 }
 .slideshow-nav:not(:disabled):hover {
     opacity: 1;
@@ -165,6 +166,7 @@
     font-variant-numeric: tabular-nums;
     opacity: 0.4;
     user-select: none;
+    pointer-events: none;
 }
 
 /* 본문 명조 — App 의 data-font-family 규칙과 동일 패밀리 적용(portal 이라 직접 지정). */
@@ -196,15 +198,19 @@
 .slideshow-close,
 .slideshow-fontctl button {
     opacity: 0;
+    /* 숨김 시 hit-test 제외 — 보이지 않는 버튼이 탭/클릭/휠 가로채는 것 방지(Codex P2) */
+    pointer-events: none;
 }
-/* 마우스가 상단 근처면 상단 버튼 세트 전체가 함께 노출(개별 hover 로 opacity 안 튐) */
+/* 마우스가 상단 근처면 상단 버튼 세트 전체가 함께 노출 + 클릭 가능 */
 .slideshow-root[data-near-top] .slideshow-close,
 .slideshow-root[data-near-top] .slideshow-fontctl button {
     opacity: 0.85;
+    pointer-events: auto;
 }
 
-/* 좌/우 근처면 해당 네비 노출(버튼 자체 hover 는 위 .slideshow-nav:hover 가 1 로) */
+/* 좌/우 근처면 해당 네비 노출 + 클릭 가능(버튼 자체 hover 는 위 .slideshow-nav:hover 가 1 로) */
 .slideshow-root[data-near-left] .slideshow-nav.prev:not(:disabled),
 .slideshow-root[data-near-right] .slideshow-nav.next:not(:disabled) {
     opacity: 0.5;
+    pointer-events: auto;
 }
