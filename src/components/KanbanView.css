@@ -14,7 +14,10 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: repeat(5, minmax(220px, 1fr));
+    /* 고정폭 — AI 사이드바 토글로 영역이 바뀌어도 카드(컬럼) 폭은 일정.
+       넓으면 왼쪽 정렬(오른쪽 여백), 좁으면 가로 스크롤(overflow auto). */
+    grid-template-columns: repeat(5, 260px);
+    justify-content: start;
     gap: 14px;
     align-items: start;
     padding: 16px;
