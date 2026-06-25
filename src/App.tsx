@@ -2104,6 +2104,13 @@ function App() {
               toggleSearch();
             }
             break;
+          case 'l':
+            // AI 에이전트 사이드바 토글 (⌘L — Cursor 등 AI 채팅 사이드바 관습. ⌘⇧L 은 제외)
+            if (!e.shiftKey) {
+              e.preventDefault();
+              handleToggleAI();
+            }
+            break;
           case '1':
             e.preventDefault();
             setViewMode('editor');
