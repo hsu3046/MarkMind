@@ -184,7 +184,7 @@ function buildLine(parsed: ParsedLine, patch: KanbanCardPatch): string {
     if (progress !== null && progress > 0 && status !== 'done') markers.push(`@progress(${progress})`);
     if (order !== null) markers.push(`@order(${order})`);
     const replaced = new Set<string>();
-    if (patch.status !== undefined || releaseDone) replaced.add('status');
+    if (patch.status !== undefined) replaced.add('status');
     if (patch.priority !== undefined) replaced.add('priority');
     if (patch.start !== undefined) replaced.add('start');
     if (patch.due !== undefined) {

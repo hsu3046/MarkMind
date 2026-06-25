@@ -173,4 +173,13 @@ describe('applyGanttLabel / applyGanttProgress — inline edits via shared engin
         expect(parseKanban(next).cards[0].status).not.toBe('done');   // Kanban 도 done 아님
         expect(parseGantt(next).tasks[0].progress).toBe(60);
     });
+
+    it('checked card with a non-done alias keeps the alias on release (Codex P2 — only done alias removed)', () => {
+        const md = `# Board\n- [x] 작업 @status(qa) @start(2026-07-01) @due(2026-07-10)\n`;
+        const next = applyGanttProgress(md, firstTask(md), 60);
+        expect(line(next, 2)).toContain('@status(qa)');               // 비-done 별칭(qa=review) 보존
+        expect(line(next, 2)).toContain('[ ]');                       // checkbox 만 해제
+        expect(parseKanban(next).cards[0].status).toBe('review');     // review 유지
+        expect(parseGantt(next).tasks[0].progress).toBe(60);
+    });
 });
