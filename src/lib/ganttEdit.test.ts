@@ -165,4 +165,12 @@ describe('applyGanttLabel / applyGanttProgress — inline edits via shared engin
         expect(parseGantt(next).tasks[0].progress).toBe(100);
         expect(parseKanban(next).cards[0].status).toBe('done');
     });
+
+    it('done alias without checkbox (@status(완료)) also releases on progress lower (Codex P2)', () => {
+        const md = `# Board\n- 작업 @status(완료) @start(2026-07-01) @due(2026-07-10) @progress(100)\n`;
+        const next = applyGanttProgress(md, firstTask(md), 60);
+        expect(line(next, 2)).not.toContain('@status(완료)');         // done 별칭 해제
+        expect(parseKanban(next).cards[0].status).not.toBe('done');   // Kanban 도 done 아님
+        expect(parseGantt(next).tasks[0].progress).toBe(60);
+    });
 });

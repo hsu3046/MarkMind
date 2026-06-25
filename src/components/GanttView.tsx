@@ -195,7 +195,9 @@ export function GanttView({ content, fileName, onChange, ganttPanelOpen, onClose
         const localX = clientX - svgRect.left; // SVG user-space x (rect.left already accounts for scroll)
         if (eff.isMilestone) {
             const cx = bx + DAY_W / 2;
-            return { draggable: Math.abs(localX - cx) <= MS_R + 2, mode: 'move' };
+            if (Math.abs(localX - cx) > MS_R + 2) return { draggable: false, mode: 'move' };
+            // 다이아 오른쪽 절반을 끌면 resize-end(막대로 복원), 왼쪽/중앙은 move
+            return { draggable: true, mode: localX > cx + 1 ? 'resize-end' : 'move' };
         }
         if (localX < bx - 2 || localX > bx + bw + 2) return { draggable: false, mode: 'move' };
         const edge = Math.min(EDGE_HIT, bw / 3); // shrink edge zones on short bars so a move stays possible
