@@ -141,4 +141,28 @@ describe('applyGanttLabel / applyGanttProgress — inline edits via shared engin
         // progress 0 ⇒ marker dropped, parser falls back to checkbox [ ] = 0
         expect(parseGantt(applyGanttProgress(md, firstTask(md), -20)).tasks[0].progress).toBe(0);
     });
+
+    it('lowering a done task below 100 releases done — status + checkbox (Codex P2, 저장 유실 방지)', () => {
+        const md = `# Board\n- [x] 완료작업 @status(done) @start(2026-07-01) @due(2026-07-10)\n`;
+        const next = applyGanttProgress(md, firstTask(md), 60);
+        expect(parseGantt(next).tasks[0].progress).toBe(60);          // 진행률 반영(유실 X)
+        expect(line(next, 2)).not.toContain('@status(done)');         // done 마커 해제
+        expect(line(next, 2)).not.toContain('[x]');                   // checkbox 해제
+        expect(parseKanban(next).cards[0].status).not.toBe('done');   // Kanban 도 done 아님
+        expect(parseKanban(next).cards[0].progress).toBe(60);
+    });
+
+    it('checkbox-only done also releases when progress lowered', () => {
+        const md = `# Board\n- [x] 작업 @start(2026-07-01) @due(2026-07-10)\n`;
+        const next = applyGanttProgress(md, firstTask(md), 40);
+        expect(parseGantt(next).tasks[0].progress).toBe(40);
+        expect(line(next, 2)).not.toContain('[x]');
+    });
+
+    it('progress 100 keeps done (release only below 100)', () => {
+        const md = `# Board\n- [x] 작업 @status(done) @start(2026-07-01) @due(2026-07-10)\n`;
+        const next = applyGanttProgress(md, firstTask(md), 100);
+        expect(parseGantt(next).tasks[0].progress).toBe(100);
+        expect(parseKanban(next).cards[0].status).toBe('done');
+    });
 });
