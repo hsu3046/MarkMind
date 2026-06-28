@@ -89,4 +89,11 @@ describe('normalizeSerializedMarkdown', () => {
         expect(normalizeSerializedMarkdown('a &gt; b')).toBe('a > b');
         expect(normalizeSerializedMarkdown('| A |\n| --- |\n| a &gt; b |')).toBe('| A |\n| --- |\n| a > b |');
     });
+
+    it('requires a real tag boundary before restoring escaped HTML tags', () => {
+        expect(normalizeSerializedMarkdown('&lt;https://example.com&gt;')).toBe('&lt;https://example.com&gt;');
+        expect(normalizeSerializedMarkdown('&lt;user@example.com&gt;')).toBe('&lt;user@example.com&gt;');
+        expect(normalizeSerializedMarkdown('&lt;custom-element data-x=&quot;1&quot;&gt;x&lt;/custom-element&gt;'))
+            .toBe('<custom-element data-x="1">x</custom-element>');
+    });
 });

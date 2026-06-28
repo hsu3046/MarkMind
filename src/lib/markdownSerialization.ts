@@ -59,9 +59,12 @@ function restoreEscapedHtmlTags(src: string): string {
     let i = 0;
 
     const isTagStart = (index: number): boolean => {
-        const first = src[index + 4];
-        if (first === '/') return /[A-Za-z]/.test(src[index + 5] ?? '');
-        return /[A-Za-z]/.test(first ?? '');
+        let cursor = index + 4;
+        if (src[cursor] === '/') cursor += 1;
+        if (!/[A-Za-z]/.test(src[cursor] ?? '')) return false;
+        cursor += 1;
+        while (/[A-Za-z0-9-]/.test(src[cursor] ?? '')) cursor += 1;
+        return src.startsWith('&gt;', cursor) || src[cursor] === '/' || /[ \t\r\n]/.test(src[cursor] ?? '');
     };
 
     while (i < src.length) {
