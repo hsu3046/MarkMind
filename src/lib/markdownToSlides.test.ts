@@ -515,6 +515,30 @@ describe('slidesFromLlmJson', () => {
     expect(merged[1].image?.src).toBeUndefined();
   });
 
+  it('sourceId가 유지된 split에서 두 번째 기존 이미지를 소비하면 첫 이미지를 continuation에 붙이지 않음', () => {
+    const markdown = ['# Report', '## Evidence', '![first](assets/first.png)', '![second](assets/second.png)'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          {
+            title: 'Dense evidence',
+            layout: 'content',
+            sourceIds: ['S2'],
+            image: { src: 'assets/second.png', alt: 'second' },
+            bullets: Array.from({ length: 14 }, (_, index) => `Evidence point ${index + 1}`),
+          },
+        ],
+      }),
+    );
+
+    const normalized = normalizeSlidesForPptx(aiSlides ?? []);
+    const merged = preserveSourceImagesForPptx(normalized, markdown);
+
+    expect(normalized).toHaveLength(2);
+    expect(merged[0].image?.src).toBe('assets/second.png');
+    expect(merged[1].image?.src).toBeUndefined();
+  });
+
   it('완전 비 JSON 은 null', () => {
     expect(slidesFromLlmJson('sorry, I cannot do that')).toBeNull();
   });

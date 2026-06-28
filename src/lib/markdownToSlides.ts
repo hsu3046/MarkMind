@@ -636,10 +636,15 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
     const normalized = sourceId.trim().toUpperCase();
     const images = sourceImagesById.get(normalized);
     if (!images) return false;
-    for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+    const firstUnconsumedIndex = firstUnconsumedSourceImageIndex(normalized, images);
+    for (let imageIndex = firstUnconsumedIndex; imageIndex < images.length; imageIndex += 1) {
       if (consumedSourceImages.has(sourceImageKey(normalized, imageIndex))) continue;
       if (images[imageIndex]?.src?.trim() === existingSrc) {
-        markSourceImageConsumed(normalized, imageIndex, images[imageIndex]?.src);
+        for (let consumeIndex = firstUnconsumedIndex; consumeIndex <= imageIndex; consumeIndex += 1) {
+          if (!consumedSourceImages.has(sourceImageKey(normalized, consumeIndex))) {
+            markSourceImageConsumed(normalized, consumeIndex, images[consumeIndex]?.src);
+          }
+        }
         return true;
       }
     }
