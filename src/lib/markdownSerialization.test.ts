@@ -75,4 +75,11 @@ describe('normalizeSerializedMarkdown', () => {
             '&lt;table&gt;\n&lt;tr&gt;&lt;td colspan=&quot;2&quot;&gt;X&lt;/td&gt;&lt;/tr&gt;\n&lt;/table&gt;',
         )).toBe('<table>\n<tr><td colspan="2">X</td></tr>\n</table>');
     });
+
+    it('does not treat escaped greater-than signs inside tag attributes as tag endings', () => {
+        expect(normalizeSerializedMarkdown('&lt;span title=&quot;a &gt; b&quot;&gt;x&lt;/span&gt;'))
+            .toBe('<span title="a > b">x</span>');
+        expect(normalizeSerializedMarkdown('&lt;span title=&quot;a &lt; b &gt; c&quot; data-x=&#39;1 &gt; 0&#39;&gt;x&lt;/span&gt;'))
+            .toBe('<span title="a < b > c" data-x=\'1 > 0\'>x</span>');
+    });
 });

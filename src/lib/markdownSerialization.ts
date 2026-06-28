@@ -46,9 +46,64 @@ function maskInlineCodeSpans(src: string, codes: string[]): string {
 
 function unescapeHtmlTagAttributes(value: string): string {
     return value
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
         .replace(/&quot;/g, '"')
+        .replace(/&#34;/g, '"')
         .replace(/&apos;|&#39;/g, "'")
         .replace(/&amp;/g, '&');
+}
+
+function restoreEscapedHtmlTags(src: string): string {
+    let out = '';
+    let i = 0;
+
+    const isTagStart = (index: number): boolean => {
+        const first = src[index + 4];
+        if (first === '/') return /[A-Za-z]/.test(src[index + 5] ?? '');
+        return /[A-Za-z]/.test(first ?? '');
+    };
+
+    while (i < src.length) {
+        if (!src.startsWith('&lt;', i) || !isTagStart(i)) {
+            out += src[i];
+            i += 1;
+            continue;
+        }
+
+        let quote: '"' | "'" | null = null;
+        let close = -1;
+        let j = i + 4;
+        while (j < src.length) {
+            if (quote == null && src.startsWith('&gt;', j)) {
+                close = j;
+                break;
+            }
+            if (src[j] === '"' || src.startsWith('&quot;', j) || src.startsWith('&#34;', j)) {
+                quote = quote === '"' ? null : quote == null ? '"' : quote;
+                j += src[j] === '"' ? 1 : src.startsWith('&quot;', j) ? 6 : 5;
+                continue;
+            }
+            if (src[j] === "'" || src.startsWith('&apos;', j) || src.startsWith('&#39;', j)) {
+                quote = quote === "'" ? null : quote == null ? "'" : quote;
+                j += src[j] === "'" ? 1 : src.startsWith('&apos;', j) ? 6 : 5;
+                continue;
+            }
+            j += 1;
+        }
+
+        if (close === -1) {
+            out += src[i];
+            i += 1;
+            continue;
+        }
+
+        const inner = src.slice(i + 4, close);
+        out += `<${unescapeHtmlTagAttributes(inner)}>`;
+        i = close + 4;
+    }
+
+    return out;
 }
 
 // tiptap-markdown 0.9.0 직렬화(getMarkdown) 후처리 — round-trip 시 끼어드는
@@ -119,13 +174,10 @@ export function normalizeSerializedMarkdown(md: string): string {
     // ④ raw HTML/주석/비교 꺾쇠/footnote marker 복원
     result = result
         .replace(/&lt;!--([\s\S]*?)--&gt;/g, '<!--$1-->')
-        .replace(
-            /&lt;(\/?[A-Za-z][A-Za-z0-9:-]*(?:\s+[^<>\n]*?)?)&gt;/g,
-            (_match, inner: string) => `<${unescapeHtmlTagAttributes(inner)}>`,
-        )
         .replace(/(^|[^\S\n])&lt;(?=[^\S\n])/g, '$1<')
         .replace(/(^|[^\S\n])&gt;(?=[^\S\n])/g, '$1>')
         .replace(/\\\[\^([^\]\n]+)\\\]/g, '[^$1]');
+    result = restoreEscapedHtmlTags(result);
 
     // ── 복원 ──
     result = result.replace(/\x00MMC(\d+)\x00/g, (_, n) => codes[Number(n)]);
