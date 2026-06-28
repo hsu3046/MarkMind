@@ -90,6 +90,15 @@ describe('normalizeSerializedMarkdown', () => {
         expect(normalizeSerializedMarkdown('| A |\n| --- |\n| a &gt; b |')).toBe('| A |\n| --- |\n| a > b |');
     });
 
+    it('preserves escaped greater-than at Markdown container content starts', () => {
+        expect(normalizeSerializedMarkdown('- &gt; note')).toBe('- &gt; note');
+        expect(normalizeSerializedMarkdown('> &gt; note')).toBe('> &gt; note');
+        expect(normalizeSerializedMarkdown('> - &gt; note')).toBe('> - &gt; note');
+        expect(normalizeSerializedMarkdown('- [ ] &gt; note')).toBe('- [ ] &gt; note');
+        expect(normalizeSerializedMarkdown('- a &gt; b')).toBe('- a > b');
+        expect(normalizeSerializedMarkdown('> a &gt; b')).toBe('> a > b');
+    });
+
     it('requires a real tag boundary before restoring escaped HTML tags', () => {
         expect(normalizeSerializedMarkdown('&lt;https://example.com&gt;')).toBe('&lt;https://example.com&gt;');
         expect(normalizeSerializedMarkdown('&lt;user@example.com&gt;')).toBe('&lt;user@example.com&gt;');

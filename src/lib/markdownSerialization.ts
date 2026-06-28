@@ -109,12 +109,28 @@ function restoreEscapedHtmlTags(src: string): string {
     return out;
 }
 
+function isMarkdownContainerContentStart(prefix: string): boolean {
+    let rest = prefix;
+    let changed = true;
+
+    while (changed) {
+        const before = rest;
+        rest = rest
+            .replace(/^[ \t]{0,3}(?:>|&gt;)[ \t]?/, '')
+            .replace(/^[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+/, '')
+            .replace(/^[ \t]*\[[ xX]\][ \t]+/, '');
+        changed = rest !== before;
+    }
+
+    return /^[ \t]*$/.test(rest);
+}
+
 function restoreComparisonGreaterThan(src: string): string {
     return src.replace(/(^|[^\S\n])&gt;(?=[^\S\n])/g, (match, prefix: string, offset: number) => {
         const entityStart = offset + prefix.length;
         const lineStart = src.lastIndexOf('\n', entityStart - 1) + 1;
         const beforeOnLine = src.slice(lineStart, entityStart);
-        if (/^[ \t]*$/.test(beforeOnLine)) return match;
+        if (isMarkdownContainerContentStart(beforeOnLine)) return match;
         return `${prefix}>`;
     });
 }
