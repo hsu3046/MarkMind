@@ -65,6 +65,10 @@ function isPunctuation(ch: string | undefined): boolean {
   return ch != null && /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/.test(ch);
 }
 
+function isEscapableMarkdownPunctuation(ch: string | undefined): boolean {
+  return isPunctuation(ch);
+}
+
 function isEscaped(src: string, index: number): boolean {
   let backslashes = 0;
   for (let i = index - 1; i >= 0 && src[i] === '\\'; i -= 1) backslashes += 1;
@@ -121,7 +125,7 @@ function hasClosingDelimiter(src: string, run: { char: string; start: number; le
     const candidate = delimiterRunAt(src, i);
     if (!candidate) continue;
     i = candidate.start + candidate.length - 1;
-    if (candidate.length >= run.length && delimiterCanClose(src, candidate)) return true;
+    if (delimiterCanClose(src, candidate)) return true;
   }
   return false;
 }
@@ -132,7 +136,7 @@ function hasOpeningDelimiter(src: string, run: { char: string; start: number; le
     const candidate = delimiterRunAt(src, i);
     if (!candidate) continue;
     i = candidate.start;
-    if (candidate.length >= run.length && delimiterCanOpen(src, candidate)) return true;
+    if (delimiterCanOpen(src, candidate)) return true;
   }
   return false;
 }
@@ -163,7 +167,7 @@ function inlineVisibleText(src: string): string {
   for (let i = 0; i < src.length; i += 1) {
     const ch = src[i];
 
-    if (ch === '\\' && i + 1 < src.length) {
+    if (ch === '\\' && i + 1 < src.length && isEscapableMarkdownPunctuation(src[i + 1])) {
       out += src[i + 1];
       i += 1;
       continue;
@@ -224,7 +228,7 @@ function inlineVisibleLengthBefore(src: string, col: number): number {
     if (i >= limit) break;
     const ch = src[i];
 
-    if (ch === '\\' && i + 1 < src.length) {
+    if (ch === '\\' && i + 1 < src.length && isEscapableMarkdownPunctuation(src[i + 1])) {
       if (limit > i + 1) len += 1;
       i += 1;
       continue;

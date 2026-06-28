@@ -38,6 +38,25 @@ describe('markdownCursor', () => {
     expect(visibleOffsetToMarkdownOffset(md, visibleMultiply)).toBe(multiplyOffset);
   });
 
+  it('handles nested emphasis where delimiter runs are split by the markdown parser', () => {
+    const md = '**bold *em*** after';
+    expect(markdownVisibleText(md)).toBe('bold em after');
+
+    const afterOffset = markdownVisibleText(md).indexOf(' after');
+    expect(visibleOffsetToMarkdownOffset(md, afterOffset)).toBe(md.indexOf(' after'));
+  });
+
+  it('keeps backslashes visible unless they escape markdown punctuation', () => {
+    const md = String.raw`C:\Users and \alpha and \*literal star\*`;
+    const visible = markdownVisibleText(md);
+    expect(visible).toBe(String.raw`C:\Users and \alpha and *literal star*`);
+
+    const sourceBackslash = md.indexOf(String.raw`\Users`);
+    const visibleBackslash = visible.indexOf(String.raw`\Users`);
+    expect(markdownOffsetToVisibleOffset(md, sourceBackslash)).toBe(visibleBackslash);
+    expect(visibleOffsetToMarkdownOffset(md, visibleBackslash)).toBe(sourceBackslash);
+  });
+
   it('does not skip visible spaces or punctuation when restoring markdown offsets', () => {
     expect(visibleOffsetToMarkdownOffset('a b', 1)).toBe(1);
 
