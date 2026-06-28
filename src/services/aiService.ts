@@ -520,24 +520,55 @@ async function dispatchAI(systemPrompt: string, userContent: string, opts: Dispa
     }
 }
 
+function createAIJobId(): string {
+    const randomUUID = globalThis.crypto?.randomUUID?.bind(globalThis.crypto);
+    return `ai-${randomUUID ? randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+}
+
+async function invokeCancellable<T>(
+    command: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+): Promise<T> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    if (!signal) return invoke<T>(command, args);
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+
+    const jobId = createAIJobId();
+    let cancelRequested = false;
+    const cancel = () => {
+        if (cancelRequested) return;
+        cancelRequested = true;
+        void invoke('cancel_ai_generation', { jobId }).catch((err) => {
+            console.warn('[ai] cancel failed:', err);
+        });
+    };
+
+    signal.addEventListener('abort', cancel, { once: true });
+    try {
+        return await invoke<T>(command, { ...args, jobId });
+    } finally {
+        signal.removeEventListener('abort', cancel);
+    }
+}
+
 async function dispatchAIInner(
     systemPrompt: string,
     userContent: string,
     opts: DispatchOptions = {},
 ): Promise<string> {
     const sel = await resolveUsableTextSelection();
-    const { onStream } = opts;
+    const { onStream, signal } = opts;
     let modifiedText = '';
 
     if (sel.company === 'gemini') {
         if (sel.auth === 'subscription') {
             // Gemini 구독 = Antigravity CLI(agy) — Rust 경유(PTY). 스트리밍 미지원(완료 후 반환).
-            const { invoke } = await import('@tauri-apps/api/core');
-            modifiedText = await invoke<string>('ai_generate_gemini_agy', {
+            modifiedText = await invokeCancellable<string>('ai_generate_gemini_agy', {
                 system: systemPrompt,
                 prompt: userContent,
                 model: sel.model,
-            });
+            }, signal);
             if (onStream) onStream(modifiedText);
         } else {
             const apiKey = getApiKey();
@@ -571,34 +602,31 @@ async function dispatchAIInner(
         }
     } else if (sel.company === 'openai') {
         // ChatGPT — 구독(codex)이면 ai_generate_codex, API 키면 ai_generate_openai. Rust 경유.
-        const { invoke } = await import('@tauri-apps/api/core');
         const command = sel.auth === 'subscription' ? 'ai_generate_codex' : 'ai_generate_openai';
-        modifiedText = await invoke<string>(command, {
+        modifiedText = await invokeCancellable<string>(command, {
             system: systemPrompt,
             prompt: userContent,
             model: sel.model,
-        });
+        }, signal);
     } else if (sel.company === 'grok') {
         // Grok(xAI) — API 키 또는 구독(grok login OAuth 토큰). 둘 다 api.x.ai chat completions,
         // Rust 가 grokAuth 로 토큰 소스 분기. 구독은 유료(SuperGrok) 필요. 스트리밍 미지원.
-        const { invoke } = await import('@tauri-apps/api/core');
-        modifiedText = await invoke<string>('ai_generate_grok', {
+        modifiedText = await invokeCancellable<string>('ai_generate_grok', {
             system: systemPrompt,
             prompt: userContent,
             model: sel.model,
             grokAuth: sel.auth,
-        });
+        }, signal);
         if (onStream) onStream(modifiedText);
     } else {
         // Claude — 구독 OAuth 또는 API 키. Rust 경유. 스트리밍 미지원(완료 후 diff).
-        const { invoke } = await import('@tauri-apps/api/core');
-        modifiedText = await invoke<string>('ai_generate_claude', {
+        modifiedText = await invokeCancellable<string>('ai_generate_claude', {
             system: systemPrompt,
             prompt: userContent,
             claudeAuth: sel.auth,
             maxTokens: opts.maxTokens ?? 16000,
             model: sel.model,
-        });
+        }, signal);
     }
     return modifiedText;
 }

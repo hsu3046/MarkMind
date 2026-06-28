@@ -8,7 +8,9 @@ use super::notes_pipeline::{self, NotesJobOptions, NotesJobResult};
 use super::ocr_pipeline::{self, OcrJobOptions, OcrJobResult};
 use super::progress::{ProgressEmitter, ProgressModelInfo};
 use serde::Deserialize;
+use std::future::Future;
 use tauri::AppHandle;
+use tokio_util::sync::CancellationToken;
 
 /// Frontend 가 jobId 전달하면 그걸 사용 — listener 필터링으로 다른 윈도우의 동시
 /// 진행 event 와 분리. 없으면 자체 생성 (backward compat).
@@ -67,6 +69,45 @@ pub fn get_conversions_dir() -> String {
 
 #[tauri::command]
 pub fn cancel_slide_job(job_id: String) -> bool {
+    super::cancel::cancel_job(&job_id)
+}
+
+const AI_CANCELLED_MESSAGE: &str = "사용자가 작업을 정지했습니다.";
+
+async fn run_cancellable_ai<F, T>(job_id: Option<String>, work: F) -> Result<T, String>
+where
+    F: Future<Output = Result<T, String>>,
+{
+    run_cancellable_ai_with_token(job_id, |_| work).await
+}
+
+async fn run_cancellable_ai_with_token<F, Fut, T>(
+    job_id: Option<String>,
+    make_work: F,
+) -> Result<T, String>
+where
+    F: FnOnce(Option<CancellationToken>) -> Fut,
+    Fut: Future<Output = Result<T, String>>,
+{
+    let Some(job_id) = job_id
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    else {
+        return make_work(None).await;
+    };
+
+    let _cancel_guard = super::cancel::job_guard(&job_id);
+    let cancel_token = super::cancel::register_job(&job_id);
+    let result = tokio::select! {
+        result = make_work(Some(cancel_token.clone())) => result,
+        _ = cancel_token.cancelled() => Err(AI_CANCELLED_MESSAGE.to_string()),
+    };
+    super::cancel::unregister_job(&job_id);
+    result
+}
+
+#[tauri::command]
+pub fn cancel_ai_generation(job_id: String) -> bool {
     super::cancel::cancel_job(&job_id)
 }
 
@@ -1292,39 +1333,43 @@ pub async fn ai_generate_claude(
     claude_auth: crate::subscription_auth::ClaudeAuthMode,
     max_tokens: Option<u32>,
     model: Option<String>,
+    job_id: Option<String>,
 ) -> Result<String, String> {
-    use super::keychain::{get_key, Provider};
-    use super::llm::anthropic::{self, ClaudeAuth, ClaudeOptions};
-    use crate::subscription_auth::ClaudeAuthMode;
+    run_cancellable_ai(job_id, async move {
+        use super::keychain::{get_key, Provider};
+        use super::llm::anthropic::{self, ClaudeAuth, ClaudeOptions};
+        use crate::subscription_auth::ClaudeAuthMode;
 
-    let model_id = model.as_deref().unwrap_or(super::MODEL_NOTES_CLAUDE);
-    let opts = ClaudeOptions {
-        max_output_tokens: Some(max_tokens.unwrap_or(16000)),
-        system,
-    };
+        let model_id = model.unwrap_or_else(|| super::MODEL_NOTES_CLAUDE.to_string());
+        let opts = ClaudeOptions {
+            max_output_tokens: Some(max_tokens.unwrap_or(16000)),
+            system,
+        };
 
-    let result = match claude_auth {
-        ClaudeAuthMode::Subscription => {
-            let token = crate::subscription_auth::claude_access_token().await?;
-            anthropic::generate_text(
-                ClaudeAuth::Subscription(&token),
-                model_id,
-                &prompt,
-                Some(opts),
-            )
-            .await
-        }
-        ClaudeAuthMode::ApiKey => {
-            let key = get_key(Provider::Claude)
-                .map_err(err_to_string)?
-                .ok_or_else(|| {
-                    "Claude API 키가 없습니다. Settings 에서 등록하거나 구독 로그인을 사용하세요."
-                        .to_string()
-                })?;
-            anthropic::generate_text(ClaudeAuth::ApiKey(&key), model_id, &prompt, Some(opts)).await
-        }
-    };
-    result.map(|r| r.text).map_err(err_to_string)
+        let result = match claude_auth {
+            ClaudeAuthMode::Subscription => {
+                let token = crate::subscription_auth::claude_access_token().await?;
+                anthropic::generate_text(
+                    ClaudeAuth::Subscription(&token),
+                    &model_id,
+                    &prompt,
+                    Some(opts),
+                )
+                .await
+            }
+            ClaudeAuthMode::ApiKey => {
+                let key = get_key(Provider::Claude)
+                    .map_err(err_to_string)?
+                    .ok_or_else(|| {
+                        "Claude API 키가 없습니다. Settings 에서 등록하거나 구독 로그인을 사용하세요."
+                            .to_string()
+                    })?;
+                anthropic::generate_text(ClaudeAuth::ApiKey(&key), &model_id, &prompt, Some(opts)).await
+            }
+        };
+        result.map(|r| r.text).map_err(err_to_string)
+    })
+    .await
 }
 
 // ─── 범용 ChatGPT(Codex 구독) 텍스트 생성 (React AI 모드) ────────────────────
@@ -1336,21 +1381,25 @@ pub async fn ai_generate_codex(
     system: Option<String>,
     prompt: String,
     model: Option<String>,
+    job_id: Option<String>,
 ) -> Result<String, String> {
-    use super::llm::openai_codex;
-    let tokens = crate::subscription_auth::read_codex_tokens()?;
-    let model_id = model.as_deref().unwrap_or(super::MODEL_CODEX);
-    openai_codex::generate_text(
-        &tokens.access_token,
-        tokens.account_id.as_deref(),
-        model_id,
-        system.as_deref(),
-        &prompt,
-        None,
-    )
+    run_cancellable_ai(job_id, async move {
+        use super::llm::openai_codex;
+        let tokens = crate::subscription_auth::read_codex_tokens()?;
+        let model_id = model.unwrap_or_else(|| super::MODEL_CODEX.to_string());
+        openai_codex::generate_text(
+            &tokens.access_token,
+            tokens.account_id.as_deref(),
+            &model_id,
+            system.as_deref(),
+            &prompt,
+            None,
+        )
+        .await
+        .map(|r| r.text)
+        .map_err(err_to_string)
+    })
     .await
-    .map(|r| r.text)
-    .map_err(err_to_string)
 }
 
 // ─── Gemini 구독(Antigravity CLI) 텍스트 생성 ───────────────────────────────
@@ -1362,9 +1411,19 @@ pub async fn ai_generate_gemini_agy(
     system: Option<String>,
     prompt: String,
     model: String,
+    job_id: Option<String>,
 ) -> Result<String, String> {
     use super::llm::gemini_agy;
-    gemini_agy::generate_text(&model, system.as_deref(), &prompt).await
+    run_cancellable_ai_with_token(job_id, |cancel_token| async move {
+        match cancel_token {
+            Some(token) => {
+                gemini_agy::generate_text_cancellable(&model, system.as_deref(), &prompt, token)
+                    .await
+            }
+            None => gemini_agy::generate_text(&model, system.as_deref(), &prompt).await,
+        }
+    })
+    .await
 }
 
 // ─── OpenAI API 키 텍스트 생성 (구독 codex 와 별개 경로) ─────────────────────
@@ -1375,16 +1434,20 @@ pub async fn ai_generate_openai(
     system: Option<String>,
     prompt: String,
     model: String,
+    job_id: Option<String>,
 ) -> Result<String, String> {
-    use super::keychain::{get_key, Provider};
-    use super::llm::openai_api;
-    let key = get_key(Provider::Openai)
-        .map_err(err_to_string)?
-        .ok_or_else(|| "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
-    openai_api::generate_text(&key, &model, system.as_deref(), &prompt, None)
-        .await
-        .map(|r| r.text)
-        .map_err(err_to_string)
+    run_cancellable_ai(job_id, async move {
+        use super::keychain::{get_key, Provider};
+        use super::llm::openai_api;
+        let key = get_key(Provider::Openai)
+            .map_err(err_to_string)?
+            .ok_or_else(|| "OpenAI API 키가 없습니다. Settings 에서 등록하세요.".to_string())?;
+        openai_api::generate_text(&key, &model, system.as_deref(), &prompt, None)
+            .await
+            .map(|r| r.text)
+            .map_err(err_to_string)
+    })
+    .await
 }
 
 // ─── Grok(xAI) API 키 텍스트 생성 ──────────────────────────────────────────
@@ -1397,9 +1460,13 @@ pub async fn ai_generate_grok(
     prompt: String,
     model: String,
     grok_auth: String,
+    job_id: Option<String>,
 ) -> Result<String, String> {
-    let key = grok_bearer(&grok_auth)?;
-    super::llm::grok::generate_text(&key, &model, system.as_deref(), &prompt).await
+    run_cancellable_ai(job_id, async move {
+        let key = grok_bearer(&grok_auth)?;
+        super::llm::grok::generate_text(&key, &model, system.as_deref(), &prompt).await
+    })
+    .await
 }
 
 /// Grok 호출에 쓸 Bearer 토큰 — 구독(auth.json OAuth) 또는 API 키(Keychain).
@@ -1511,6 +1578,63 @@ pub async fn generate_image_grok(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+    use tokio::sync::oneshot;
+    use tokio::time::{timeout, Duration};
+
+    #[tokio::test]
+    async fn cancellable_ai_returns_result_without_job_id() {
+        let result = run_cancellable_ai(None, async { Ok::<_, String>("done") })
+            .await
+            .expect("job without cancellation should complete");
+
+        assert_eq!(result, "done");
+    }
+
+    #[tokio::test]
+    async fn cancellable_ai_observes_cancel_before_registration() {
+        let job_id = format!("test-ai-{}", uuid::Uuid::new_v4());
+        assert!(super::super::cancel::cancel_job(&job_id));
+
+        let result = timeout(
+            Duration::from_secs(1),
+            run_cancellable_ai(Some(job_id), async {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                Ok::<_, String>("late")
+            }),
+        )
+        .await
+        .expect("pre-cancelled job should return immediately");
+
+        assert_eq!(result.unwrap_err(), AI_CANCELLED_MESSAGE);
+    }
+
+    #[tokio::test]
+    async fn cancellable_ai_observes_cancel_while_running() {
+        let job_id = format!("test-ai-{}", uuid::Uuid::new_v4());
+        let cancel_job_id = job_id.clone();
+        let (started_tx, started_rx) = oneshot::channel();
+
+        let task = tokio::spawn(async move {
+            run_cancellable_ai(Some(job_id), async move {
+                let _ = started_tx.send(());
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                Ok::<_, String>("late")
+            })
+            .await
+        });
+
+        started_rx
+            .await
+            .expect("cancellable job should start before test cancels it");
+        assert!(super::super::cancel::cancel_job(&cancel_job_id));
+
+        let result = timeout(Duration::from_secs(1), task)
+            .await
+            .expect("running job should observe cancellation")
+            .expect("task should not panic");
+
+        assert_eq!(result.unwrap_err(), AI_CANCELLED_MESSAGE);
+    }
 
     #[test]
     fn markdown_source_sections_preserve_heading_paths() {
