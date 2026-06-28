@@ -35,6 +35,20 @@ async function tauriWriteTextFile() {
   return writeTextFile;
 }
 
+async function showFileActionError(title: string, err: unknown) {
+  console.error(`[useFileSystem] ${title}:`, err);
+  if (!isTauri()) return;
+  try {
+    const { message } = await import('@tauri-apps/plugin-dialog');
+    await message(`${title}\n\n${String(err)}`, {
+      title: 'MarkMind',
+      kind: 'error',
+    });
+  } catch {
+    // dialog 자체가 실패한 경우 console 로그만 유지
+  }
+}
+
 // 같은 path 가 짧은 시간(StrictMode 이중 listen·중복 open-file 이벤트)에 두 번 들어오면
 // 새 창이 2개 열리므로(중복/빈 창) 1초 디바운스로 1회만 처리. 윈도우(webview)별 모듈
 // 스코프라 창마다 독립.
@@ -338,7 +352,7 @@ export function useFileSystem(
         }
       }
     } catch (err) {
-      console.error('Failed to open file:', err);
+      await showFileActionError('파일을 열 수 없습니다.', err);
     }
   }, [confirmUnsavedChanges]);
 
@@ -407,7 +421,7 @@ export function useFileSystem(
       setFileState((prev) => ({ ...prev, content: finalContent, filePath: path, fileName: name, isDirty: false }));
       return 'saved';
     } catch (err) {
-      console.error('Failed to save file:', err);
+      await showFileActionError('파일을 저장할 수 없습니다.', err);
       return 'failed';
     }
   }, []);
@@ -428,7 +442,7 @@ export function useFileSystem(
       const save = await tauriSave();
       const selected = await save({
         filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
-        defaultPath: fileState.fileName,
+        defaultPath: fileNameRef.current,
       });
       if (!selected) return;
 
@@ -438,9 +452,9 @@ export function useFileSystem(
       const name = selected.split('/').pop() || 'Untitled.md';
       setFileState((prev) => ({ ...prev, content: finalContent, filePath: selected, fileName: name, isDirty: false }));
     } catch (err) {
-      console.error('Failed to save file:', err);
+      await showFileActionError('다른 이름으로 저장할 수 없습니다.', err);
     }
-  }, [fileState.fileName]);
+  }, []);
 
   // ─── New File ───
   const newFile = useCallback(async () => {

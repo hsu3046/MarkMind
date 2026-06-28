@@ -29,7 +29,7 @@ import { TableHeader } from '@tiptap/extension-table-header';
 import { Markdown } from 'tiptap-markdown';
 import { SearchAndReplace } from '@sereneinserenade/tiptap-search-and-replace';
 import { Typography } from '@tiptap/extension-typography';
-import { TextSelection, Plugin, PluginKey } from '@tiptap/pm/state';
+import { TextSelection, Plugin, PluginKey, type Selection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { InlineCheckbox } from '../extensions/InlineCheckbox';
@@ -38,6 +38,7 @@ import { createImageInline } from '../extensions/ImageInline';
 import { resolveImageSrc } from '../lib/imageSrc';
 import { removeFlowchartBlock, hasFlowchartBlock } from '../lib/flowchartBlock';
 import { quoteLines } from '../lib/quoteMatch';
+import { markdownOffsetToVisibleOffset, visibleOffsetToMarkdownOffset } from '../lib/markdownCursor';
 import { TableTools } from './TableTools';
 import {
     Bold, Italic, Strikethrough, Code,
@@ -287,13 +288,14 @@ interface FrontmatterParts {
     fields: { key: string; value: string }[];
     body: string;
     rawFrontmatter: string; // 편집 시 그대로 다시 붙이기 위해
+    sourceFrontmatterLength: number; // 커서 offset 계산용 원문 prefix 길이
 }
 
 function splitFrontmatter(md: string): FrontmatterParts {
-    if (!md.startsWith('---')) return { fields: [], body: md, rawFrontmatter: '' };
+    if (!md.startsWith('---')) return { fields: [], body: md, rawFrontmatter: '', sourceFrontmatterLength: 0 };
     const after = md.slice(3);
     const endIdx = after.indexOf('\n---');
-    if (endIdx === -1) return { fields: [], body: md, rawFrontmatter: '' };
+    if (endIdx === -1) return { fields: [], body: md, rawFrontmatter: '', sourceFrontmatterLength: 0 };
     const raw = after.slice(0, endIdx).trim();
     const body = after.slice(endIdx + 4).replace(/^\r?\n/, '');
     const rawFrontmatter = `---\n${raw}\n---\n`;
@@ -312,7 +314,7 @@ function splitFrontmatter(md: string): FrontmatterParts {
         }
         fields.push({ key, value });
     }
-    return { fields, body, rawFrontmatter };
+    return { fields, body, rawFrontmatter, sourceFrontmatterLength: md.length - body.length };
 }
 
 // ─── HTML 테이블 블록 (병합 셀 — MarkdownTable 확장이 직렬화) 분리 ───
@@ -791,6 +793,115 @@ function buildQuoteDecos(doc: PMNode, texts: string[]): DecorationSet {
     });
     return DecorationSet.create(doc, decos);
 }
+
+function richLeafText(leaf: PMNode): string {
+    return leaf.type.name === 'hardBreak' ? '\n' : '';
+}
+
+function richTextBetween(doc: PMNode, from: number, to: number): string {
+    return doc.textBetween(from, to, '\n', richLeafText).replace(/\u200b/g, '');
+}
+
+function richVisibleOffsetAt(editor: Editor, pos: number): number {
+    const size = editor.state.doc.content.size;
+    const clamped = Math.max(0, Math.min(pos, size));
+    return richTextBetween(editor.state.doc, 0, clamped).length;
+}
+
+function richPosFromVisibleOffset(editor: Editor, visibleOffset: number): number {
+    const target = Math.max(0, visibleOffset);
+    const doc = editor.state.doc;
+    let visible = 0;
+    let firstTextBlock = true;
+    let found: number | null = null;
+    let fallback = doc.content.size;
+
+    doc.descendants((node, pos) => {
+        if (found != null) return false;
+
+        const leafText = node.isLeaf ? richLeafText(node).replace(/\u200b/g, '') : '';
+        if (node.isBlock && ((node.isLeaf && leafText.length > 0) || node.isTextblock)) {
+            if (firstTextBlock) {
+                firstTextBlock = false;
+            } else if (target <= visible + 1) {
+                found = Math.min(pos + (node.isTextblock ? 1 : 0), doc.content.size);
+                return false;
+            } else {
+                visible += 1;
+            }
+        }
+
+        if (node.isText && node.text) {
+            const clean = node.text.replace(/\u200b/g, '');
+            if (target <= visible + clean.length) {
+                found = pos + cleanToRaw(node.text, target - visible);
+                return false;
+            }
+            visible += clean.length;
+            fallback = pos + node.text.length;
+            return false;
+        }
+
+        if (node.isLeaf && leafText.length > 0) {
+            if (target <= visible + leafText.length) {
+                found = Math.min(pos + node.nodeSize, doc.content.size);
+                return false;
+            }
+            visible += leafText.length;
+            fallback = Math.min(pos + node.nodeSize, doc.content.size);
+            return false;
+        }
+
+        if (node.isTextblock && node.content.size === 0) {
+            fallback = Math.min(pos + 1, doc.content.size);
+        }
+
+        return undefined;
+    });
+
+    return Math.max(0, Math.min(found ?? fallback, doc.content.size));
+}
+
+function focusRichEditorAtVisibleOffset(editor: Editor, visibleOffset: number, scroll = true): boolean {
+    const size = editor.state.doc.content.size;
+    const pos = Math.max(0, Math.min(richPosFromVisibleOffset(editor, visibleOffset), size));
+    const $pos = editor.state.doc.resolve(pos);
+    let selection: Selection;
+    try {
+        selection = TextSelection.create(editor.state.doc, pos);
+    } catch {
+        selection = TextSelection.near($pos, 1);
+    }
+    editor.view.dispatch(editor.state.tr.setSelection(selection));
+    editor.view.focus();
+    if (scroll) centerRichSelection(editor, selection.from);
+    return true;
+}
+
+function centerRichSelection(editor: Editor, pos: number) {
+    const scroller = editor.view.dom.closest('.preview-wrapper') as HTMLElement | null;
+    if (!scroller) {
+        editor.view.dom.scrollIntoView({ block: 'center', behavior: 'auto' });
+        return;
+    }
+
+    let coords: { top: number; bottom: number };
+    try {
+        coords = editor.view.coordsAtPos(Math.max(0, Math.min(pos, editor.state.doc.content.size)));
+    } catch {
+        return;
+    }
+
+    const scrollerRect = scroller.getBoundingClientRect();
+    const sticky = scroller.querySelector('.rich-sticky-top') as HTMLElement | null;
+    const stickyHeight = sticky?.getBoundingClientRect().height ?? 0;
+    const usableHeight = Math.max(1, scroller.clientHeight - stickyHeight);
+    const cursorTop = scroller.scrollTop + coords.top - scrollerRect.top;
+    const target = cursorTop - stickyHeight - usableHeight * 0.42;
+    const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    scroller.scrollTop = Math.max(0, Math.min(max, Math.round(target)));
+}
+
 function quoteHLPlugin() {
     return new Plugin({
         key: quoteHLKey,
@@ -835,6 +946,7 @@ function RichEditor({
     const editorInstanceRef = useRef<Editor | null>(null);
     // onUpdate 가 마지막으로 내보낸 body — 외부 content 변경(저장 flush 등) 감지용(#56).
     const lastEmittedBodyRef = useRef(body);
+    const didSkipInitialBodySyncRef = useRef(false);
     useEffect(() => {
         docDirRef.current = docDir;
     }, [docDir]);
@@ -1089,6 +1201,10 @@ function RichEditor({
     // 사용자가 편집 중인 변경은 덮어쓰지 않도록 — 직렬화 결과와 비교.
     useEffect(() => {
         if (!editor) return;
+        if (!didSkipInitialBodySyncRef.current) {
+            didSkipInitialBodySyncRef.current = true;
+            return;
+        }
         const current: string = editor.storage.markdown?.getMarkdown() ?? '';
         // onChange 와 동일 정규화를 거쳐 비교 — 안 그러면 저장본(정규화됨)과 늘
         // 달라 보여 매번 setContent(커서 점프) 가 발생.
@@ -1136,6 +1252,10 @@ export interface PreviewHandle {
     insertImageMarkdown: (relPath: string) => void;
     /** 드롭 좌표(client px)에 해당하는 위치에 이미지 삽입(#56). 좌표 무효면 커서 위치. */
     insertImageAtCoords: (relPath: string, clientX: number, clientY: number) => void;
+    /** 현재 Rich Text 커서에 대응하는 full markdown source offset. */
+    getMarkdownOffset: () => number | null;
+    /** full markdown source offset 으로 Rich Text 커서와 스크롤을 복원. */
+    focusAtMarkdownOffset: (offset: number, scroll?: boolean) => boolean;
 }
 
 export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
@@ -1145,6 +1265,9 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     const [showFlow, setShowFlow] = useState(false);
     // Rich Text 모드의 editor 인스턴스 — App 이 drop 이미지를 여기로 삽입(#56)
     const richEditorRef = useRef<Editor | null>(null);
+    const bodyRef = useRef('');
+    const rawFrontmatterRef = useRef('');
+    const sourceFrontmatterLengthRef = useRef(0);
     useImperativeHandle(ref, () => ({
         insertImageMarkdown: (relPath: string) => {
             richEditorRef.current?.chain().focus().setImage({ src: relPath }).run();
@@ -1159,20 +1282,39 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
                 editor.chain().focus().setImage({ src: relPath }).run();
             }
         },
+        getMarkdownOffset: () => {
+            const editor = richEditorRef.current;
+            if (!editor) return null;
+            const plainOffset = richVisibleOffsetAt(editor, editor.state.selection.from);
+            const current: string = editor.storage.markdown?.getMarkdown() ?? bodyRef.current;
+            const bodyMarkdown = normalizeSerializedMarkdown(stripDisplayHelpers(current));
+            return sourceFrontmatterLengthRef.current + visibleOffsetToMarkdownOffset(bodyMarkdown, plainOffset);
+        },
+        focusAtMarkdownOffset: (offset: number, scroll = true) => {
+            const editor = richEditorRef.current;
+            if (!editor) return false;
+            const bodyOffset = Math.max(0, offset - sourceFrontmatterLengthRef.current);
+            const visibleOffset = markdownOffsetToVisibleOffset(bodyRef.current, bodyOffset);
+            return focusRichEditorAtVisibleOffset(editor, visibleOffset, scroll);
+        },
     }), []);
     // 문서 디렉토리(POSIX) — 로컬 이미지 상대경로 해석 기준(#55). 미저장이면 null.
     const docDir = useMemo(
         () => (filePath ? filePath.slice(0, filePath.lastIndexOf('/')) : null),
         [filePath],
     );
-    const { fields, body, rawFrontmatter } = useMemo(() => {
+    const { fields, body, rawFrontmatter, sourceFrontmatterLength } = useMemo(() => {
         const split = splitFrontmatter(content);
         return {
             fields: split.fields,
             body: split.body,
             rawFrontmatter: split.rawFrontmatter,
+            sourceFrontmatterLength: split.sourceFrontmatterLength,
         };
     }, [content]);
+    bodyRef.current = body;
+    rawFrontmatterRef.current = rawFrontmatter;
+    sourceFrontmatterLengthRef.current = sourceFrontmatterLength;
 
     // read-only 뷰 표시용 — 흐름도 데이터(markmind-flow JSON) 는 토글 off 시 숨긴다(표시만,
     // 원본은 보존). 편집(⌘3 Rich Text) 경로는 strip 하면 저장 시 블록이 사라지므로 건드리지 않는다.

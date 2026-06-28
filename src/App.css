@@ -1806,7 +1806,7 @@ body.is-resizing .split-pane {
   height: 100%;
   overflow-y: auto;
   background: var(--preview-bg);
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
   position: relative;
   padding: 32px 40px;
 }
@@ -1992,6 +1992,43 @@ body.is-resizing .split-pane {
 .tiptap-rich ol li::marker {
   font-size: 1.25em;
   color: var(--text-secondary);
+}
+
+/* Rich Text 리스트는 문단 rhythm 보다 촘촘하게. TipTap 이 li 안에 p 를 만들기 때문에
+   .markdown-body p margin 이 겹치지 않도록 편집 영역에서만 좁힌다. */
+.tiptap-rich ul:not([data-type="taskList"]),
+.tiptap-rich ol {
+  margin-top: 0.4em;
+  margin-bottom: 0.7em;
+}
+
+.tiptap-rich ul:not([data-type="taskList"]) li,
+.tiptap-rich ol li {
+  line-height: min(var(--md-line-height, 1.8), 1.55);
+  margin: 0.12em 0;
+}
+
+.tiptap-rich ul:not([data-type="taskList"]) li > p,
+.tiptap-rich ol li > p {
+  margin: 0.1em 0;
+}
+
+.tiptap-rich ul:not([data-type="taskList"]) li > p:first-child,
+.tiptap-rich ol li > p:first-child {
+  margin-top: 0;
+}
+
+.tiptap-rich ul:not([data-type="taskList"]) li > p:last-child,
+.tiptap-rich ol li > p:last-child {
+  margin-bottom: 0;
+}
+
+.tiptap-rich ul:not([data-type="taskList"]) li > ul,
+.tiptap-rich ul:not([data-type="taskList"]) li > ol,
+.tiptap-rich ol li > ul,
+.tiptap-rich ol li > ol {
+  margin-top: 0.15em;
+  margin-bottom: 0.15em;
 }
 
 /* === Background color picker === */
@@ -2317,7 +2354,8 @@ body.is-resizing .split-pane {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  margin: 4px 0;
+  line-height: min(var(--md-line-height, 1.8), 1.55);
+  margin: 2px 0;
 }
 .tiptap-rich ul[data-type="taskList"] li > label {
   flex-shrink: 0;

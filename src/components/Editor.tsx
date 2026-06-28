@@ -65,6 +65,10 @@ export interface EditorHandle {
      *  우리가 먼저 doc 를 새 content 로 바꾸면 value prop==doc 이라 그 sync 가 skip 된다.
      *  (uiwjs/react-codemirror #199 / #694 알려진 이슈) */
     applyContentWithCursor: (content: string, offset: number) => void;
+    /** 현재 커서의 마크다운 source offset. */
+    getCursorOffset: () => number | null;
+    /** 마크다운 source offset 으로 커서와 스크롤을 복원. */
+    focusAtOffset: (offset: number, scroll?: boolean) => boolean;
 }
 
 const lightTheme = EditorView.theme({
@@ -308,6 +312,21 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
                     effects: EditorView.scrollIntoView(pos, { y: 'center' }),
                 });
                 view.focus();
+            },
+            getCursorOffset: () => {
+                const view = cmRef.current?.view;
+                return view?.state.selection.main.head ?? null;
+            },
+            focusAtOffset: (offset: number, scroll = true) => {
+                const view = cmRef.current?.view;
+                if (!view) return false;
+                const pos = Math.min(Math.max(0, offset), view.state.doc.length);
+                view.dispatch({
+                    selection: { anchor: pos },
+                    effects: scroll ? EditorView.scrollIntoView(pos, { y: 'center' }) : [],
+                });
+                view.focus();
+                return true;
             },
         }), []);
 
