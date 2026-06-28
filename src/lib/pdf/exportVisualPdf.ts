@@ -17,7 +17,10 @@ const PX_PER_MM = 96 / 25.4;
 /** 캡처 해상도 배율. */
 const SCALE = 2;
 /** 페이지 가장자리 여백(mm). */
-const MARGIN_MM = 6;
+const MARGIN_X_MM = 8;
+const MARGIN_TOP_MM = 12;
+const MARGIN_BOTTOM_MM = 16;
+const PAGE_NUMBER_Y_OFFSET_MM = 5;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export type VisualViewMode = 'gantt' | 'mindmap' | 'flowchart' | 'kanban';
@@ -237,15 +240,18 @@ async function captureKanban(): Promise<CapturedImage | null> {
 // ─── 공통: PDF 조립 / 저장 ────────────────────────────────────────────────────
 
 /** 콘텐츠 비율에 맞춘 단일 커스텀 페이지 PDF(잘림 0, orientation 자동). jsPDF 지연 로드. */
-async function imageToPdfBlob(img: CapturedImage, marginMm = MARGIN_MM): Promise<Blob> {
+async function imageToPdfBlob(img: CapturedImage): Promise<Blob> {
     const { jsPDF } = await import('jspdf');
     const cw = img.width / PX_PER_MM;
     const ch = img.height / PX_PER_MM;
-    const pageW = cw + marginMm * 2;
-    const pageH = ch + marginMm * 2;
+    const pageW = cw + MARGIN_X_MM * 2;
+    const pageH = ch + MARGIN_TOP_MM + MARGIN_BOTTOM_MM;
     const orientation = pageW >= pageH ? 'landscape' : 'portrait';
     const pdf = new jsPDF({ orientation, unit: 'mm', format: [pageW, pageH], compress: true });
-    pdf.addImage(img.dataUrl, 'PNG', marginMm, marginMm, cw, ch, undefined, 'FAST');
+    pdf.addImage(img.dataUrl, 'PNG', MARGIN_X_MM, MARGIN_TOP_MM, cw, ch, undefined, 'FAST');
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(102);
+    pdf.text('1', pageW / 2, pageH - PAGE_NUMBER_Y_OFFSET_MM, { align: 'center' });
     return pdf.output('blob');
 }
 

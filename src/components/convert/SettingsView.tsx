@@ -784,6 +784,18 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                         </div>
                     </section>
 
+                    <section className="convert-settings-section viewer-section">
+                        <label>슬라이드쇼 레이아웃</label>
+                        <label className="convert-option">
+                            <input
+                                type="checkbox"
+                                checked={viewer.slideshow.autoTwoColumn}
+                                onChange={(e) => viewer.onSlideshowChange({ autoTwoColumn: e.target.checked })}
+                            />
+                            <span>긴 슬라이드 2열</span>
+                        </label>
+                    </section>
+
                     {/* 슬라이드에서 숨길 요소 — 발표 시 특정 블록 비표시(2×2 체크박스). */}
                     <section className="convert-settings-section viewer-section">
                         <label>슬라이드에서 숨길 요소</label>

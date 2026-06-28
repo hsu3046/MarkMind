@@ -3200,10 +3200,13 @@ code.hljs {
    content 만 출력. 다크 모드 / 사용자 배경 → 흰 배경 강제, code/checkbox
    ink 보존, 페이지 break 자연 분할, 한글 줄바꿈 + 외부 링크 URL 노출. */
 
-/* @page margin 0 — dialog 의 NSPrintInfo margin (Standard ~12.7mm) 만 사용.
-   기존 20mm 가 dialog margin 위에 누적되어 A4 콘텐츠 영역이 ~145mm 까지 협소
-   → 표 마지막 컬럼 잘림. 우리 콘텐츠 가장자리 마진은 body padding 으로 처리. */
-@page { size: A4; margin: 0; }
+/* 실제 콘텐츠 여백은 @page margin 이 담당한다. body padding 은 multi-page 에서
+   첫/끝 페이지에만 치우칠 수 있어 쓰지 않는다. 페이지 번호는 PDF 후처리에서
+   실제 페이지 객체로 삽입하고, bottom margin 은 그 영역을 비워 둔다. */
+@page {
+  size: A4;
+  margin: 12mm 8mm 16mm 8mm;
+}
 
 @media print {
   /* 다크모드 + 사용자 배경 변수 override (light token 강제) */
@@ -3235,12 +3238,7 @@ code.hljs {
     overflow: visible !important;
     overflow-x: visible !important;
     margin: 0 !important;
-    /* 좌우 padding 명시 분리 — shorthand 가 inline/inherit 와 섞일 때 비대칭
-       가능성 차단. 사용자 보고 ~15px (~4mm) 좌측 잔존 마진 fix 시도. */
-    padding-top: 6mm !important;
-    padding-right: 8mm !important;
-    padding-bottom: 6mm !important;
-    padding-left: 8mm !important;
+    padding: 0 !important;
     box-sizing: border-box !important;
     font-size: 10.5pt;
     line-height: 1.55;
