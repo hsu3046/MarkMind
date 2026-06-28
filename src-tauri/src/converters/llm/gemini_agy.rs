@@ -10,6 +10,12 @@
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::Read;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 
 /// 단일 프롬프트 응답(구독). model 은 agy 모델명. system 은 agy 가 별도 인자를 받지
 /// 않으므로 프롬프트 앞에 붙인다. PTY 호출은 blocking 이라 spawn_blocking 에서 실행.
@@ -18,17 +24,39 @@ pub async fn generate_text(
     system: Option<&str>,
     prompt: &str,
 ) -> Result<String, String> {
+    generate_text_inner(model, system, prompt, None).await
+}
+
+pub async fn generate_text_cancellable(
+    model: &str,
+    system: Option<&str>,
+    prompt: &str,
+    cancel_token: CancellationToken,
+) -> Result<String, String> {
+    generate_text_inner(model, system, prompt, Some(cancel_token)).await
+}
+
+async fn generate_text_inner(
+    model: &str,
+    system: Option<&str>,
+    prompt: &str,
+    cancel_token: Option<CancellationToken>,
+) -> Result<String, String> {
     let model = model.to_string();
     let full = match system {
         Some(s) if !s.trim().is_empty() => format!("{s}\n\n{prompt}"),
         _ => prompt.to_string(),
     };
-    tokio::task::spawn_blocking(move || agy_call(&model, &full))
+    tokio::task::spawn_blocking(move || agy_call(&model, &full, cancel_token))
         .await
         .map_err(|e| format!("agy 태스크 조인 실패: {e}"))?
 }
 
-fn agy_call(model: &str, prompt: &str) -> Result<String, String> {
+fn agy_call(
+    model: &str,
+    prompt: &str,
+    cancel_token: Option<CancellationToken>,
+) -> Result<String, String> {
     let pty = native_pty_system();
     let pair = pty
         .openpty(PtySize {
@@ -47,21 +75,55 @@ fn agy_call(model: &str, prompt: &str) -> Result<String, String> {
     cmd.arg("--print-timeout");
     cmd.arg("180s");
 
-    let mut child = pair.slave.spawn_command(cmd).map_err(|e| {
-        format!("agy 실행 실패 — 설치/PATH 확인(brew install --cask antigravity-cli): {e}")
-    })?;
     let mut reader = pair
         .master
         .try_clone_reader()
         .map_err(|e| format!("PTY reader 생성 실패: {e}"))?;
+    let mut child = pair.slave.spawn_command(cmd).map_err(|e| {
+        format!("agy 실행 실패 — 설치/PATH 확인(brew install --cask antigravity-cli): {e}")
+    })?;
+    let cancel_watcher = cancel_token.as_ref().map(|token| {
+        let token = token.clone();
+        let done = Arc::new(AtomicBool::new(false));
+        let done_for_thread = Arc::clone(&done);
+        let mut killer = child.clone_killer();
+        let handle = std::thread::spawn(move || {
+            while !done_for_thread.load(Ordering::Acquire) {
+                if token.is_cancelled() {
+                    let _ = killer.kill();
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+        (done, handle)
+    });
     // slave 를 닫아야 자식 종료 시 reader 가 EOF 를 받는다(안 닫으면 read_to_end 가 행).
     drop(pair.slave);
 
     let mut raw = Vec::new();
-    reader
-        .read_to_end(&mut raw)
-        .map_err(|e| format!("PTY 읽기 실패: {e}"))?;
+    let read_result = reader.read_to_end(&mut raw);
+    if read_result.is_err()
+        && !cancel_token
+            .as_ref()
+            .is_some_and(CancellationToken::is_cancelled)
+    {
+        let _ = child.kill();
+    }
     let _ = child.wait();
+    if let Some((done, handle)) = cancel_watcher {
+        done.store(true, Ordering::Release);
+        let _ = handle.join();
+    }
+
+    if cancel_token
+        .as_ref()
+        .is_some_and(CancellationToken::is_cancelled)
+    {
+        return Err("사용자가 작업을 정지했습니다.".into());
+    }
+
+    read_result.map_err(|e| format!("PTY 읽기 실패: {e}"))?;
 
     let text = clean_output(&String::from_utf8_lossy(&raw));
     if text.is_empty() {
