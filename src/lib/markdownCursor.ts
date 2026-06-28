@@ -488,6 +488,10 @@ function isThematicBreak(line: string): boolean {
     || /^(_[ \t]*){3,}$/.test(trimmed);
 }
 
+function isReferenceDefinition(line: string): boolean {
+  return /^[ \t]{0,3}\[[^\]\n]+]:[ \t]*\S/.test(line);
+}
+
 function decodeHtmlEntity(entity: string): string {
   if (entity === 'amp') return '&';
   if (entity === 'lt') return '<';
@@ -651,6 +655,10 @@ function visibleLines(markdown: string): { lines: VisibleLine[]; total: number }
     }
 
     if (!inFence && isThematicBreak(line)) {
+      continue;
+    }
+
+    if (!inFence && isReferenceDefinition(line)) {
       continue;
     }
 

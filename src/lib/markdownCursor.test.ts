@@ -86,6 +86,16 @@ describe('markdownCursor', () => {
     expect(markdownOffsetToVisibleOffset(md, afterOffset)).toBe('Before\n\n'.length);
   });
 
+  it('skips reference link definitions because they are not rendered body text', () => {
+    const md = ['Before', '[docs]: https://example.com', 'After'].join('\n');
+    expect(markdownVisibleText(md)).toBe(['Before', 'After'].join('\n'));
+
+    const afterOffset = md.indexOf('After');
+    const visibleOffset = markdownOffsetToVisibleOffset(md, afterOffset);
+    expect(visibleOffset).toBe('Before\n'.length);
+    expect(visibleOffsetToMarkdownOffset(md, visibleOffset)).toBe(afterOffset);
+  });
+
   it('collapses markdown blank separators like the rich text document', () => {
     const md = ['First', '', '', 'Second'].join('\n');
     expect(markdownVisibleText(md)).toBe('First\nSecond');

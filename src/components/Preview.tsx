@@ -288,13 +288,14 @@ interface FrontmatterParts {
     fields: { key: string; value: string }[];
     body: string;
     rawFrontmatter: string; // 편집 시 그대로 다시 붙이기 위해
+    sourceFrontmatterLength: number; // 커서 offset 계산용 원문 prefix 길이
 }
 
 function splitFrontmatter(md: string): FrontmatterParts {
-    if (!md.startsWith('---')) return { fields: [], body: md, rawFrontmatter: '' };
+    if (!md.startsWith('---')) return { fields: [], body: md, rawFrontmatter: '', sourceFrontmatterLength: 0 };
     const after = md.slice(3);
     const endIdx = after.indexOf('\n---');
-    if (endIdx === -1) return { fields: [], body: md, rawFrontmatter: '' };
+    if (endIdx === -1) return { fields: [], body: md, rawFrontmatter: '', sourceFrontmatterLength: 0 };
     const raw = after.slice(0, endIdx).trim();
     const body = after.slice(endIdx + 4).replace(/^\r?\n/, '');
     const rawFrontmatter = `---\n${raw}\n---\n`;
@@ -313,7 +314,7 @@ function splitFrontmatter(md: string): FrontmatterParts {
         }
         fields.push({ key, value });
     }
-    return { fields, body, rawFrontmatter };
+    return { fields, body, rawFrontmatter, sourceFrontmatterLength: md.length - body.length };
 }
 
 // ─── HTML 테이블 블록 (병합 셀 — MarkdownTable 확장이 직렬화) 분리 ───
@@ -1266,6 +1267,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     const richEditorRef = useRef<Editor | null>(null);
     const bodyRef = useRef('');
     const rawFrontmatterRef = useRef('');
+    const sourceFrontmatterLengthRef = useRef(0);
     useImperativeHandle(ref, () => ({
         insertImageMarkdown: (relPath: string) => {
             richEditorRef.current?.chain().focus().setImage({ src: relPath }).run();
@@ -1286,12 +1288,12 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
             const plainOffset = richVisibleOffsetAt(editor, editor.state.selection.from);
             const current: string = editor.storage.markdown?.getMarkdown() ?? bodyRef.current;
             const bodyMarkdown = normalizeSerializedMarkdown(stripDisplayHelpers(current));
-            return rawFrontmatterRef.current.length + visibleOffsetToMarkdownOffset(bodyMarkdown, plainOffset);
+            return sourceFrontmatterLengthRef.current + visibleOffsetToMarkdownOffset(bodyMarkdown, plainOffset);
         },
         focusAtMarkdownOffset: (offset: number, scroll = true) => {
             const editor = richEditorRef.current;
             if (!editor) return false;
-            const bodyOffset = Math.max(0, offset - rawFrontmatterRef.current.length);
+            const bodyOffset = Math.max(0, offset - sourceFrontmatterLengthRef.current);
             const visibleOffset = markdownOffsetToVisibleOffset(bodyRef.current, bodyOffset);
             return focusRichEditorAtVisibleOffset(editor, visibleOffset, scroll);
         },
@@ -1301,16 +1303,18 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
         () => (filePath ? filePath.slice(0, filePath.lastIndexOf('/')) : null),
         [filePath],
     );
-    const { fields, body, rawFrontmatter } = useMemo(() => {
+    const { fields, body, rawFrontmatter, sourceFrontmatterLength } = useMemo(() => {
         const split = splitFrontmatter(content);
         return {
             fields: split.fields,
             body: split.body,
             rawFrontmatter: split.rawFrontmatter,
+            sourceFrontmatterLength: split.sourceFrontmatterLength,
         };
     }, [content]);
     bodyRef.current = body;
     rawFrontmatterRef.current = rawFrontmatter;
+    sourceFrontmatterLengthRef.current = sourceFrontmatterLength;
 
     // read-only 뷰 표시용 — 흐름도 데이터(markmind-flow JSON) 는 토글 off 시 숨긴다(표시만,
     // 원본은 보존). 편집(⌘3 Rich Text) 경로는 strip 하면 저장 시 블록이 사라지므로 건드리지 않는다.
