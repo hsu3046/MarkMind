@@ -597,21 +597,60 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
   );
   let nextSourceImageIndex = 0;
   const usedSourceIndexes = new Set<number>();
+  const consumedSourceImages = new Set<string>();
+  const sourceImageKey = (id: string, imageIndex: number) => `${id}\u0000${imageIndex}`;
+  const markSourceImageConsumed = (id: string, imageIndex: number) => {
+    consumedSourceImages.add(sourceImageKey(id, imageIndex));
+    let offset = sourceImageOffsets.get(id) ?? 0;
+    while (consumedSourceImages.has(sourceImageKey(id, offset))) offset += 1;
+    sourceImageOffsets.set(id, offset);
+  };
+  const firstUnconsumedSourceImageIndex = (id: string, images: SlideImageSpec[]): number => {
+    let offset = sourceImageOffsets.get(id) ?? 0;
+    while (offset < images.length && consumedSourceImages.has(sourceImageKey(id, offset))) offset += 1;
+    sourceImageOffsets.set(id, offset);
+    return offset;
+  };
+  const consumeSourceImageBySrc = (sourceId: string, existingSrc: string): boolean => {
+    const normalized = sourceId.trim().toUpperCase();
+    const images = sourceImagesById.get(normalized);
+    if (!images) return false;
+    for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+      if (consumedSourceImages.has(sourceImageKey(normalized, imageIndex))) continue;
+      if (images[imageIndex]?.src?.trim() === existingSrc) {
+        markSourceImageConsumed(normalized, imageIndex);
+        return true;
+      }
+    }
+    return false;
+  };
+  const consumeFallbackSourceImageBySrc = (existingSrc: string): boolean => {
+    for (let entryIndex = nextSourceImageIndex; entryIndex < sourceImageEntries.length; entryIndex += 1) {
+      const { id, image, imageIndex } = sourceImageEntries[entryIndex];
+      if (consumedSourceImages.has(sourceImageKey(id, imageIndex))) continue;
+      if (image.src?.trim() === existingSrc) {
+        markSourceImageConsumed(id, imageIndex);
+        nextSourceImageIndex = entryIndex + 1;
+        return true;
+      }
+    }
+    return false;
+  };
   const takeSourceImage = (sourceId: string): SlideImageSpec | undefined => {
     const normalized = sourceId.trim().toUpperCase();
     const images = sourceImagesById.get(normalized);
-    const offset = sourceImageOffsets.get(normalized) ?? 0;
+    if (!images) return undefined;
+    const offset = firstUnconsumedSourceImageIndex(normalized, images);
     const image = images?.[offset];
     if (!image) return undefined;
-    sourceImageOffsets.set(normalized, offset + 1);
+    markSourceImageConsumed(normalized, offset);
     return image;
   };
   const takeNextSourceImage = (): SlideImageSpec | undefined => {
     while (nextSourceImageIndex < sourceImageEntries.length) {
       const { id, image, imageIndex } = sourceImageEntries[nextSourceImageIndex++];
-      const offset = sourceImageOffsets.get(id) ?? 0;
-      if (imageIndex !== offset) continue;
-      sourceImageOffsets.set(id, offset + 1);
+      if (consumedSourceImages.has(sourceImageKey(id, imageIndex))) continue;
+      markSourceImageConsumed(id, imageIndex);
       return image;
     }
     return undefined;
@@ -625,33 +664,11 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
     usedSourceIndexes.add(sourceIndex);
     return image;
   };
-  const consumeNextSourceImage = (existingSrc: string): boolean => {
-    while (nextSourceImageIndex < sourceImageEntries.length) {
-      const { id, image, imageIndex } = sourceImageEntries[nextSourceImageIndex];
-      const offset = sourceImageOffsets.get(id) ?? 0;
-      if (imageIndex !== offset) {
-        nextSourceImageIndex += 1;
-        continue;
-      }
-      const sourceSrc = image.src?.trim();
-      if (!sourceSrc || sourceSrc !== existingSrc) return false;
-      nextSourceImageIndex += 1;
-      sourceImageOffsets.set(id, offset + 1);
-      return true;
-    }
-    return false;
-  };
   const consumeExistingSourceImage = (slide: Slide, slideIndex: number) => {
     const existingSrc = existingSlideImageSrc(slide);
     if (!existingSrc) return;
     for (const sourceId of slide.sourceIds ?? []) {
-      const normalized = sourceId.trim().toUpperCase();
-      const images = sourceImagesById.get(normalized);
-      const offset = sourceImageOffsets.get(normalized) ?? 0;
-      if (images?.[offset]?.src?.trim() === existingSrc) {
-        sourceImageOffsets.set(normalized, offset + 1);
-        return;
-      }
+      if (consumeSourceImageBySrc(sourceId, existingSrc)) return;
       if (sourceImagesById.size === 0) {
         const sourceIndex = sourceIndexFromId(sourceId);
         if (sourceIndex === undefined || sourceIndex >= sourceSlides.length) continue;
@@ -662,7 +679,7 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
         }
       }
     }
-    if (!slide.sourceIds?.length && sourceImagesById.size > 0 && consumeNextSourceImage(existingSrc)) {
+    if (!slide.sourceIds?.length && sourceImagesById.size > 0 && consumeFallbackSourceImageBySrc(existingSrc)) {
       return;
     }
     if (!slide.sourceIds?.length && sourceImagesById.size === 0) {
