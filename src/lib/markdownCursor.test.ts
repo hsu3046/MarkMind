@@ -23,6 +23,21 @@ describe('markdownCursor', () => {
     expect(md.slice(mdOffset, mdOffset + 4)).toBe('docs');
   });
 
+  it('preserves literal marker characters that are not markdown delimiters', () => {
+    const md = 'Use foo_bar with 2 * 3 and ~home~ paths, then **bold** and ~~gone~~.';
+    expect(markdownVisibleText(md)).toBe('Use foo_bar with 2 * 3 and ~home~ paths, then bold and gone.');
+
+    const underscoreOffset = md.indexOf('_');
+    const visibleUnderscore = markdownOffsetToVisibleOffset(md, underscoreOffset);
+    expect(markdownVisibleText(md)[visibleUnderscore]).toBe('_');
+    expect(visibleOffsetToMarkdownOffset(md, visibleUnderscore)).toBe(underscoreOffset);
+
+    const multiplyOffset = md.indexOf('*');
+    const visibleMultiply = markdownOffsetToVisibleOffset(md, multiplyOffset);
+    expect(markdownVisibleText(md)[visibleMultiply]).toBe('*');
+    expect(visibleOffsetToMarkdownOffset(md, visibleMultiply)).toBe(multiplyOffset);
+  });
+
   it('keeps fenced code text but ignores fence markers', () => {
     const md = ['Before', '```ts', 'const x = 1;', '```', 'After'].join('\n');
     expect(markdownVisibleText(md)).toBe(['Before', 'const x = 1;', 'After'].join('\n'));

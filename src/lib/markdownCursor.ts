@@ -57,6 +57,107 @@ function destinationEnd(src: string, openParen: number): number {
   return -1;
 }
 
+function isWhitespace(ch: string | undefined): boolean {
+  return ch == null || /\s/.test(ch);
+}
+
+function isPunctuation(ch: string | undefined): boolean {
+  return ch != null && /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/.test(ch);
+}
+
+function isEscaped(src: string, index: number): boolean {
+  let backslashes = 0;
+  for (let i = index - 1; i >= 0 && src[i] === '\\'; i -= 1) backslashes += 1;
+  return backslashes % 2 === 1;
+}
+
+function delimiterRunAt(src: string, index: number): { char: string; start: number; length: number } | null {
+  const char = src[index];
+  if (char !== '*' && char !== '_' && char !== '~') return null;
+  let start = index;
+  while (start > 0 && src[start - 1] === char) start -= 1;
+  let end = index + 1;
+  while (end < src.length && src[end] === char) end += 1;
+  return { char, start, length: end - start };
+}
+
+function delimiterCanOpen(src: string, run: { char: string; start: number; length: number }): boolean {
+  if (isEscaped(src, run.start)) return false;
+  if (run.char === '~' && run.length < 2) return false;
+  const before = run.start > 0 ? src[run.start - 1] : undefined;
+  const after = src[run.start + run.length];
+  if (after == null || isWhitespace(after)) return false;
+  const leftFlanking = !isPunctuation(after) || before == null || isWhitespace(before) || isPunctuation(before);
+  if (!leftFlanking) return false;
+  if (run.char === '_') {
+    const rightFlanking = before != null
+      && !isWhitespace(before)
+      && (!isPunctuation(before) || after == null || isWhitespace(after) || isPunctuation(after));
+    return !rightFlanking || isPunctuation(before);
+  }
+  return true;
+}
+
+function delimiterCanClose(src: string, run: { char: string; start: number; length: number }): boolean {
+  if (isEscaped(src, run.start)) return false;
+  if (run.char === '~' && run.length < 2) return false;
+  const before = run.start > 0 ? src[run.start - 1] : undefined;
+  const after = src[run.start + run.length];
+  if (before == null || isWhitespace(before)) return false;
+  const rightFlanking = !isPunctuation(before) || after == null || isWhitespace(after) || isPunctuation(after);
+  if (!rightFlanking) return false;
+  if (run.char === '_') {
+    const leftFlanking = after != null
+      && !isWhitespace(after)
+      && (!isPunctuation(after) || before == null || isWhitespace(before) || isPunctuation(before));
+    return !leftFlanking || isPunctuation(after);
+  }
+  return true;
+}
+
+function hasClosingDelimiter(src: string, run: { char: string; start: number; length: number }): boolean {
+  for (let i = run.start + run.length; i < src.length; i += 1) {
+    if (src[i] !== run.char || isEscaped(src, i)) continue;
+    const candidate = delimiterRunAt(src, i);
+    if (!candidate) continue;
+    i = candidate.start + candidate.length - 1;
+    if (candidate.length >= run.length && delimiterCanClose(src, candidate)) return true;
+  }
+  return false;
+}
+
+function hasOpeningDelimiter(src: string, run: { char: string; start: number; length: number }): boolean {
+  for (let i = run.start - 1; i >= 0; i -= 1) {
+    if (src[i] !== run.char || isEscaped(src, i)) continue;
+    const candidate = delimiterRunAt(src, i);
+    if (!candidate) continue;
+    i = candidate.start;
+    if (candidate.length >= run.length && delimiterCanOpen(src, candidate)) return true;
+  }
+  return false;
+}
+
+function isHiddenEmphasisDelimiter(src: string, index: number): boolean {
+  const run = delimiterRunAt(src, index);
+  if (!run) return false;
+  return (delimiterCanOpen(src, run) && hasClosingDelimiter(src, run))
+    || (delimiterCanClose(src, run) && hasOpeningDelimiter(src, run));
+}
+
+function isHiddenLineBlockPosition(markdown: string, index: number): boolean {
+  const lineStart = markdown.lastIndexOf('\n', Math.max(0, index - 1)) + 1;
+  const nextLf = markdown.indexOf('\n', lineStart);
+  const rawLineEnd = nextLf === -1 ? markdown.length : nextLf;
+  const lineEnd = rawLineEnd > lineStart && markdown[rawLineEnd - 1] === '\r' ? rawLineEnd - 1 : rawLineEnd;
+  if (index < lineStart || index >= lineEnd) return false;
+
+  const line = markdown.slice(lineStart, lineEnd);
+  if (isThematicBreak(line)) return true;
+
+  const { prefixLength } = stripLinePrefixInfo(line);
+  return index - lineStart < prefixLength;
+}
+
 function inlineVisibleText(src: string): string {
   let out = '';
   for (let i = 0; i < src.length; i += 1) {
@@ -105,7 +206,7 @@ function inlineVisibleText(src: string): string {
       continue;
     }
 
-    if (ch === '*' || ch === '_' || ch === '~') {
+    if ((ch === '*' || ch === '_' || ch === '~') && isHiddenEmphasisDelimiter(src, i)) {
       while (src[i + 1] === ch) i += 1;
       continue;
     }
@@ -173,7 +274,7 @@ function inlineVisibleLengthBefore(src: string, col: number): number {
       continue;
     }
 
-    if (ch === '*' || ch === '_' || ch === '~') {
+    if ((ch === '*' || ch === '_' || ch === '~') && isHiddenEmphasisDelimiter(src, i)) {
       while (src[i + 1] === ch) i += 1;
       continue;
     }
@@ -187,7 +288,8 @@ function inlineVisibleLengthBefore(src: string, col: number): number {
 function isSkippableMarkdownSyntax(markdown: string, index: number): boolean {
   const ch = markdown[index];
   if (!ch) return false;
-  if ('#>-+*![]()`~_ '.includes(ch)) return true;
+  if (ch === '*' || ch === '_' || ch === '~') return isHiddenLineBlockPosition(markdown, index) || isHiddenEmphasisDelimiter(markdown, index);
+  if ('#>-+![]()` '.includes(ch)) return true;
   if (ch === '\t') return true;
   if (/\d/.test(ch)) {
     const rest = markdown.slice(index);
