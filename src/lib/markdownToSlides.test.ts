@@ -6,6 +6,7 @@ import {
   slideDeckFromLlmJson,
   slidesFromLlmJson,
 } from './markdownToSlides';
+import { normalizeSlidesForPptx } from './slideValidation';
 
 describe('markdownToSlides — 분할 규칙', () => {
   it('수평선(---) 으로 슬라이드를 나눈다', () => {
@@ -344,6 +345,29 @@ describe('slidesFromLlmJson', () => {
 
     const merged = preserveSourceImagesForPptx(aiSlides ?? [], markdown);
 
+    expect(merged[0].image?.src).toBe('assets/first.png');
+    expect(merged[1].image?.src).toBe('assets/second.png');
+  });
+
+  it('source-only PPTX 경로에서 split 이후 continuation에도 같은 sourceId 이미지를 보강', () => {
+    const markdown = ['# Report', '## Evidence', '![first](assets/first.png)', '![second](assets/second.png)'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          {
+            title: 'Dense evidence',
+            layout: 'content',
+            sourceIds: ['S2'],
+            bullets: Array.from({ length: 14 }, (_, index) => `Evidence point ${index + 1}`),
+          },
+        ],
+      }),
+    );
+
+    const normalized = normalizeSlidesForPptx(aiSlides ?? []);
+    const merged = preserveSourceImagesForPptx(normalized, markdown);
+
+    expect(normalized).toHaveLength(2);
     expect(merged[0].image?.src).toBe('assets/first.png');
     expect(merged[1].image?.src).toBe('assets/second.png');
   });
