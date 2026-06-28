@@ -44,6 +44,97 @@ function maskInlineCodeSpans(src: string, codes: string[]): string {
     return out;
 }
 
+function unescapeHtmlTagAttributes(value: string): string {
+    return value
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#34;/g, '"')
+        .replace(/&apos;|&#39;/g, "'")
+        .replace(/&amp;/g, '&');
+}
+
+function restoreEscapedHtmlTags(src: string): string {
+    let out = '';
+    let i = 0;
+
+    const isTagStart = (index: number): boolean => {
+        let cursor = index + 4;
+        if (src[cursor] === '/') cursor += 1;
+        if (!/[A-Za-z]/.test(src[cursor] ?? '')) return false;
+        cursor += 1;
+        while (/[A-Za-z0-9-]/.test(src[cursor] ?? '')) cursor += 1;
+        return src.startsWith('&gt;', cursor) || src[cursor] === '/' || /[ \t\r\n]/.test(src[cursor] ?? '');
+    };
+
+    while (i < src.length) {
+        if (!src.startsWith('&lt;', i) || !isTagStart(i)) {
+            out += src[i];
+            i += 1;
+            continue;
+        }
+
+        let quote: '"' | "'" | null = null;
+        let close = -1;
+        let j = i + 4;
+        while (j < src.length) {
+            if (quote == null && src.startsWith('&gt;', j)) {
+                close = j;
+                break;
+            }
+            if (src[j] === '"' || src.startsWith('&quot;', j) || src.startsWith('&#34;', j)) {
+                quote = quote === '"' ? null : quote == null ? '"' : quote;
+                j += src[j] === '"' ? 1 : src.startsWith('&quot;', j) ? 6 : 5;
+                continue;
+            }
+            if (src[j] === "'" || src.startsWith('&apos;', j) || src.startsWith('&#39;', j)) {
+                quote = quote === "'" ? null : quote == null ? "'" : quote;
+                j += src[j] === "'" ? 1 : src.startsWith('&apos;', j) ? 6 : 5;
+                continue;
+            }
+            j += 1;
+        }
+
+        if (close === -1) {
+            out += src[i];
+            i += 1;
+            continue;
+        }
+
+        const inner = src.slice(i + 4, close);
+        out += `<${unescapeHtmlTagAttributes(inner)}>`;
+        i = close + 4;
+    }
+
+    return out;
+}
+
+function isMarkdownContainerContentStart(prefix: string): boolean {
+    let rest = prefix;
+    let changed = true;
+
+    while (changed) {
+        const before = rest;
+        rest = rest
+            .replace(/^[ \t]{0,3}(?:>|&gt;)[ \t]?/, '')
+            .replace(/^[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+/, '')
+            .replace(/^[ \t]*\[[ xX]\][ \t]+/, '');
+        changed = rest !== before;
+    }
+
+    return /^[ \t]*$/.test(rest);
+}
+
+function restoreComparisonGreaterThan(src: string): string {
+    return src.replace(/(^|[^\S\n])&gt;(?=[^\S\n])/g, (match, prefix: string, offset: number) => {
+        const entityStart = offset + prefix.length;
+        const lineStart = src.lastIndexOf('\n', entityStart - 1) + 1;
+        const beforeOnLine = src.slice(lineStart, entityStart);
+        if (isMarkdownContainerContentStart(beforeOnLine)) return match;
+        return `${prefix}>`;
+    });
+}
+
 // tiptap-markdown 0.9.0 직렬화(getMarkdown) 후처리 — round-trip 시 끼어드는
 // 불필요한 기호 제거(선별적). 코드(펜스/인라인)는 보호.
 //   ① hardBreak 백슬래시: 라이브러리가 hardBreak 를 "\\\n" 로 직렬화 →
@@ -54,6 +145,8 @@ function maskInlineCodeSpans(src: string, codes: string[]): string {
 //   ③ literal single tilde escape(\~): GFM strike 는 `~~`만 사용하므로 일반 텍스트의
 //      단일 물결표는 원문 품질을 위해 해제. `~~`/`~~~`를 새로 만들 수 있는 위치,
 //      이중 백슬래시, 코드 영역은 보존.
+//   ④ html:false 경로에서 raw HTML/주석/꺾쇠/footnote marker 가 entity 또는
+//      escape 로 변하는 것을 일부 복원한다. 전역 html:true 는 켜지 않는다(#89).
 export function normalizeSerializedMarkdown(md: string): string {
     // ── 코드펜스 보호 (joinBrokenTableRows 와 동일 마스킹) ──
     const fences: string[] = [];
@@ -106,6 +199,14 @@ export function normalizeSerializedMarkdown(md: string): string {
         if (prev === '\\' || prev === '~' || next === '~') return match;
         return '~';
     });
+
+    // ④ raw HTML/주석/비교 꺾쇠/footnote marker 복원
+    result = result
+        .replace(/&lt;!--([\s\S]*?)--&gt;/g, '<!--$1-->')
+        .replace(/(^|[^\S\n])&lt;(?=[^\S\n])/g, '$1<')
+        .replace(/\\\[\^([^\]\n]+)\\\]/g, '[^$1]');
+    result = restoreComparisonGreaterThan(result);
+    result = restoreEscapedHtmlTags(result);
 
     // ── 복원 ──
     result = result.replace(/\x00MMC(\d+)\x00/g, (_, n) => codes[Number(n)]);
