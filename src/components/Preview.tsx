@@ -39,6 +39,7 @@ import { resolveImageSrc } from '../lib/imageSrc';
 import { removeFlowchartBlock, hasFlowchartBlock } from '../lib/flowchartBlock';
 import { quoteLines } from '../lib/quoteMatch';
 import { markdownOffsetToVisibleOffset, visibleOffsetToMarkdownOffset } from '../lib/markdownCursor';
+import { normalizeSerializedMarkdown } from '../lib/markdownSerialization';
 import { TableTools } from './TableTools';
 import {
     Bold, Italic, Strikethrough, Code,
@@ -221,67 +222,6 @@ function joinBrokenTableRows(md: string): string {
 /** save 시점에 fixEmphasis 가 삽입한 zero-width 제거 */
 function stripDisplayHelpers(md: string): string {
     return md.replace(/​/g, '');
-}
-
-// tiptap-markdown 0.9.0 직렬화(getMarkdown) 후처리 — round-trip 시 끼어드는
-// 불필요한 기호 제거(선별적). 코드(펜스/인라인)는 보호.
-//   ① hardBreak 백슬래시: 라이브러리가 hardBreak 를 "\\\n" 로 직렬화 →
-//      breaks:true 환경에선 '\n' 만으로 동일 렌더라 줄 끝 '\' 만 제거(개행 유지).
-//   ② 표 셀의 block-marker escape(\#,\>,\+,\-,\1.): 셀 안에선 헤딩/리스트/인용이
-//      될 수 없어 불필요 → 해제. 인라인 \*,\`,\[,\_ 는 보존(평문 특수문자 round-trip
-//      안전성 위해 — 사용자 선택).
-function normalizeSerializedMarkdown(md: string): string {
-    // ── 코드펜스 보호 (joinBrokenTableRows 와 동일 마스킹) ──
-    const fences: string[] = [];
-    const srcLines = md.split('\n');
-    const maskedLines: string[] = [];
-    let i = 0;
-    while (i < srcLines.length) {
-        const line = srcLines[i];
-        const open = line.match(/^[ ]{0,3}(([`~])\2{2,})/);
-        if (open) {
-            const ch = open[2];
-            const minLen = open[1].length;
-            const closeRe = new RegExp(`^[ ]{0,3}${ch === '`' ? '`' : '~'}{${minLen},}[ \\t]*$`);
-            let j = i + 1;
-            while (j < srcLines.length && !closeRe.test(srcLines[j])) j++;
-            const endIdx = j < srcLines.length ? j + 1 : j;
-            fences.push(srcLines.slice(i, endIdx).join('\n'));
-            maskedLines.push(`\x00MMN${fences.length - 1}\x00`);
-            i = endIdx;
-            continue;
-        }
-        maskedLines.push(line);
-        i++;
-    }
-    let result = maskedLines.join('\n');
-
-    // ── 인라인 코드 보호 (단일 라인) ──
-    const codes: string[] = [];
-    result = result.replace(/`[^`\n]*`/g, (m) => {
-        codes.push(m);
-        return `\x00MMC${codes.length - 1}\x00`;
-    });
-
-    // ① hardBreak 백슬래시 제거 (개행은 유지)
-    result = result.replace(/\\(?=\n)/g, '').replace(/\\$/, '');
-
-    // ② 표 행에서만 block-marker escape 해제
-    result = result
-        .split('\n')
-        .map((ln) => {
-            if (!/^\s*\|/.test(ln)) return ln;
-            return ln
-                .replace(/\\(#{1,6})/g, '$1')
-                .replace(/\\([>+\-])/g, '$1')
-                .replace(/(\d+)\\\./g, '$1.');
-        })
-        .join('\n');
-
-    // ── 복원 ──
-    result = result.replace(/\x00MMC(\d+)\x00/g, (_, n) => codes[Number(n)]);
-    result = result.replace(/\x00MMN(\d+)\x00/g, (_, n) => fences[Number(n)]);
-    return result;
 }
 
 interface FrontmatterParts {
