@@ -15,6 +15,7 @@ import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
 import rehypeHighlight from 'rehype-highlight';
 import { resolveImageSrc } from '../lib/imageSrc';
+import { remarkSoftBreaks } from '../lib/remarkSoftBreaks';
 import { splitIntoSlides, type SlideshowSettings } from '../lib/slideSplit';
 import './SlideshowView.css';
 
@@ -34,7 +35,7 @@ interface SlideshowViewProps {
 function SlideMarkdown({ md, docDir }: { md: string; docDir: string | null }) {
     return (
         <ReactMarkdown
-            remarkPlugins={[remarkFrontmatter, [remarkGfm, { singleTilde: false }]]}
+            remarkPlugins={[remarkFrontmatter, [remarkGfm, { singleTilde: false }], remarkSoftBreaks]}
             rehypePlugins={[rehypeHighlight]}
             components={{
                 img: ({ node: _node, src, ...props }) => (
