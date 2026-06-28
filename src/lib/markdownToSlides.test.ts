@@ -6,6 +6,7 @@ import {
   slideDeckFromLlmJson,
   slidesFromLlmJson,
 } from './markdownToSlides';
+import { normalizeSlidesForPptx } from './slideValidation';
 
 describe('markdownToSlides — 분할 규칙', () => {
   it('수평선(---) 으로 슬라이드를 나눈다', () => {
@@ -346,6 +347,196 @@ describe('slidesFromLlmJson', () => {
 
     expect(merged[0].image?.src).toBe('assets/first.png');
     expect(merged[1].image?.src).toBe('assets/second.png');
+  });
+
+  it('source-only PPTX 경로에서 split 이후 continuation에도 같은 sourceId 이미지를 보강', () => {
+    const markdown = ['# Report', '## Evidence', '![first](assets/first.png)', '![second](assets/second.png)'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          {
+            title: 'Dense evidence',
+            layout: 'content',
+            sourceIds: ['S2'],
+            bullets: Array.from({ length: 14 }, (_, index) => `Evidence point ${index + 1}`),
+          },
+        ],
+      }),
+    );
+
+    const normalized = normalizeSlidesForPptx(aiSlides ?? []);
+    const merged = preserveSourceImagesForPptx(normalized, markdown);
+
+    expect(normalized).toHaveLength(2);
+    expect(merged[0].image?.src).toBe('assets/first.png');
+    expect(merged[1].image?.src).toBe('assets/second.png');
+  });
+
+  it('source-only PPTX 경로에서 split 첫 조각의 기존 원본 이미지도 소비 처리', () => {
+    const markdown = ['# Report', '## Evidence', '![first](assets/first.png)', '![second](assets/second.png)'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          {
+            title: 'Dense evidence',
+            layout: 'content',
+            sourceIds: ['S2'],
+            image: { src: 'assets/first.png', alt: 'first' },
+            bullets: Array.from({ length: 14 }, (_, index) => `Evidence point ${index + 1}`),
+          },
+        ],
+      }),
+    );
+
+    const normalized = normalizeSlidesForPptx(aiSlides ?? []);
+    const merged = preserveSourceImagesForPptx(normalized, markdown);
+
+    expect(normalized).toHaveLength(2);
+    expect(merged[0].image?.src).toBe('assets/first.png');
+    expect(merged[1].image?.src).toBe('assets/second.png');
+  });
+
+  it('source-only PPTX 경로에서 sourceId 없는 split 첫 조각의 기존 원본 이미지도 fallback 순서에서 소비', () => {
+    const markdown = ['# Report', '## Evidence', '![first](assets/first.png)', '![second](assets/second.png)'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          {
+            title: 'Dense evidence',
+            layout: 'content',
+            image: { src: 'assets/first.png', alt: 'first' },
+            bullets: Array.from({ length: 14 }, (_, index) => `Evidence point ${index + 1}`),
+          },
+        ],
+      }),
+    );
+
+    const normalized = normalizeSlidesForPptx(aiSlides ?? []);
+    const merged = preserveSourceImagesForPptx(normalized, markdown);
+
+    expect(normalized).toHaveLength(2);
+    expect(merged[0].image?.src).toBe('assets/first.png');
+    expect(merged[1].image?.src).toBe('assets/second.png');
+  });
+
+  it('sourceId 없는 기존 원본 이미지가 첫 fallback 슬롯이 아니어도 continuation에 앞 이미지를 밀지 않음', () => {
+    const markdown = [
+      '# Cover',
+      '![cover](assets/cover.png)',
+      '## Evidence',
+      '![first](assets/first.png)',
+      '![second](assets/second.png)',
+    ].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          {
+            title: 'Dense evidence',
+            layout: 'content',
+            image: { src: 'assets/first.png', alt: 'first' },
+            bullets: Array.from({ length: 14 }, (_, index) => `Evidence point ${index + 1}`),
+          },
+        ],
+      }),
+    );
+
+    const normalized = normalizeSlidesForPptx(aiSlides ?? []);
+    const merged = preserveSourceImagesForPptx(normalized, markdown);
+
+    expect(normalized).toHaveLength(2);
+    expect(merged[0].image?.src).toBe('assets/first.png');
+    expect(merged[1].image?.src).toBe('assets/second.png');
+  });
+
+  it('source-map fallback으로 소비한 이미지를 split continuation의 slide-index fallback에서 중복하지 않음', () => {
+    const markdown = ['# Cover', 'Intro', '## Evidence', '![first](assets/first.png)'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          {
+            title: 'Dense evidence',
+            layout: 'content',
+            bullets: Array.from({ length: 14 }, (_, index) => `Evidence point ${index + 1}`),
+          },
+        ],
+      }),
+    );
+
+    const normalized = normalizeSlidesForPptx(aiSlides ?? []);
+    const merged = preserveSourceImagesForPptx(normalized, markdown);
+
+    expect(normalized).toHaveLength(2);
+    expect(merged[0].image?.src).toBe('assets/first.png');
+    expect(merged[1].image?.src).toBeUndefined();
+  });
+
+  it('source map S번호와 markdownToSlides index가 달라도 소비한 이미지를 slide-index fallback에서 중복하지 않음', () => {
+    const markdown = ['# Deck', '## Evidence', 'Body text', '### Chart', '![chart](assets/chart.png)'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          {
+            title: 'Dense evidence',
+            layout: 'content',
+            bullets: Array.from({ length: 14 }, (_, index) => `Evidence point ${index + 1}`),
+          },
+        ],
+      }),
+    );
+
+    const normalized = normalizeSlidesForPptx(aiSlides ?? []);
+    const merged = preserveSourceImagesForPptx(normalized, markdown);
+
+    expect(normalized).toHaveLength(2);
+    expect(merged[0].image?.src).toBe('assets/chart.png');
+    expect(merged[1].image?.src).toBeUndefined();
+  });
+
+  it('source slide의 두 번째 이미지를 소비해도 같은 source slide의 첫 이미지를 continuation에 붙이지 않음', () => {
+    const markdown = ['# Deck', '## Evidence', '![first](assets/first.png)', '![second](assets/second.png)'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          {
+            title: 'Dense evidence',
+            layout: 'content',
+            image: { src: 'assets/second.png', alt: 'second' },
+            bullets: Array.from({ length: 14 }, (_, index) => `Evidence point ${index + 1}`),
+          },
+        ],
+      }),
+    );
+
+    const normalized = normalizeSlidesForPptx(aiSlides ?? []);
+    const merged = preserveSourceImagesForPptx(normalized, markdown);
+
+    expect(normalized).toHaveLength(2);
+    expect(merged[0].image?.src).toBe('assets/second.png');
+    expect(merged[1].image?.src).toBeUndefined();
+  });
+
+  it('sourceId가 유지된 split에서 두 번째 기존 이미지를 소비하면 첫 이미지를 continuation에 붙이지 않음', () => {
+    const markdown = ['# Report', '## Evidence', '![first](assets/first.png)', '![second](assets/second.png)'].join('\n');
+    const aiSlides = slidesFromLlmJson(
+      JSON.stringify({
+        slides: [
+          {
+            title: 'Dense evidence',
+            layout: 'content',
+            sourceIds: ['S2'],
+            image: { src: 'assets/second.png', alt: 'second' },
+            bullets: Array.from({ length: 14 }, (_, index) => `Evidence point ${index + 1}`),
+          },
+        ],
+      }),
+    );
+
+    const normalized = normalizeSlidesForPptx(aiSlides ?? []);
+    const merged = preserveSourceImagesForPptx(normalized, markdown);
+
+    expect(normalized).toHaveLength(2);
+    expect(merged[0].image?.src).toBe('assets/second.png');
+    expect(merged[1].image?.src).toBeUndefined();
   });
 
   it('완전 비 JSON 은 null', () => {

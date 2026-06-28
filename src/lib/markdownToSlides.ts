@@ -481,11 +481,31 @@ function slideHasImageSrc(slide: Slide): boolean {
   return Boolean(slide.image?.src?.trim() || slide.body.some((block) => block.kind === 'image' && block.src.trim()));
 }
 
+function existingSlideImageSrc(slide: Slide): string | undefined {
+  const imageSrc = slide.image?.src?.trim();
+  if (imageSrc) return imageSrc;
+  const block = slide.body.find((item): item is Extract<SlideBlock, { kind: 'image' }> => item.kind === 'image');
+  return block?.src.trim() || undefined;
+}
+
 function firstSourceImage(slide: Slide): SlideImageSpec | undefined {
   const src = slide.image?.src?.trim();
   if (src) return { ...slide.image, src };
   const block = slide.body.find((item): item is Extract<SlideBlock, { kind: 'image' }> => item.kind === 'image');
   return block?.src.trim() ? { src: block.src.trim(), alt: block.alt, kind: 'source', role: 'support' } : undefined;
+}
+
+function sourceImageSrcs(slide: Slide): string[] {
+  const srcs: string[] = [];
+  const imageSrc = slide.image?.src?.trim();
+  if (imageSrc) srcs.push(imageSrc);
+  slide.body.forEach((item) => {
+    if (item.kind === 'image') {
+      const src = item.src.trim();
+      if (src) srcs.push(src);
+    }
+  });
+  return srcs;
 }
 
 function sourceImagesFromLine(line: string): SlideImageSpec[] {
@@ -590,21 +610,73 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
   );
   let nextSourceImageIndex = 0;
   const usedSourceIndexes = new Set<number>();
+  const consumedSourceImages = new Set<string>();
+  const sourceImageKey = (id: string, imageIndex: number) => `${id}\u0000${imageIndex}`;
+  const markSourceSlideUsedByImageSrc = (src: string | undefined) => {
+    const existingSrc = src?.trim();
+    if (!existingSrc) return;
+    sourceSlides.forEach((sourceSlide, sourceIndex) => {
+      if (sourceImageSrcs(sourceSlide).includes(existingSrc)) usedSourceIndexes.add(sourceIndex);
+    });
+  };
+  const markSourceImageConsumed = (id: string, imageIndex: number, src: string | undefined) => {
+    consumedSourceImages.add(sourceImageKey(id, imageIndex));
+    markSourceSlideUsedByImageSrc(src);
+    let offset = sourceImageOffsets.get(id) ?? 0;
+    while (consumedSourceImages.has(sourceImageKey(id, offset))) offset += 1;
+    sourceImageOffsets.set(id, offset);
+  };
+  const firstUnconsumedSourceImageIndex = (id: string, images: SlideImageSpec[]): number => {
+    let offset = sourceImageOffsets.get(id) ?? 0;
+    while (offset < images.length && consumedSourceImages.has(sourceImageKey(id, offset))) offset += 1;
+    sourceImageOffsets.set(id, offset);
+    return offset;
+  };
+  const consumeSourceImageBySrc = (sourceId: string, existingSrc: string): boolean => {
+    const normalized = sourceId.trim().toUpperCase();
+    const images = sourceImagesById.get(normalized);
+    if (!images) return false;
+    const firstUnconsumedIndex = firstUnconsumedSourceImageIndex(normalized, images);
+    for (let imageIndex = firstUnconsumedIndex; imageIndex < images.length; imageIndex += 1) {
+      if (consumedSourceImages.has(sourceImageKey(normalized, imageIndex))) continue;
+      if (images[imageIndex]?.src?.trim() === existingSrc) {
+        for (let consumeIndex = firstUnconsumedIndex; consumeIndex <= imageIndex; consumeIndex += 1) {
+          if (!consumedSourceImages.has(sourceImageKey(normalized, consumeIndex))) {
+            markSourceImageConsumed(normalized, consumeIndex, images[consumeIndex]?.src);
+          }
+        }
+        return true;
+      }
+    }
+    return false;
+  };
+  const consumeFallbackSourceImageBySrc = (existingSrc: string): boolean => {
+    for (let entryIndex = nextSourceImageIndex; entryIndex < sourceImageEntries.length; entryIndex += 1) {
+      const { id, image, imageIndex } = sourceImageEntries[entryIndex];
+      if (consumedSourceImages.has(sourceImageKey(id, imageIndex))) continue;
+      if (image.src?.trim() === existingSrc) {
+        markSourceImageConsumed(id, imageIndex, image.src);
+        nextSourceImageIndex = entryIndex + 1;
+        return true;
+      }
+    }
+    return false;
+  };
   const takeSourceImage = (sourceId: string): SlideImageSpec | undefined => {
     const normalized = sourceId.trim().toUpperCase();
     const images = sourceImagesById.get(normalized);
-    const offset = sourceImageOffsets.get(normalized) ?? 0;
+    if (!images) return undefined;
+    const offset = firstUnconsumedSourceImageIndex(normalized, images);
     const image = images?.[offset];
     if (!image) return undefined;
-    sourceImageOffsets.set(normalized, offset + 1);
+    markSourceImageConsumed(normalized, offset, image.src);
     return image;
   };
   const takeNextSourceImage = (): SlideImageSpec | undefined => {
     while (nextSourceImageIndex < sourceImageEntries.length) {
       const { id, image, imageIndex } = sourceImageEntries[nextSourceImageIndex++];
-      const offset = sourceImageOffsets.get(id) ?? 0;
-      if (imageIndex !== offset) continue;
-      sourceImageOffsets.set(id, offset + 1);
+      if (consumedSourceImages.has(sourceImageKey(id, imageIndex))) continue;
+      markSourceImageConsumed(id, imageIndex, image.src);
       return image;
     }
     return undefined;
@@ -618,9 +690,36 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
     usedSourceIndexes.add(sourceIndex);
     return image;
   };
+  const consumeExistingSourceImage = (slide: Slide, slideIndex: number) => {
+    const existingSrc = existingSlideImageSrc(slide);
+    if (!existingSrc) return;
+    for (const sourceId of slide.sourceIds ?? []) {
+      if (consumeSourceImageBySrc(sourceId, existingSrc)) return;
+      if (sourceImagesById.size === 0) {
+        const sourceIndex = sourceIndexFromId(sourceId);
+        if (sourceIndex === undefined || sourceIndex >= sourceSlides.length) continue;
+        const sourceImage = firstSourceImage(sourceSlides[sourceIndex]);
+        if (sourceImage?.src?.trim() === existingSrc) {
+          usedSourceIndexes.add(sourceIndex);
+          return;
+        }
+      }
+    }
+    if (!slide.sourceIds?.length && sourceImagesById.size > 0 && consumeFallbackSourceImageBySrc(existingSrc)) {
+      return;
+    }
+    if (!slide.sourceIds?.length && sourceImagesById.size === 0) {
+      const sourceSlide = sourceSlides[slideIndex];
+      const sourceImage = sourceSlide ? firstSourceImage(sourceSlide) : undefined;
+      if (sourceImage?.src?.trim() === existingSrc) usedSourceIndexes.add(slideIndex);
+    }
+  };
 
   return slides.map((slide, slideIndex) => {
-    if (slideHasImageSrc(slide)) return slide;
+    if (slideHasImageSrc(slide)) {
+      consumeExistingSourceImage(slide, slideIndex);
+      return slide;
+    }
     let image: SlideImageSpec | undefined;
     for (const sourceId of slide.sourceIds ?? []) {
       image = takeSourceImage(sourceId) ?? (sourceImagesById.size === 0 ? takeImage(sourceIndexFromId(sourceId)) : undefined);

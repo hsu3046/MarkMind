@@ -809,10 +809,6 @@ function App() {
         alert('AI 응답을 해석하지 못해 기본 레이아웃으로 저장합니다.\n(개발자 콘솔에 원문이 로깅되었습니다)');
         slides = markdownToSlides(content);
       }
-      if (slideImagePolicyMode(pptxOptions.imagePolicy) === 'sourceOnly') {
-        slides = preserveSourceImagesForPptx(slides, content);
-      }
-
       pushPptxProgressStep(jobId, '📊 슬라이드 레이아웃 검증 중...', undefined, 'pptx-layout-qa');
       slides = normalizeSlidesForPptx(slides);
       if (slides.length > PPTX_MAX_SLIDES) {
@@ -824,6 +820,9 @@ function App() {
           `${originalCount}장 → ${PPTX_MAX_SLIDES}장`,
           'pptx-slide-limit',
         );
+      }
+      if (slideImagePolicyMode(pptxOptions.imagePolicy) === 'sourceOnly') {
+        slides = preserveSourceImagesForPptx(slides, content);
       }
       const report = validateSlideDeck(slides);
       const issueSummary = summarizeSlideIssues(report);
