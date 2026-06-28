@@ -601,6 +601,8 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
   const sourceImageKey = (id: string, imageIndex: number) => `${id}\u0000${imageIndex}`;
   const markSourceImageConsumed = (id: string, imageIndex: number) => {
     consumedSourceImages.add(sourceImageKey(id, imageIndex));
+    const sourceIndex = sourceIndexFromId(id);
+    if (sourceIndex !== undefined) usedSourceIndexes.add(sourceIndex);
     let offset = sourceImageOffsets.get(id) ?? 0;
     while (consumedSourceImages.has(sourceImageKey(id, offset))) offset += 1;
     sourceImageOffsets.set(id, offset);
