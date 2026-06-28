@@ -1,3 +1,49 @@
+function maskInlineCodeSpans(src: string, codes: string[]): string {
+    let out = '';
+    let i = 0;
+
+    while (i < src.length) {
+        if (src[i] !== '`') {
+            out += src[i];
+            i++;
+            continue;
+        }
+
+        let openLen = 1;
+        while (src[i + openLen] === '`') openLen++;
+
+        let closeStart = -1;
+        let closeEnd = -1;
+        let j = i + openLen;
+        while (j < src.length) {
+            if (src[j] !== '`') {
+                j++;
+                continue;
+            }
+            let closeLen = 1;
+            while (src[j + closeLen] === '`') closeLen++;
+            if (closeLen === openLen) {
+                closeStart = j;
+                closeEnd = j + closeLen;
+                break;
+            }
+            j += closeLen;
+        }
+
+        if (closeStart === -1) {
+            out += src.slice(i, i + openLen);
+            i += openLen;
+            continue;
+        }
+
+        codes.push(src.slice(i, closeEnd));
+        out += `\x00MMC${codes.length - 1}\x00`;
+        i = closeEnd;
+    }
+
+    return out;
+}
+
 // tiptap-markdown 0.9.0 직렬화(getMarkdown) 후처리 — round-trip 시 끼어드는
 // 불필요한 기호 제거(선별적). 코드(펜스/인라인)는 보호.
 //   ① hardBreak 백슬래시: 라이브러리가 hardBreak 를 "\\\n" 로 직렬화 →
@@ -34,12 +80,9 @@ export function normalizeSerializedMarkdown(md: string): string {
     }
     let result = maskedLines.join('\n');
 
-    // ── 인라인 코드 보호 (단일 라인) ──
+    // ── 인라인 코드 보호 ──
     const codes: string[] = [];
-    result = result.replace(/`[^`\n]*`/g, (m) => {
-        codes.push(m);
-        return `\x00MMC${codes.length - 1}\x00`;
-    });
+    result = maskInlineCodeSpans(result, codes);
 
     // ① hardBreak 백슬래시 제거 (개행은 유지)
     result = result.replace(/\\(?=\n)/g, '').replace(/\\$/, '');

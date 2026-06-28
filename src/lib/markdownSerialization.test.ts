@@ -22,6 +22,10 @@ describe('normalizeSerializedMarkdown', () => {
             .toBe(['~~~', String.raw`inside \~ code fence`, '~~~', 'after ~ fence'].join('\n'));
         expect(normalizeSerializedMarkdown('code `a\\~b` and text \\~ ok'))
             .toBe('code `a\\~b` and text ~ ok');
+        expect(normalizeSerializedMarkdown('code `` a \\~ b ` `` and text \\~ ok'))
+            .toBe('code `` a \\~ b ` `` and text ~ ok');
+        expect(normalizeSerializedMarkdown('code ``a\\~\nb`` and text \\~ ok'))
+            .toBe('code ``a\\~\nb`` and text ~ ok');
     });
 
     it('does not create new double-tilde delimiters or remove escaped backslashes', () => {
