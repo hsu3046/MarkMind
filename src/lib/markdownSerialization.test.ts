@@ -38,4 +38,41 @@ describe('normalizeSerializedMarkdown', () => {
         expect(normalizeSerializedMarkdown('| \\# A | 1\\. item |')).toBe('| # A | 1. item |');
         expect(normalizeSerializedMarkdown('line\\\nnext')).toBe('line\nnext');
     });
+
+    it('restores raw HTML comments, tags, and comparison brackets from rich text serialization', () => {
+        expect(normalizeSerializedMarkdown('&lt;!-- skip --&gt;')).toBe('<!-- skip -->');
+        expect(normalizeSerializedMarkdown('&lt;div class=&quot;note&quot; data-x=&quot;1&quot;&gt;x&lt;/div&gt;'))
+            .toBe('<div class="note" data-x="1">x</div>');
+        expect(normalizeSerializedMarkdown('a &lt; b &gt; c')).toBe('a < b > c');
+    });
+
+    it('restores footnote markers without touching code spans or fences', () => {
+        const fenced = [
+            '```md',
+            '&lt;div&gt;x&lt;/div&gt;',
+            String.raw`text\[^1\]`,
+            '```',
+            '&lt;section&gt;y&lt;/section&gt;',
+            String.raw`text\[^1\]`,
+            '`&lt;span&gt;z&lt;/span&gt;`',
+        ].join('\n');
+
+        expect(normalizeSerializedMarkdown(fenced)).toBe([
+            '```md',
+            '&lt;div&gt;x&lt;/div&gt;',
+            String.raw`text\[^1\]`,
+            '```',
+            '<section>y</section>',
+            'text[^1]',
+            '`&lt;span&gt;z&lt;/span&gt;`',
+        ].join('\n'));
+    });
+
+    it('restores escaped HTML in table serialization output without enabling preview rendering', () => {
+        expect(normalizeSerializedMarkdown('| A | B |\n| --- | --- |\n| &lt;span&gt;x&lt;/span&gt; | a &lt; b |'))
+            .toBe('| A | B |\n| --- | --- |\n| <span>x</span> | a < b |');
+        expect(normalizeSerializedMarkdown(
+            '&lt;table&gt;\n&lt;tr&gt;&lt;td colspan=&quot;2&quot;&gt;X&lt;/td&gt;&lt;/tr&gt;\n&lt;/table&gt;',
+        )).toBe('<table>\n<tr><td colspan="2">X</td></tr>\n</table>');
+    });
 });

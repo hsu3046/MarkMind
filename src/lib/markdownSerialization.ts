@@ -44,6 +44,13 @@ function maskInlineCodeSpans(src: string, codes: string[]): string {
     return out;
 }
 
+function unescapeHtmlTagAttributes(value: string): string {
+    return value
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;|&#39;/g, "'")
+        .replace(/&amp;/g, '&');
+}
+
 // tiptap-markdown 0.9.0 직렬화(getMarkdown) 후처리 — round-trip 시 끼어드는
 // 불필요한 기호 제거(선별적). 코드(펜스/인라인)는 보호.
 //   ① hardBreak 백슬래시: 라이브러리가 hardBreak 를 "\\\n" 로 직렬화 →
@@ -54,6 +61,8 @@ function maskInlineCodeSpans(src: string, codes: string[]): string {
 //   ③ literal single tilde escape(\~): GFM strike 는 `~~`만 사용하므로 일반 텍스트의
 //      단일 물결표는 원문 품질을 위해 해제. `~~`/`~~~`를 새로 만들 수 있는 위치,
 //      이중 백슬래시, 코드 영역은 보존.
+//   ④ html:false 경로에서 raw HTML/주석/꺾쇠/footnote marker 가 entity 또는
+//      escape 로 변하는 것을 일부 복원한다. 전역 html:true 는 켜지 않는다(#89).
 export function normalizeSerializedMarkdown(md: string): string {
     // ── 코드펜스 보호 (joinBrokenTableRows 와 동일 마스킹) ──
     const fences: string[] = [];
@@ -106,6 +115,17 @@ export function normalizeSerializedMarkdown(md: string): string {
         if (prev === '\\' || prev === '~' || next === '~') return match;
         return '~';
     });
+
+    // ④ raw HTML/주석/비교 꺾쇠/footnote marker 복원
+    result = result
+        .replace(/&lt;!--([\s\S]*?)--&gt;/g, '<!--$1-->')
+        .replace(
+            /&lt;(\/?[A-Za-z][A-Za-z0-9:-]*(?:\s+[^<>\n]*?)?)&gt;/g,
+            (_match, inner: string) => `<${unescapeHtmlTagAttributes(inner)}>`,
+        )
+        .replace(/(^|[^\S\n])&lt;(?=[^\S\n])/g, '$1<')
+        .replace(/(^|[^\S\n])&gt;(?=[^\S\n])/g, '$1>')
+        .replace(/\\\[\^([^\]\n]+)\\\]/g, '[^$1]');
 
     // ── 복원 ──
     result = result.replace(/\x00MMC(\d+)\x00/g, (_, n) => codes[Number(n)]);
