@@ -495,6 +495,19 @@ function firstSourceImage(slide: Slide): SlideImageSpec | undefined {
   return block?.src.trim() ? { src: block.src.trim(), alt: block.alt, kind: 'source', role: 'support' } : undefined;
 }
 
+function sourceImageSrcs(slide: Slide): string[] {
+  const srcs: string[] = [];
+  const imageSrc = slide.image?.src?.trim();
+  if (imageSrc) srcs.push(imageSrc);
+  slide.body.forEach((item) => {
+    if (item.kind === 'image') {
+      const src = item.src.trim();
+      if (src) srcs.push(src);
+    }
+  });
+  return srcs;
+}
+
 function sourceImagesFromLine(line: string): SlideImageSpec[] {
   return [...line.matchAll(/!\[([^\]]*)\]\(([^)]+)\)/g)]
     .map((img) => ({ src: img[2].trim(), alt: img[1], kind: 'source' as const, role: 'support' as const }))
@@ -603,7 +616,7 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
     const existingSrc = src?.trim();
     if (!existingSrc) return;
     sourceSlides.forEach((sourceSlide, sourceIndex) => {
-      if (firstSourceImage(sourceSlide)?.src?.trim() === existingSrc) usedSourceIndexes.add(sourceIndex);
+      if (sourceImageSrcs(sourceSlide).includes(existingSrc)) usedSourceIndexes.add(sourceIndex);
     });
   };
   const markSourceImageConsumed = (id: string, imageIndex: number, src: string | undefined) => {
