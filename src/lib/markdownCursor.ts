@@ -288,6 +288,9 @@ function inlineVisibleLengthBefore(src: string, col: number): number {
 function isSkippableMarkdownSyntax(markdown: string, index: number): boolean {
   const ch = markdown[index];
   if (!ch) return false;
+  if (markdownOffsetToVisibleOffset(markdown, index + 1) !== markdownOffsetToVisibleOffset(markdown, index)) {
+    return false;
+  }
   if (ch === '*' || ch === '_' || ch === '~') return isHiddenLineBlockPosition(markdown, index) || isHiddenEmphasisDelimiter(markdown, index);
   if ('#>-+![]()` '.includes(ch)) return true;
   if (ch === '\t') return true;

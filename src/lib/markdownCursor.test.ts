@@ -38,6 +38,17 @@ describe('markdownCursor', () => {
     expect(visibleOffsetToMarkdownOffset(md, visibleMultiply)).toBe(multiplyOffset);
   });
 
+  it('does not skip visible spaces or punctuation when restoring markdown offsets', () => {
+    expect(visibleOffsetToMarkdownOffset('a b', 1)).toBe(1);
+
+    const md = 'Keep [literal] (paren) text';
+    const visible = markdownVisibleText(md);
+    const bracketOffset = visible.indexOf('[');
+    const parenOffset = visible.indexOf('(');
+    expect(visibleOffsetToMarkdownOffset(md, bracketOffset)).toBe(md.indexOf('['));
+    expect(visibleOffsetToMarkdownOffset(md, parenOffset)).toBe(md.indexOf('('));
+  });
+
   it('keeps fenced code text but ignores fence markers', () => {
     const md = ['Before', '```ts', 'const x = 1;', '```', 'After'].join('\n');
     expect(markdownVisibleText(md)).toBe(['Before', 'const x = 1;', 'After'].join('\n'));
