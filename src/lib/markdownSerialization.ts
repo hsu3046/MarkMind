@@ -106,6 +106,16 @@ function restoreEscapedHtmlTags(src: string): string {
     return out;
 }
 
+function restoreComparisonGreaterThan(src: string): string {
+    return src.replace(/(^|[^\S\n])&gt;(?=[^\S\n])/g, (match, prefix: string, offset: number) => {
+        const entityStart = offset + prefix.length;
+        const lineStart = src.lastIndexOf('\n', entityStart - 1) + 1;
+        const beforeOnLine = src.slice(lineStart, entityStart);
+        if (/^[ \t]*$/.test(beforeOnLine)) return match;
+        return `${prefix}>`;
+    });
+}
+
 // tiptap-markdown 0.9.0 직렬화(getMarkdown) 후처리 — round-trip 시 끼어드는
 // 불필요한 기호 제거(선별적). 코드(펜스/인라인)는 보호.
 //   ① hardBreak 백슬래시: 라이브러리가 hardBreak 를 "\\\n" 로 직렬화 →
@@ -175,8 +185,8 @@ export function normalizeSerializedMarkdown(md: string): string {
     result = result
         .replace(/&lt;!--([\s\S]*?)--&gt;/g, '<!--$1-->')
         .replace(/(^|[^\S\n])&lt;(?=[^\S\n])/g, '$1<')
-        .replace(/(^|[^\S\n])&gt;(?=[^\S\n])/g, '$1>')
         .replace(/\\\[\^([^\]\n]+)\\\]/g, '[^$1]');
+    result = restoreComparisonGreaterThan(result);
     result = restoreEscapedHtmlTags(result);
 
     // ── 복원 ──

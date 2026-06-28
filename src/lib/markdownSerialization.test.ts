@@ -82,4 +82,11 @@ describe('normalizeSerializedMarkdown', () => {
         expect(normalizeSerializedMarkdown('&lt;span title=&quot;a &lt; b &gt; c&quot; data-x=&#39;1 &gt; 0&#39;&gt;x&lt;/span&gt;'))
             .toBe('<span title="a < b > c" data-x=\'1 > 0\'>x</span>');
     });
+
+    it('does not turn line-leading escaped greater-than text into blockquotes', () => {
+        expect(normalizeSerializedMarkdown('&gt; note')).toBe('&gt; note');
+        expect(normalizeSerializedMarkdown('  &gt; note')).toBe('  &gt; note');
+        expect(normalizeSerializedMarkdown('a &gt; b')).toBe('a > b');
+        expect(normalizeSerializedMarkdown('| A |\n| --- |\n| a &gt; b |')).toBe('| A |\n| --- |\n| a > b |');
+    });
 });
