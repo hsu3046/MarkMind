@@ -347,6 +347,55 @@ function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<EditorHandle>(null);
   const previewRef = useRef<PreviewHandle>(null); // Rich Text 이미지 삽입 라우팅(#56)
+  const pendingFocusOffsetRef = useRef<number | null>(null);
+
+  const captureTextFocusOffset = useCallback((): number | null => {
+    if (activeView === 'editor') return editorRef.current?.getCursorOffset() ?? null;
+    if (activeView === 'preview') return previewRef.current?.getMarkdownOffset() ?? null;
+    return null;
+  }, [activeView]);
+
+  const setViewModePreservingFocus = useCallback((next: ViewMode) => {
+    if (next !== viewMode) {
+      const offset = captureTextFocusOffset();
+      if (offset != null) pendingFocusOffsetRef.current = offset;
+    }
+    setViewMode(next);
+  }, [captureTextFocusOffset, viewMode]);
+
+  useEffect(() => {
+    const offset = pendingFocusOffsetRef.current;
+    if (offset == null) return;
+    if (activeView !== 'editor' && activeView !== 'preview') return;
+
+    let cancelled = false;
+    let raf = 0;
+    let attempts = 0;
+    let settledFrames = 0;
+    const restore = () => {
+      if (cancelled) return;
+      const shouldScroll = settledFrames === 0;
+      const ok = activeView === 'editor'
+        ? editorRef.current?.focusAtOffset(offset, shouldScroll)
+        : previewRef.current?.focusAtMarkdownOffset(offset, shouldScroll);
+      if (ok) {
+        settledFrames += 1;
+        if (settledFrames >= 3) {
+          pendingFocusOffsetRef.current = null;
+          return;
+        }
+      } else {
+        settledFrames = 0;
+      }
+      attempts += 1;
+      if (attempts < 12) raf = requestAnimationFrame(restore);
+    };
+    raf = requestAnimationFrame(restore);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [activeView, viewMode, splitLeft, splitRight, activePane]);
 
   // PDF export — 옵션 B1: WKWebView.createPDFWithConfiguration 으로 dialog 없이
   // PDF 생성 + tauri-plugin-dialog 의 save() 로 사용자 저장 위치 지정.
@@ -1833,18 +1882,19 @@ function App() {
 
     // mount 직후 — 이전에 저장된 ratio 로 새 element 의 scrollTop 복원.
     // ResizeObserver 로 scrollHeight 변화 감지 → 안정될 때까지 자동 재시도 (매직 timeout 제거).
+    const shouldRestoreScrollRatio = pendingFocusOffsetRef.current == null;
     const restore = () => {
       const el = scrollEl();
       if (!el) return;
       const max = el.scrollHeight - el.clientHeight;
       if (max > 0) el.scrollTop = Math.round(max * scrollRatioRef.current);
     };
-    restore();
+    if (shouldRestoreScrollRatio) restore();
 
     const el = scrollEl();
     let restored = false;
     let ro: ResizeObserver | null = null;
-    if (el && typeof ResizeObserver !== 'undefined') {
+    if (shouldRestoreScrollRatio && el && typeof ResizeObserver !== 'undefined') {
       ro = new ResizeObserver(() => {
         if (restored) return;
         const max = el.scrollHeight - el.clientHeight;
@@ -2113,27 +2163,27 @@ function App() {
             break;
           case '1':
             e.preventDefault();
-            setViewMode('editor');
+            setViewModePreservingFocus('editor');
             break;
           case '2':
             e.preventDefault();
-            setViewMode('preview');
+            setViewModePreservingFocus('preview');
             break;
           case '3':
             e.preventDefault();
-            setViewMode('mindmap');
+            setViewModePreservingFocus('mindmap');
             break;
           case '4':
             e.preventDefault();
-            setViewMode('flowchart');
+            setViewModePreservingFocus('flowchart');
             break;
           case '5':
             e.preventDefault();
-            setViewMode('gantt');
+            setViewModePreservingFocus('gantt');
             break;
           case '6':
             e.preventDefault();
-            setViewMode('kanban');
+            setViewModePreservingFocus('kanban');
             break;
           case '7':
             e.preventDefault();
@@ -2141,11 +2191,11 @@ function App() {
             break;
           case '8':
             e.preventDefault();
-            setViewMode('split');
+            setViewModePreservingFocus('split');
             break;
           case '9':
             e.preventDefault();
-            setViewMode('slideshow');
+            setViewModePreservingFocus('slideshow');
             break;
           case '=':
           case '+':
@@ -2200,7 +2250,7 @@ function App() {
     saveFile, saveFileAs, handleOpenFile, newFile, toggleSearch,
     handleFontSizeChange, resetFontSize, recentPanelVisible,
     searchVisible, activeView, handleToggleAI, settingsVisible,
-    undo, redo,
+    undo, redo, setViewModePreservingFocus,
   ]);
 
   // Split pane drag
@@ -2289,7 +2339,7 @@ function App() {
     onOpenFromDrive: () => setDriveBrowserMode('open'),
     onSaveToDrive: () => setDriveBrowserMode('save'),
     onOpenRecent: handleOpenRecentByPath,
-    onViewModeChange: setViewMode,
+    onViewModeChange: setViewModePreservingFocus,
     onUndo: undo,
     onRedo: redo,
   });
@@ -2499,7 +2549,7 @@ function App() {
       <Toolbar
         viewMode={viewMode}
         outlineVisible={outlineVisible}
-        onViewModeChange={setViewMode}
+        onViewModeChange={setViewModePreservingFocus}
         onNewFile={newFile}
         onOpenFile={handleOpenFile}
         onSaveFile={saveFile}
