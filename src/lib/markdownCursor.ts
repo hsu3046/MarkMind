@@ -119,33 +119,77 @@ function delimiterCanClose(src: string, run: { char: string; start: number; leng
   return true;
 }
 
-function hasClosingDelimiter(src: string, run: { char: string; start: number; length: number }): boolean {
-  for (let i = run.start + run.length; i < src.length; i += 1) {
-    if (src[i] !== run.char || isEscaped(src, i)) continue;
-    const candidate = delimiterRunAt(src, i);
-    if (!candidate) continue;
-    i = candidate.start + candidate.length - 1;
-    if (delimiterCanClose(src, candidate)) return true;
-  }
-  return false;
+interface EmphasisRun {
+  char: string;
+  start: number;
+  length: number;
+  openMatched: number;
+  closeMatched: number;
+  canOpen: boolean;
+  canClose: boolean;
 }
 
-function hasOpeningDelimiter(src: string, run: { char: string; start: number; length: number }): boolean {
-  for (let i = run.start - 1; i >= 0; i -= 1) {
-    if (src[i] !== run.char || isEscaped(src, i)) continue;
-    const candidate = delimiterRunAt(src, i);
-    if (!candidate) continue;
-    i = candidate.start;
-    if (delimiterCanOpen(src, candidate)) return true;
+function hideOpeningDelimiters(hidden: Set<number>, run: EmphasisRun, count: number) {
+  for (let i = 0; i < count; i += 1) {
+    hidden.add(run.start + run.length - run.openMatched - 1);
+    run.openMatched += 1;
   }
-  return false;
+}
+
+function hideClosingDelimiters(hidden: Set<number>, run: EmphasisRun, count: number) {
+  for (let i = 0; i < count; i += 1) {
+    hidden.add(run.start + run.closeMatched);
+    run.closeMatched += 1;
+  }
+}
+
+function hiddenEmphasisDelimiterIndexes(src: string): Set<number> {
+  const hidden = new Set<number>();
+  const openers: Record<string, EmphasisRun[]> = { '*': [], '_': [], '~': [] };
+
+  for (let i = 0; i < src.length; i += 1) {
+    const rawRun = delimiterRunAt(src, i);
+    if (!rawRun) continue;
+    i = rawRun.start + rawRun.length - 1;
+
+    const run: EmphasisRun = {
+      ...rawRun,
+      openMatched: 0,
+      closeMatched: 0,
+      canOpen: delimiterCanOpen(src, rawRun),
+      canClose: delimiterCanClose(src, rawRun),
+    };
+    if (!run.canOpen && !run.canClose) continue;
+
+    if (run.canClose) {
+      const stack = openers[run.char];
+      let remainingClose = run.length;
+      const unit = run.char === '~' ? 2 : 1;
+      while (remainingClose >= unit && stack.length > 0) {
+        const opener = stack[stack.length - 1];
+        const remainingOpen = opener.length - opener.openMatched - opener.closeMatched;
+        if (remainingOpen < unit) {
+          stack.pop();
+          continue;
+        }
+        const match = unit * Math.min(Math.floor(remainingOpen / unit), Math.floor(remainingClose / unit));
+        hideOpeningDelimiters(hidden, opener, match);
+        hideClosingDelimiters(hidden, run, match);
+        remainingClose -= match;
+        if (opener.length - opener.openMatched - opener.closeMatched < unit) stack.pop();
+      }
+    }
+
+    if (run.canOpen && run.length - run.openMatched - run.closeMatched > 0) {
+      openers[run.char].push(run);
+    }
+  }
+
+  return hidden;
 }
 
 function isHiddenEmphasisDelimiter(src: string, index: number): boolean {
-  const run = delimiterRunAt(src, index);
-  if (!run) return false;
-  return (delimiterCanOpen(src, run) && hasClosingDelimiter(src, run))
-    || (delimiterCanClose(src, run) && hasOpeningDelimiter(src, run));
+  return hiddenEmphasisDelimiterIndexes(src).has(index);
 }
 
 function isHiddenLineBlockPosition(markdown: string, index: number): boolean {
@@ -164,6 +208,7 @@ function isHiddenLineBlockPosition(markdown: string, index: number): boolean {
 
 function inlineVisibleText(src: string): string {
   let out = '';
+  const hiddenDelimiters = hiddenEmphasisDelimiterIndexes(src);
   for (let i = 0; i < src.length; i += 1) {
     const ch = src[i];
 
@@ -210,8 +255,7 @@ function inlineVisibleText(src: string): string {
       continue;
     }
 
-    if ((ch === '*' || ch === '_' || ch === '~') && isHiddenEmphasisDelimiter(src, i)) {
-      while (src[i + 1] === ch) i += 1;
+    if ((ch === '*' || ch === '_' || ch === '~') && hiddenDelimiters.has(i)) {
       continue;
     }
 
@@ -222,6 +266,7 @@ function inlineVisibleText(src: string): string {
 
 function inlineVisibleLengthBefore(src: string, col: number): number {
   const limit = Math.max(0, Math.min(col, src.length));
+  const hiddenDelimiters = hiddenEmphasisDelimiterIndexes(src);
   let len = 0;
 
   for (let i = 0; i < src.length; i += 1) {
@@ -278,8 +323,7 @@ function inlineVisibleLengthBefore(src: string, col: number): number {
       continue;
     }
 
-    if ((ch === '*' || ch === '_' || ch === '~') && isHiddenEmphasisDelimiter(src, i)) {
-      while (src[i + 1] === ch) i += 1;
+    if ((ch === '*' || ch === '_' || ch === '~') && hiddenDelimiters.has(i)) {
       continue;
     }
 

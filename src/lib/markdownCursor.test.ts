@@ -46,6 +46,11 @@ describe('markdownCursor', () => {
     expect(visibleOffsetToMarkdownOffset(md, afterOffset)).toBe(md.indexOf(' after'));
   });
 
+  it('preserves unmatched marker characters in partially matched emphasis runs', () => {
+    expect(markdownVisibleText('**bold*')).toBe('*bold');
+    expect(markdownVisibleText('***bold**')).toBe('*bold');
+  });
+
   it('keeps backslashes visible unless they escape markdown punctuation', () => {
     const md = String.raw`C:\Users and \alpha and \*literal star\*`;
     const visible = markdownVisibleText(md);
