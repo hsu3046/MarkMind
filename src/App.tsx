@@ -345,15 +345,58 @@ function App() {
   // viewMode 전환 시 scroll 위치 보존 — Markdown(CodeMirror) ↔ Rich Text(.preview-wrapper) ↔ Split
   const scrollRatioRef = useRef<number>(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const editorRef = useRef<EditorHandle>(null);
-  const previewRef = useRef<PreviewHandle>(null); // Rich Text 이미지 삽입 라우팅(#56)
+  const editorSoloRef = useRef<EditorHandle>(null);
+  const editorLeftRef = useRef<EditorHandle>(null);
+  const editorRightRef = useRef<EditorHandle>(null);
+  const previewSoloRef = useRef<PreviewHandle>(null);
+  const previewLeftRef = useRef<PreviewHandle>(null);
+  const previewRightRef = useRef<PreviewHandle>(null); // Rich Text 이미지 삽입 라우팅(#56)
   const pendingFocusOffsetRef = useRef<number | null>(null);
 
+  const editorRefForSide = useCallback((side: 'left' | 'right' | 'solo') => {
+    if (side === 'left') return editorLeftRef;
+    if (side === 'right') return editorRightRef;
+    return editorSoloRef;
+  }, []);
+
+  const previewRefForSide = useCallback((side: 'left' | 'right' | 'solo') => {
+    if (side === 'left') return previewLeftRef;
+    if (side === 'right') return previewRightRef;
+    return previewSoloRef;
+  }, []);
+
+  const activeEditorHandle = useCallback((): EditorHandle | null => {
+    if (viewMode === 'split') {
+      return (activePane === 'left' ? editorLeftRef : editorRightRef).current;
+    }
+    return editorSoloRef.current;
+  }, [activePane, viewMode]);
+
+  const activePreviewHandle = useCallback((): PreviewHandle | null => {
+    if (viewMode === 'split') {
+      return (activePane === 'left' ? previewLeftRef : previewRightRef).current;
+    }
+    return previewSoloRef.current;
+  }, [activePane, viewMode]);
+
+  const visibleEditorHandle = useCallback((): EditorHandle | null => (
+    activeEditorHandle()
+    ?? editorLeftRef.current
+    ?? editorRightRef.current
+    ?? editorSoloRef.current
+  ), [activeEditorHandle]);
+
+  const clearAllEditorSearch = useCallback(() => {
+    editorSoloRef.current?.searchClear();
+    editorLeftRef.current?.searchClear();
+    editorRightRef.current?.searchClear();
+  }, []);
+
   const captureTextFocusOffset = useCallback((): number | null => {
-    if (activeView === 'editor') return editorRef.current?.getCursorOffset() ?? null;
-    if (activeView === 'preview') return previewRef.current?.getMarkdownOffset() ?? null;
+    if (activeView === 'editor') return activeEditorHandle()?.getCursorOffset() ?? null;
+    if (activeView === 'preview') return activePreviewHandle()?.getMarkdownOffset() ?? null;
     return null;
-  }, [activeView]);
+  }, [activeEditorHandle, activePreviewHandle, activeView]);
 
   const setViewModePreservingFocus = useCallback((next: ViewMode) => {
     if (next !== viewMode) {
@@ -376,8 +419,8 @@ function App() {
       if (cancelled) return;
       const shouldScroll = settledFrames === 0;
       const ok = activeView === 'editor'
-        ? editorRef.current?.focusAtOffset(offset, shouldScroll)
-        : previewRef.current?.focusAtMarkdownOffset(offset, shouldScroll);
+        ? activeEditorHandle()?.focusAtOffset(offset, shouldScroll)
+        : activePreviewHandle()?.focusAtMarkdownOffset(offset, shouldScroll);
       if (ok) {
         settledFrames += 1;
         if (settledFrames >= 3) {
@@ -1295,6 +1338,12 @@ function App() {
   useEffect(() => {
     activeViewRef.current = activeView;
   }, [activeView]);
+  const viewModeRef = useRef(viewMode);
+  const activePaneRef = useRef(activePane);
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+    activePaneRef.current = activePane;
+  }, [activePane, viewMode]);
 
   // 화자 정리(rename_speakers) 후 리로드 판정에 최신 열린 파일 경로를 stale 없이 참조.
   const filePathRef = useRef(filePath);
@@ -1377,11 +1426,17 @@ function App() {
           // 표시는 #55(asset://), 실제 assets/ 복사·상대경로 치환은 저장 시 flush 가 처리.
           const insertImageAbs = (absPath: string) => {
             if (activeViewRef.current === 'preview') {
-              if (cx != null && cy != null) previewRef.current?.insertImageAtCoords(absPath, cx, cy);
-              else previewRef.current?.insertImageMarkdown(absPath);
+              const preview = viewModeRef.current === 'split'
+                ? (activePaneRef.current === 'left' ? previewLeftRef.current : previewRightRef.current)
+                : previewSoloRef.current;
+              if (cx != null && cy != null) preview?.insertImageAtCoords(absPath, cx, cy);
+              else preview?.insertImageMarkdown(absPath);
             } else {
-              if (cx != null && cy != null) editorRef.current?.insertAtCoords(`\n![](${absPath})\n`, cx, cy);
-              else editorRef.current?.insertAtCursor(`\n![](${absPath})\n`);
+              const editor = viewModeRef.current === 'split'
+                ? (activePaneRef.current === 'left' ? editorLeftRef.current : editorRightRef.current)
+                : editorSoloRef.current;
+              if (cx != null && cy != null) editor?.insertAtCoords(`\n![](${absPath})\n`, cx, cy);
+              else editor?.insertAtCursor(`\n![](${absPath})\n`);
             }
           };
 
@@ -1505,21 +1560,21 @@ function App() {
   const hasEditorPane = viewMode === 'editor' || (viewMode === 'split' && (splitLeft === 'editor' || splitRight === 'editor'));
   const handleJumpToSource = useCallback((line: number) => {
     if (hasEditorPane) {
-      editorRef.current?.scrollToLine(line);
+      visibleEditorHandle()?.scrollToLine(line);
     } else {
       pendingScrollLineRef.current = line;
       setViewMode('editor');
     }
-  }, [hasEditorPane]);
+  }, [hasEditorPane, visibleEditorHandle]);
 
   useEffect(() => {
     if (hasEditorPane && pendingScrollLineRef.current != null) {
       const line = pendingScrollLineRef.current;
       pendingScrollLineRef.current = null;
-      const t = setTimeout(() => editorRef.current?.scrollToLine(line), 120);
+      const t = setTimeout(() => visibleEditorHandle()?.scrollToLine(line), 120);
       return () => clearTimeout(t);
     }
-  }, [hasEditorPane]);
+  }, [hasEditorPane, visibleEditorHandle]);
 
   // AIPanel "실행" 클릭 → 모드에 따라 분기
   // - meeting-notes: converter.runNotes (새 .md 생성)
@@ -1602,11 +1657,11 @@ function App() {
       const { writeTempImage, extFromMime } = await import('./lib/imageAttach');
       const bytes = new Uint8Array(await file.arrayBuffer());
       const path = await writeTempImage(bytes, extFromMime(file.type));
-      editorRef.current?.insertAtCursor(`\n![](${path})\n`);
+      activeEditorHandle()?.insertAtCursor(`\n![](${path})\n`);
     } catch (err) {
       console.error('[App] 클립보드 이미지 첨부 실패:', err);
     }
-  }, []);
+  }, [activeEditorHandle]);
 
   // AI 이미지 생성 결과를 현재 문서에 삽입(ImageGenPanel "문서에 삽입" 버튼).
   // base64 data URL → temp 파일 → 활성 에디터(viewMode 분기)에 `![](temp경로)`.
@@ -1620,12 +1675,12 @@ function App() {
       const bytes = new Uint8Array(raw.length);
       for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
       const path = await writeTempImage(bytes, extFromMime(mime));
-      if (activeViewRef.current === 'preview') previewRef.current?.insertImageMarkdown(path);
-      else editorRef.current?.insertAtCursor(`\n![](${path})\n`);
+      if (activeViewRef.current === 'preview') activePreviewHandle()?.insertImageMarkdown(path);
+      else activeEditorHandle()?.insertAtCursor(`\n![](${path})\n`);
     } catch (err) {
       console.error('[App] 생성 이미지 삽입 실패:', err);
     }
-  }, []);
+  }, [activeEditorHandle, activePreviewHandle]);
 
   // MCP propose_edit 수락/거절 결과를 백엔드 tool 에 ack.
   const ackMcpProposal = useCallback((requestId: string, accepted: boolean, charCount: number | null) => {
@@ -1686,7 +1741,7 @@ function App() {
   const handleOutlineClick = useCallback((id: string, line: number) => {
     if (activeView !== 'preview') {
       // editor 패인이 active(또는 solo): heading 라인으로 CodeMirror 스크롤
-      editorRef.current?.scrollToLine(line);
+      visibleEditorHandle()?.scrollToLine(line);
     } else {
       // Preview mode: scroll the rendered heading into view
       const previewEl = document.querySelector('.preview-wrapper');
@@ -1707,7 +1762,7 @@ function App() {
         }
       }
     }
-  }, [activeView]);
+  }, [activeView, visibleEditorHandle]);
 
   const handleFloatingAction = useCallback((mode: AIMode, text: string) => {
     // Open AI panel, set mode, and run with selected text
@@ -1863,9 +1918,9 @@ function App() {
     setSearchShowReplace(false);
     setSearchMatchCount(0);
     setSearchCurrentIndex(-1);
-    editorRef.current?.searchClear();
+    clearAllEditorSearch();
     window.dispatchEvent(new Event('markmind:rich-search-clear'));
-  }, [viewMode, splitLeft, splitRight]);
+  }, [viewMode, splitLeft, splitRight, clearAllEditorSearch]);
 
   // viewMode 전환 시 scroll 위치 보존 (Markdown ↔ Rich Text).
   // 이전 모드의 scroll 비율을 기억해 새 모드의 같은 비율 위치로 자동 이동.
@@ -1938,7 +1993,7 @@ function App() {
 
   // Search toggle
   // ─── 통일 검색 (Markdown/CodeMirror + Rich Text/Tiptap 공용 SearchBar) ───
-  // 엔진 라우팅: 편집/split → editorRef 프로그램 검색(동기 {count,index}), 프리뷰 →
+  // 엔진 라우팅: 편집/split → active CodeMirror 프로그램 검색(동기 {count,index}), 프리뷰 →
   // Tiptap window 이벤트(카운트는 markmind:rich-search-count 로 비동기 회신).
   const applySearchInfo = useCallback((info?: { count: number; index: number } | null) => {
     if (!info) return;
@@ -1983,18 +2038,19 @@ function App() {
     if (activeView === 'preview') {
       window.dispatchEvent(new CustomEvent('markmind:rich-search', { detail: { query } }));
     } else {
-      applySearchInfo(editorRef.current?.searchSetQuery(query, replace));
+      applySearchInfo(activeEditorHandle()?.searchSetQuery(query, replace));
       // split 의 미러(정적 프리뷰) 하이라이트는 아래 effect 가 CSS Highlight API 로 처리.
     }
-  }, [activeView, applySearchInfo]);
+  }, [activeEditorHandle, activeView, applySearchInfo]);
 
   const navigateMatch = useCallback((delta: number) => {
     if (activeView === 'preview') {
       window.dispatchEvent(new Event(delta > 0 ? 'markmind:rich-search-next' : 'markmind:rich-search-prev'));
     } else {
-      applySearchInfo(delta > 0 ? editorRef.current?.searchNext() : editorRef.current?.searchPrev());
+      const editor = activeEditorHandle();
+      applySearchInfo(delta > 0 ? editor?.searchNext() : editor?.searchPrev());
     }
-  }, [activeView, applySearchInfo]);
+  }, [activeEditorHandle, activeView, applySearchInfo]);
 
   const replaceMatch = useCallback((all: boolean) => {
     if (activeView === 'preview') {
@@ -2002,15 +2058,15 @@ function App() {
       window.dispatchEvent(new CustomEvent(ev, { detail: { replace: searchReplace } }));
     } else {
       applySearchInfo(all
-        ? editorRef.current?.searchReplaceAll(searchReplace)
-        : editorRef.current?.searchReplaceCurrent(searchReplace));
+        ? activeEditorHandle()?.searchReplaceAll(searchReplace)
+        : activeEditorHandle()?.searchReplaceCurrent(searchReplace));
       // split: 소스 변경 → content 갱신 → 아래 effect 가 프리뷰 하이라이트 재계산.
     }
-  }, [activeView, applySearchInfo, searchReplace]);
+  }, [activeEditorHandle, activeView, applySearchInfo, searchReplace]);
 
   const closeSearch = useCallback(() => {
     // 양 엔진 모두 해제(미마운트 쪽은 no-op) — split 의 오른쪽 하이라이트까지 확실히 정리.
-    editorRef.current?.searchClear();
+    clearAllEditorSearch();
     window.dispatchEvent(new Event('markmind:rich-search-clear'));
     clearPreviewHighlight();
     setSearchVisible(false);
@@ -2019,7 +2075,7 @@ function App() {
     setSearchShowReplace(false);
     setSearchMatchCount(0);
     setSearchCurrentIndex(-1);
-  }, [clearPreviewHighlight]);
+  }, [clearAllEditorSearch, clearPreviewHighlight]);
 
   const toggleSearch = useCallback(() => {
     if (searchVisible) {
@@ -2229,7 +2285,7 @@ function App() {
             if (activeView === 'editor') {
               // CodeMirror: undo content 를 doc 에 직접 적용(+변경 지점 커서). react-codemirror
               // 의 value sync 가 커서를 0 으로 리셋하기 전에 doc 를 맞춰 그 sync 를 skip 시킨다.
-              editorRef.current?.applyContentWithCursor(r.content, r.cursorOffset);
+              activeEditorHandle()?.applyContentWithCursor(r.content, r.cursorOffset);
             } else if (ae && typeof ae.focus === 'function') {
               // preview(Tiptap 내부에서 커서를 클램프 보존)·비주얼 뷰: 포커스만 복원.
               requestAnimationFrame(() => {
@@ -2250,7 +2306,7 @@ function App() {
     saveFile, saveFileAs, handleOpenFile, newFile, toggleSearch,
     handleFontSizeChange, resetFontSize, recentPanelVisible,
     searchVisible, activeView, handleToggleAI, settingsVisible,
-    undo, redo, setViewModePreservingFocus,
+    undo, redo, setViewModePreservingFocus, activeEditorHandle,
   ]);
 
   // Split pane drag
@@ -2391,7 +2447,7 @@ function App() {
   };
 
   // editor 패인 콘텐츠 — 편집 가능 + AI diff 중이면 InlineDiffView, 아니면 Editor(미러는 read-only).
-  const renderEditorPane = (editable: boolean) => {
+  const renderEditorPane = (editable: boolean, side: 'left' | 'right' | 'solo') => {
     if (editable && ai.response && !ai.isLoading) {
       return (
         <InlineDiffView
@@ -2445,11 +2501,9 @@ function App() {
         />
       );
     }
-    // ref 는 editable 무관하게 editor 뷰 패인에 연결 — jump/검색/삽입이 active 여부와 상관없이 동작.
-    // (같은 뷰가 양쪽이면 마지막 mount 가 ref 를 차지하나 content 가 동일해 무해.)
     return (
       <Editor
-        ref={editorRef}
+        ref={editorRefForSide(side)}
         content={content}
         onChange={editable ? updateContent : () => {}}
         theme={theme}
@@ -2468,11 +2522,11 @@ function App() {
     const editable = paneEditable(view, side);
     switch (view) {
       case 'editor':
-        return <>{mcpBanner}{renderEditorPane(editable)}</>;
+        return <>{mcpBanner}{renderEditorPane(editable, side)}</>;
       case 'preview':
         return (
           <Preview
-            ref={previewRef}
+            ref={previewRefForSide(side)}
             content={content}
             fontSize={fontSize}
             onChange={editable ? updateContent : undefined}
