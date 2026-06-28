@@ -481,6 +481,13 @@ function slideHasImageSrc(slide: Slide): boolean {
   return Boolean(slide.image?.src?.trim() || slide.body.some((block) => block.kind === 'image' && block.src.trim()));
 }
 
+function existingSlideImageSrc(slide: Slide): string | undefined {
+  const imageSrc = slide.image?.src?.trim();
+  if (imageSrc) return imageSrc;
+  const block = slide.body.find((item): item is Extract<SlideBlock, { kind: 'image' }> => item.kind === 'image');
+  return block?.src.trim() || undefined;
+}
+
 function firstSourceImage(slide: Slide): SlideImageSpec | undefined {
   const src = slide.image?.src?.trim();
   if (src) return { ...slide.image, src };
@@ -618,9 +625,39 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
     usedSourceIndexes.add(sourceIndex);
     return image;
   };
+  const consumeExistingSourceImage = (slide: Slide, slideIndex: number) => {
+    const existingSrc = existingSlideImageSrc(slide);
+    if (!existingSrc) return;
+    for (const sourceId of slide.sourceIds ?? []) {
+      const normalized = sourceId.trim().toUpperCase();
+      const images = sourceImagesById.get(normalized);
+      const offset = sourceImageOffsets.get(normalized) ?? 0;
+      if (images?.[offset]?.src?.trim() === existingSrc) {
+        sourceImageOffsets.set(normalized, offset + 1);
+        return;
+      }
+      if (sourceImagesById.size === 0) {
+        const sourceIndex = sourceIndexFromId(sourceId);
+        if (sourceIndex === undefined || sourceIndex >= sourceSlides.length) continue;
+        const sourceImage = firstSourceImage(sourceSlides[sourceIndex]);
+        if (sourceImage?.src?.trim() === existingSrc) {
+          usedSourceIndexes.add(sourceIndex);
+          return;
+        }
+      }
+    }
+    if (!slide.sourceIds?.length && sourceImagesById.size === 0) {
+      const sourceSlide = sourceSlides[slideIndex];
+      const sourceImage = sourceSlide ? firstSourceImage(sourceSlide) : undefined;
+      if (sourceImage?.src?.trim() === existingSrc) usedSourceIndexes.add(slideIndex);
+    }
+  };
 
   return slides.map((slide, slideIndex) => {
-    if (slideHasImageSrc(slide)) return slide;
+    if (slideHasImageSrc(slide)) {
+      consumeExistingSourceImage(slide, slideIndex);
+      return slide;
+    }
     let image: SlideImageSpec | undefined;
     for (const sourceId of slide.sourceIds ?? []) {
       image = takeSourceImage(sourceId) ?? (sourceImagesById.size === 0 ? takeImage(sourceIndexFromId(sourceId)) : undefined);
