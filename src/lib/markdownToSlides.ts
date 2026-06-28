@@ -599,10 +599,16 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
   const usedSourceIndexes = new Set<number>();
   const consumedSourceImages = new Set<string>();
   const sourceImageKey = (id: string, imageIndex: number) => `${id}\u0000${imageIndex}`;
-  const markSourceImageConsumed = (id: string, imageIndex: number) => {
+  const markSourceSlideUsedByImageSrc = (src: string | undefined) => {
+    const existingSrc = src?.trim();
+    if (!existingSrc) return;
+    sourceSlides.forEach((sourceSlide, sourceIndex) => {
+      if (firstSourceImage(sourceSlide)?.src?.trim() === existingSrc) usedSourceIndexes.add(sourceIndex);
+    });
+  };
+  const markSourceImageConsumed = (id: string, imageIndex: number, src: string | undefined) => {
     consumedSourceImages.add(sourceImageKey(id, imageIndex));
-    const sourceIndex = sourceIndexFromId(id);
-    if (sourceIndex !== undefined) usedSourceIndexes.add(sourceIndex);
+    markSourceSlideUsedByImageSrc(src);
     let offset = sourceImageOffsets.get(id) ?? 0;
     while (consumedSourceImages.has(sourceImageKey(id, offset))) offset += 1;
     sourceImageOffsets.set(id, offset);
@@ -620,7 +626,7 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
     for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
       if (consumedSourceImages.has(sourceImageKey(normalized, imageIndex))) continue;
       if (images[imageIndex]?.src?.trim() === existingSrc) {
-        markSourceImageConsumed(normalized, imageIndex);
+        markSourceImageConsumed(normalized, imageIndex, images[imageIndex]?.src);
         return true;
       }
     }
@@ -631,7 +637,7 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
       const { id, image, imageIndex } = sourceImageEntries[entryIndex];
       if (consumedSourceImages.has(sourceImageKey(id, imageIndex))) continue;
       if (image.src?.trim() === existingSrc) {
-        markSourceImageConsumed(id, imageIndex);
+        markSourceImageConsumed(id, imageIndex, image.src);
         nextSourceImageIndex = entryIndex + 1;
         return true;
       }
@@ -645,14 +651,14 @@ export function preserveSourceImagesForPptx(slides: Slide[], source: Slide[] | s
     const offset = firstUnconsumedSourceImageIndex(normalized, images);
     const image = images?.[offset];
     if (!image) return undefined;
-    markSourceImageConsumed(normalized, offset);
+    markSourceImageConsumed(normalized, offset, image.src);
     return image;
   };
   const takeNextSourceImage = (): SlideImageSpec | undefined => {
     while (nextSourceImageIndex < sourceImageEntries.length) {
       const { id, image, imageIndex } = sourceImageEntries[nextSourceImageIndex++];
       if (consumedSourceImages.has(sourceImageKey(id, imageIndex))) continue;
-      markSourceImageConsumed(id, imageIndex);
+      markSourceImageConsumed(id, imageIndex, image.src);
       return image;
     }
     return undefined;
