@@ -214,12 +214,17 @@ async function captureFlowView(viewMode: 'mindmap' | 'flowchart'): Promise<Captu
 async function captureStoredFlowchart(sourceMarkdown?: string): Promise<CapturedImage | null> {
     const flowchart = sourceMarkdown ? parseFlowchartBlock(sourceMarkdown) : null;
     if (!flowchart) return null;
-    const snapshot = await flowchartToPngSnapshot(flowchart);
-    return {
-        dataUrl: snapshot.dataUrl,
-        width: snapshot.width,
-        height: snapshot.height,
-    };
+    try {
+        const snapshot = await flowchartToPngSnapshot(flowchart);
+        return {
+            dataUrl: snapshot.dataUrl,
+            width: snapshot.width,
+            height: snapshot.height,
+        };
+    } catch (error) {
+        console.warn('[pdf] Stored flowchart snapshot failed; falling back to DOM capture.', error);
+        return null;
+    }
 }
 
 // ─── 칸반(HTML board) ───────────────────────────────────────────────────────
