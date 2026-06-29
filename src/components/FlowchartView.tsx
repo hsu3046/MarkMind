@@ -30,6 +30,7 @@ import {
 import { Trash2, Play, Square, Split, ArrowRightLeft, Merge, CircleStop, Network, type LucideIcon } from 'lucide-react';
 import { assignFlowchartEdgeHandles, layoutFlowchart } from '../lib/dagre-layout';
 import { parseFlowchartBlock, upsertFlowchartBlock, type StoredFlowchart } from '../lib/flowchartBlock';
+import { normalizeFlowNodeType } from '../lib/flowchart-shapes';
 import type { FlowchartNode, FlowchartEdge, FlowNodeType } from '../types/flowchart';
 import { FlowchartPanel } from './FlowchartPanel';
 import '@xyflow/react/dist/style.css';
@@ -153,7 +154,11 @@ function toReactFlow(nodes: FlowchartNode[], edges: FlowchartEdge[]): { nodes: N
             id: n.id,
             type: 'flow',
             position: n.position,
-            data: { label: n.label, flowType: n.type, description: n.description },
+            data: {
+                label: n.label,
+                flowType: normalizeFlowNodeType(n.type),
+                description: n.description,
+            },
         })),
         edges: edges.map((e) => ({
             id: e.id,
