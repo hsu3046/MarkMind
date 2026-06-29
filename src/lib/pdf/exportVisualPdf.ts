@@ -11,6 +11,8 @@
  * - 다이얼로그/진행표시는 호출부(App)가 제어 — build(캡처+PDF) 와 write(저장) 를 분리해
  *   "다이얼로그 → 진행표시 → 생성 → 저장" 흐름을 만든다(생성 지연 동안 progress 노출).
  */
+import { parseFlowchartBlock } from '../flowchartBlock';
+import { flowchartToPngSnapshot } from './flowchartSvgSnapshot';
 
 /** 96dpi 기준 CSS px → mm (jsPDF unit=mm). */
 const PX_PER_MM = 96 / 25.4;
@@ -209,6 +211,22 @@ async function captureFlowView(viewMode: 'mindmap' | 'flowchart'): Promise<Captu
     return withLightTheme(container, () => captureReactFlow(viewport, bounds));
 }
 
+async function captureStoredFlowchart(sourceMarkdown?: string): Promise<CapturedImage | null> {
+    const flowchart = sourceMarkdown ? parseFlowchartBlock(sourceMarkdown) : null;
+    if (!flowchart) return null;
+    try {
+        const snapshot = await flowchartToPngSnapshot(flowchart);
+        return {
+            dataUrl: snapshot.dataUrl,
+            width: snapshot.width,
+            height: snapshot.height,
+        };
+    } catch (error) {
+        console.warn('[pdf] Stored flowchart snapshot failed; falling back to DOM capture.', error);
+        return null;
+    }
+}
+
 // ─── 칸반(HTML board) ───────────────────────────────────────────────────────
 
 async function captureHtmlElement(el: HTMLElement): Promise<CapturedImage> {
@@ -256,11 +274,13 @@ async function imageToPdfBlob(img: CapturedImage): Promise<Blob> {
 }
 
 /** 현재 시각 뷰를 PDF blob 으로(빈 뷰면 null). 캡처+PDF(무거움) — 다이얼로그/진행표시는 호출부. */
-export async function buildVisualViewPdf(viewMode: VisualViewMode): Promise<Blob | null> {
+export async function buildVisualViewPdf(viewMode: VisualViewMode, sourceMarkdown?: string): Promise<Blob | null> {
     const img = viewMode === 'gantt'
         ? await captureGantt()
         : viewMode === 'kanban'
             ? await captureKanban()
+            : viewMode === 'flowchart'
+                ? await captureStoredFlowchart(sourceMarkdown) ?? await captureFlowView(viewMode)
             : await captureFlowView(viewMode);
     if (!img) return null;
     return imageToPdfBlob(img);

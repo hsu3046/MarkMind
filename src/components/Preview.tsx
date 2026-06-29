@@ -35,6 +35,7 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import { InlineCheckbox } from '../extensions/InlineCheckbox';
 import { MarkdownTable } from '../extensions/MarkdownTable';
 import { createImageInline } from '../extensions/ImageInline';
+import { FlowchartCodeBlock } from '../extensions/FlowchartCodeBlock';
 import { resolveImageSrc } from '../lib/imageSrc';
 import { removeFlowchartBlock, hasFlowchartBlock } from '../lib/flowchartBlock';
 import { quoteLines } from '../lib/quoteMatch';
@@ -908,7 +909,7 @@ function RichEditor({
         extensions: [
             StarterKit.configure({
                 heading: { levels: [1, 2, 3, 4, 5, 6] },
-                codeBlock: { HTMLAttributes: { class: 'hljs' } },
+                codeBlock: false,
                 // undo/redo 끄기 — App 전역 content 스택으로 일원화(#74 유니버설 undo).
                 undoRedo: false,
                 // bold/italic/strike 는 expel 끈 커스텀으로 대체(아래) — blockquote 직렬화 버그 회피.
@@ -919,6 +920,7 @@ function RichEditor({
             ItalicNoExpel,
             BoldNoExpel,
             StrikeNoExpel,
+            FlowchartCodeBlock.configure({ HTMLAttributes: { class: 'hljs' } }),
             // autolink: false — `arena.ai` 같은 평문 URL 이 자동으로 링크되는 동작 끄기
             // (사용자가 명시적으로 toolbar Link 버튼/⌘K 로만 링크 생성)
             Link.configure({ openOnClick: false, autolink: false }),

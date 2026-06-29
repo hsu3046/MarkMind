@@ -11,8 +11,8 @@
  */
 
 import dagre from 'dagre'
-import { FlowchartEdge, FlowchartNode, FlowNodeType } from '../types/flowchart'
-import { SHAPE_DIMENSIONS } from './flowchart-shapes'
+import { FlowchartEdge, FlowchartNode } from '../types/flowchart'
+import { getShapeDimensions } from './flowchart-shapes'
 
 /** Canvas snap grid step — must match GRID_SIZE in flowchart-canvas. */
 const GRID_SIZE = 20
@@ -24,11 +24,63 @@ export interface LayoutOptions {
     nodesep?: number
     /** Spacing between adjacent ranks. Default 100. */
     ranksep?: number
+    /** Optional rendered size override, used by export renderers that do not use CSS boxes. */
+    getNodeSize?: (node: FlowchartNode) => { width: number; height: number } | undefined
 }
 
 export interface LayoutResult {
     nodes: FlowchartNode[]
     edges: FlowchartEdge[]
+}
+
+function directionalHandles(
+    edge: FlowchartEdge,
+    positions: Map<string, { x: number; y: number }>,
+    rankdir: 'LR' | 'TB',
+): { sourceHandle: string; targetHandle: string } {
+    const source = positions.get(edge.source)
+    const target = positions.get(edge.target)
+    if (!source || !target) {
+        return rankdir === 'TB'
+            ? { sourceHandle: 'bottom-source', targetHandle: 'top-target' }
+            : { sourceHandle: 'right-source', targetHandle: 'left-target' }
+    }
+
+    const dx = target.x - source.x
+    const dy = target.y - source.y
+    if (rankdir === 'LR') {
+        if (Math.abs(dy) > GRID_SIZE && Math.abs(dy) >= Math.abs(dx) * 0.45) {
+            return dy > 0
+                ? { sourceHandle: 'bottom-source', targetHandle: 'top-target' }
+                : { sourceHandle: 'top-source', targetHandle: 'bottom-target' }
+        }
+        return dx >= 0
+            ? { sourceHandle: 'right-source', targetHandle: 'left-target' }
+            : { sourceHandle: 'left-source', targetHandle: 'right-target' }
+    }
+
+    if (Math.abs(dx) > GRID_SIZE && Math.abs(dx) >= Math.abs(dy) * 0.45) {
+        return dx > 0
+            ? { sourceHandle: 'right-source', targetHandle: 'left-target' }
+            : { sourceHandle: 'left-source', targetHandle: 'right-target' }
+    }
+    return dy >= 0
+        ? { sourceHandle: 'bottom-source', targetHandle: 'top-target' }
+        : { sourceHandle: 'top-source', targetHandle: 'bottom-target' }
+}
+
+export function assignFlowchartEdgeHandles(
+    edges: FlowchartEdge[],
+    nodes: Pick<FlowchartNode, 'id' | 'position'>[],
+    rankdir: 'LR' | 'TB' = 'LR',
+): FlowchartEdge[] {
+    const positions = new Map(nodes.map(n => [n.id, n.position]))
+    const loopSource = rankdir === 'TB' ? 'left-source'  : 'top-source'
+    const loopTarget = rankdir === 'TB' ? 'left-target'  : 'top-target'
+    return edges.map(e => {
+        if (e.markerLoop) return { ...e, sourceHandle: loopSource, targetHandle: loopTarget }
+        return { ...e, ...directionalHandles(e, positions, rankdir) }
+    })
 }
 
 /**
@@ -82,6 +134,14 @@ export function layoutFlowchart(
 
     for (const n of nodes) {
         if (!connectedIds.has(n.id)) continue   // isolated → keep original pos
+        const customSize = options.getNodeSize?.(n)
+        if (customSize) {
+            g.setNode(n.id, {
+                width: customSize.width,
+                height: customSize.height,
+            })
+            continue
+        }
         // Image nodes carry their actual rendered dimensions on the node
         // itself (set when the file is dropped + adjusted by NodeResizer).
         // Falling through to SHAPE_DIMENSIONS would give them the same
@@ -97,10 +157,10 @@ export function layoutFlowchart(
             })
             continue
         }
-        const dim = SHAPE_DIMENSIONS[n.type as FlowNodeType]
+        const dim = getShapeDimensions(n.type)
         g.setNode(n.id, {
-            width: dim?.minWidth ?? 160,
-            height: dim?.minHeight ?? 60,
+            width: dim.minWidth,
+            height: dim.minHeight,
         })
     }
     for (const e of edges) {
@@ -248,8 +308,10 @@ export function layoutFlowchart(
         return { ...n, position: d }
     })
 
-    // Handle assignment matches the flow direction so smoothstep edges go
-    // straight along the rank axis instead of doubling back.
+    // Handle assignment follows the final node geometry. Branches that move
+    // off the main rank axis should leave from top/bottom (LR) or left/right
+    // (TB); forcing every LR edge to right→left makes lower branches wrap
+    // around the graph and visually tangle.
     //
     // Loop edges get the PERPENDICULAR side so the path arcs over (LR) /
     // beside (TB) the main flow body instead of looking like a forward
@@ -257,14 +319,7 @@ export function layoutFlowchart(
     // input" loop in an LR layout would still leave from the source's
     // right side and enter the target's left side — visually identical
     // to a normal arrow.
-    const fwdSource = rankdir === 'TB' ? 'bottom-source' : 'right-source'
-    const fwdTarget = rankdir === 'TB' ? 'top-target'    : 'left-target'
-    const loopSource = rankdir === 'TB' ? 'left-source'  : 'top-source'
-    const loopTarget = rankdir === 'TB' ? 'left-target'  : 'top-target'
-    const newEdges = edges.map(e => e.markerLoop
-        ? { ...e, sourceHandle: loopSource, targetHandle: loopTarget }
-        : { ...e, sourceHandle: fwdSource, targetHandle: fwdTarget }
-    )
+    const newEdges = assignFlowchartEdgeHandles(edges, newNodes, rankdir)
 
     return { nodes: newNodes, edges: newEdges }
 }

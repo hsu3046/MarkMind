@@ -113,3 +113,12 @@ objc2-web-kit = { version = "0.3", features = [
     "WKWebView",
 ] }
 objc2-foundation = { version = "0.3", features = ["NSURL", "NSString", "NSError", "NSDictionary", "NSArray"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["CFURL"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
+    "CGContext",
+    "CGPDFArray",
+    "CGPDFContext",
+    "CGPDFDictionary",
+    "CGPDFDocument",
+    "CGPDFPage",
+] }

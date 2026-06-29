@@ -28,8 +28,9 @@ import {
     type Connection,
 } from '@xyflow/react';
 import { Trash2, Play, Square, Split, ArrowRightLeft, Merge, CircleStop, Network, type LucideIcon } from 'lucide-react';
-import { layoutFlowchart } from '../lib/dagre-layout';
+import { assignFlowchartEdgeHandles, layoutFlowchart } from '../lib/dagre-layout';
 import { parseFlowchartBlock, upsertFlowchartBlock, type StoredFlowchart } from '../lib/flowchartBlock';
+import { normalizeFlowNodeType } from '../lib/flowchart-shapes';
 import type { FlowchartNode, FlowchartEdge, FlowNodeType } from '../types/flowchart';
 import { FlowchartPanel } from './FlowchartPanel';
 import '@xyflow/react/dist/style.css';
@@ -153,7 +154,11 @@ function toReactFlow(nodes: FlowchartNode[], edges: FlowchartEdge[]): { nodes: N
             id: n.id,
             type: 'flow',
             position: n.position,
-            data: { label: n.label, flowType: n.type, description: n.description },
+            data: {
+                label: n.label,
+                flowType: normalizeFlowNodeType(n.type),
+                description: n.description,
+            },
         })),
         edges: edges.map((e) => ({
             id: e.id,
@@ -205,13 +210,15 @@ function FlowchartViewInner({ content, fileName, onChange, flowchartPanelOpen, o
     }, [isAi, rfNodes.length]);
 
     const syncFromStored = useCallback((stored: StoredFlowchart) => {
+        const rankdir = stored.direction ?? 'LR';
         const seeded = stored.nodes.map((n) => ({ ...n, position: n.position ?? { x: 0, y: 0 } }));
-        const lo = layoutFlowchart(seeded, stored.edges, { rankdir: stored.direction ?? 'LR' });
+        const lo = layoutFlowchart(seeded, stored.edges, { rankdir });
         const merged = lo.nodes.map((n) => {
             const sn = stored.nodes.find((s) => s.id === n.id);
             return sn?.position ? { ...n, position: sn.position } : n;
         });
-        const rf = toReactFlow(merged, lo.edges);
+        const edges = assignFlowchartEdgeHandles(lo.edges, merged, rankdir);
+        const rf = toReactFlow(merged, edges);
         setRfNodes(rf.nodes);
         setRfEdges(rf.edges);
     }, [setRfNodes, setRfEdges]);
