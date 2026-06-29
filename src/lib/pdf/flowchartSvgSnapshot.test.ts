@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { FlowNodeType } from '../../types/flowchart';
 import type { StoredFlowchart } from '../flowchartBlock';
 import { flowchartToSvgSnapshot } from './flowchartSvgSnapshot';
 
@@ -41,5 +42,22 @@ describe('flowchartToSvgSnapshot', () => {
     expect(svg).toContain('marker-end="url(#flowchart-arrow-end)"');
     expect(viewBox?.[3]).toBe(String(snapshot.width));
     expect(viewBox?.[4]).toBe(String(snapshot.height));
+  });
+
+  it('renders unknown node types as process nodes instead of throwing', () => {
+    const flowchart: StoredFlowchart = {
+      title: 'Legacy flow',
+      direction: 'LR',
+      nodes: [
+        { id: 'legacy', type: 'legacy-task' as FlowNodeType, label: 'Legacy task', position: { x: 0, y: 0 } },
+      ],
+      edges: [],
+    };
+
+    const snapshot = flowchartToSvgSnapshot(flowchart);
+    const svg = decodeSvg(snapshot.dataUrl);
+
+    expect(svg).toContain('Legacy task');
+    expect(svg).toContain('rx="8" fill="#ffffff"');
   });
 });

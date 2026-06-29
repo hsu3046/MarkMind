@@ -6,10 +6,15 @@
  */
 import type { FlowNodeType } from '../types/flowchart';
 
-export const SHAPE_DIMENSIONS: Record<
-    FlowNodeType,
-    { minWidth: number; minHeight: number; maxWidth: number }
-> = {
+export interface ShapeDimensions {
+    minWidth: number;
+    minHeight: number;
+    maxWidth: number;
+}
+
+export const DEFAULT_FLOW_NODE_TYPE: FlowNodeType = 'process';
+
+export const SHAPE_DIMENSIONS: Record<FlowNodeType, ShapeDimensions> = {
     start: { minWidth: 120, minHeight: 60, maxWidth: 240 },
     end: { minWidth: 120, minHeight: 60, maxWidth: 240 },
     process: { minWidth: 160, minHeight: 60, maxWidth: 320 },
@@ -19,3 +24,16 @@ export const SHAPE_DIMENSIONS: Record<
     // image: 캔버스 최소 footprint. 실제 크기는 image_width/height 로 결정.
     image: { minWidth: 80, minHeight: 60, maxWidth: 800 },
 };
+
+export function isFlowNodeType(value: unknown): value is FlowNodeType {
+    return typeof value === 'string'
+        && Object.prototype.hasOwnProperty.call(SHAPE_DIMENSIONS, value);
+}
+
+export function normalizeFlowNodeType(value: unknown): FlowNodeType {
+    return isFlowNodeType(value) ? value : DEFAULT_FLOW_NODE_TYPE;
+}
+
+export function getShapeDimensions(value: unknown): ShapeDimensions {
+    return SHAPE_DIMENSIONS[normalizeFlowNodeType(value)];
+}

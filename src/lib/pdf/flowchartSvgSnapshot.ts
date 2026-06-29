@@ -1,6 +1,6 @@
 import { assignFlowchartEdgeHandles, layoutFlowchart } from '../dagre-layout';
 import type { StoredFlowchart } from '../flowchartBlock';
-import { SHAPE_DIMENSIONS } from '../flowchart-shapes';
+import { getShapeDimensions, normalizeFlowNodeType } from '../flowchart-shapes';
 import type { FlowchartEdge, FlowchartNode, FlowNodeType } from '../../types/flowchart';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -118,8 +118,9 @@ function getNodePadding(type: FlowNodeType): { x: number; y: number } {
 }
 
 function buildSvgNode(node: FlowchartNode): SvgNode {
-  const dim = SHAPE_DIMENSIONS[node.type];
-  const padding = getNodePadding(node.type);
+  const flowType = normalizeFlowNodeType(node.type);
+  const dim = getShapeDimensions(flowType);
+  const padding = getNodePadding(flowType);
   const rawTextWidth = estimateTextWidth(node.label);
   const width = Math.ceil(Math.max(
     dim.minWidth,
@@ -127,7 +128,7 @@ function buildSvgNode(node: FlowchartNode): SvgNode {
   ));
   const lines = wrapText(node.label, Math.max(24, width - padding.x * 2));
   const height = Math.ceil(Math.max(dim.minHeight, lines.length * NODE_LINE_HEIGHT + padding.y * 2));
-  return { node, size: { width, height }, lines };
+  return { node: { ...node, type: flowType }, size: { width, height }, lines };
 }
 
 function escapeXml(value: string): string {

@@ -17,7 +17,7 @@ import {
 } from '@xyflow/react';
 import { assignFlowchartEdgeHandles, layoutFlowchart } from '../lib/dagre-layout';
 import type { StoredFlowchart } from '../lib/flowchartBlock';
-import { SHAPE_DIMENSIONS } from '../lib/flowchart-shapes';
+import { getShapeDimensions, normalizeFlowNodeType } from '../lib/flowchart-shapes';
 import type { FlowchartEdge, FlowchartNode } from '../types/flowchart';
 import '@xyflow/react/dist/style.css';
 import './FlowchartView.css';
@@ -77,7 +77,11 @@ function toReactFlow(nodes: FlowchartNode[], edges: FlowchartEdge[]): { nodes: N
       id: n.id,
       type: 'flow',
       position: n.position,
-      data: { label: n.label, flowType: n.type, description: n.description },
+      data: {
+        label: n.label,
+        flowType: normalizeFlowNodeType(n.type),
+        description: n.description,
+      },
     })),
     edges: edges.map((e) => ({
       id: e.id,
@@ -125,8 +129,9 @@ function preferredCanvasHeight(
   const byId = new Map(nodes.map((node) => [node.id, node]));
 
   for (const node of nodes) {
-    const dim = SHAPE_DIMENSIONS[node.type];
-    const height = node.type === 'image'
+    const nodeType = normalizeFlowNodeType(node.type);
+    const dim = getShapeDimensions(nodeType);
+    const height = nodeType === 'image'
       ? (node.image_height ?? dim.minHeight)
       : dim.minHeight;
     minY = Math.min(minY, node.position.y - height / 2);

@@ -11,8 +11,8 @@
  */
 
 import dagre from 'dagre'
-import { FlowchartEdge, FlowchartNode, FlowNodeType } from '../types/flowchart'
-import { SHAPE_DIMENSIONS } from './flowchart-shapes'
+import { FlowchartEdge, FlowchartNode } from '../types/flowchart'
+import { getShapeDimensions } from './flowchart-shapes'
 
 /** Canvas snap grid step — must match GRID_SIZE in flowchart-canvas. */
 const GRID_SIZE = 20
@@ -157,10 +157,10 @@ export function layoutFlowchart(
             })
             continue
         }
-        const dim = SHAPE_DIMENSIONS[n.type as FlowNodeType]
+        const dim = getShapeDimensions(n.type)
         g.setNode(n.id, {
-            width: dim?.minWidth ?? 160,
-            height: dim?.minHeight ?? 60,
+            width: dim.minWidth,
+            height: dim.minHeight,
         })
     }
     for (const e of edges) {
