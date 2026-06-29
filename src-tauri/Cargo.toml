@@ -109,8 +109,6 @@ objc2-app-kit = { version = "0.3", features = [
     "NSSharingService",
     "objc2-core-foundation",
 ] }
-objc2-core-foundation = { version = "0.3", features = ["CFString", "CFURL", "CFCGTypes"] }
-objc2-core-graphics = { version = "0.3", features = ["CGContext", "CGPDFContext", "CGPDFDocument", "CGPDFPage"] }
 objc2-web-kit = { version = "0.3", features = [
     "WKWebView",
 ] }

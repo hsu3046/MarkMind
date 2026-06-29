@@ -138,9 +138,9 @@ pub async fn export_pdf(window: WebviewWindow, path: String) -> Result<(), Strin
         wait_for_pdf_write_to_finish(&raw_pdf_path).await?;
 
         // WebKit 의 CSS page margin box(`@bottom-center`)는 앱 내 native print 에서
-        // 안정적으로 출력되지 않는다. WebKit 출력은 임시 파일로 받은 뒤 실제 text
-        // object 를 덧붙이고, 마지막에 최종 경로로 교체한다. 기존 PDF가 있는 경로에서도
-        // "기존 파일이 안정적"이라고 오판하는 race 를 피하기 위함이다.
+        // 안정적으로 출력되지 않는다. WebKit 출력은 임시 파일로 받은 뒤 PDFium 으로
+        // 실제 text object 를 덧붙이고, 마지막에 최종 경로로 교체한다. PDFium 을
+        // 사용할 수 없으면 번호 삽입을 건너뛰어 원본 PDF의 링크 annotation 을 보존한다.
         let numbering_path = raw_pdf_path.clone();
         match tokio::task::spawn_blocking(move || add_page_numbers_to_pdf(&numbering_path)).await {
             Ok(Ok(())) => {}
@@ -182,19 +182,7 @@ async fn wait_for_pdf_write_to_finish(path: &str) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn add_page_numbers_to_pdf(path: &str) -> Result<(), String> {
-    match add_page_numbers_to_pdf_with_pdfium(path) {
-        Ok(()) => Ok(()),
-        Err(pdfium_err) => {
-            log::warn!(
-                "PDFium page number post-process failed; falling back to CoreGraphics: {pdfium_err}"
-            );
-            add_page_numbers_to_pdf_with_core_graphics(path).map_err(|core_graphics_err| {
-                format!(
-                    "PDFium 실패: {pdfium_err}; CoreGraphics fallback 실패: {core_graphics_err}"
-                )
-            })
-        }
-    }
+    add_page_numbers_to_pdf_with_pdfium(path)
 }
 
 #[cfg(target_os = "macos")]
@@ -234,114 +222,6 @@ fn add_page_numbers_to_pdf_with_pdfium(path: &str) -> Result<(), String> {
     std::fs::rename(&tmp_path, path).map_err(|err| format!("번호 삽입 PDF 교체 실패: {err}"))?;
 
     Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn add_page_numbers_to_pdf_with_core_graphics(path: &str) -> Result<(), String> {
-    use objc2_core_foundation::{CGAffineTransform, CGRect};
-    use objc2_core_graphics::{
-        CGContext, CGPDFBox, CGPDFContextClose, CGPDFContextCreateWithURL, CGPDFDocument, CGPDFPage,
-    };
-    use std::ffi::CString;
-
-    let input_url = cf_file_url(path)?;
-    let document = CGPDFDocument::with_url(Some(&input_url))
-        .ok_or_else(|| "CoreGraphics PDF 로드 실패".to_string())?;
-    let page_count = CGPDFDocument::number_of_pages(Some(&document));
-    if page_count == 0 {
-        return Ok(());
-    }
-
-    let tmp_path = numbered_tmp_path(path);
-    let tmp_path_str = tmp_path
-        .to_str()
-        .ok_or_else(|| "임시 PDF 경로가 UTF-8 이 아닙니다.".to_string())?;
-    let output_url = cf_file_url(tmp_path_str)?;
-    let _ = std::fs::remove_file(&tmp_path);
-    let context = unsafe { CGPDFContextCreateWithURL(Some(&output_url), std::ptr::null(), None) }
-        .ok_or_else(|| "CoreGraphics PDF context 생성 실패".to_string())?;
-    let font_name = CString::new("Helvetica").map_err(|err| err.to_string())?;
-
-    for page_number in 1..=page_count {
-        let page = CGPDFDocument::page(Some(&document), page_number)
-            .ok_or_else(|| format!("PDF 페이지 로드 실패: {page_number}"))?;
-        let media_box = CGPDFPage::box_rect(Some(&page), CGPDFBox::MediaBox);
-
-        unsafe {
-            CGContext::begin_page(Some(&context), &media_box as *const CGRect);
-        }
-        CGContext::save_g_state(Some(&context));
-        let transform =
-            CGPDFPage::drawing_transform(Some(&page), CGPDFBox::MediaBox, media_box, 0, true);
-        CGContext::concat_ctm(Some(&context), transform);
-        CGContext::draw_pdf_page(Some(&context), Some(&page));
-        CGContext::restore_g_state(Some(&context));
-        draw_page_number_core_graphics(&context, page_number, media_box, &font_name);
-        CGContext::end_page(Some(&context));
-    }
-
-    CGPDFContextClose(Some(&context));
-    drop(context);
-    drop(document);
-    std::fs::rename(&tmp_path, path).map_err(|err| format!("번호 삽입 PDF 교체 실패: {err}"))?;
-
-    fn identity_transform() -> CGAffineTransform {
-        CGAffineTransform {
-            a: 1.0,
-            b: 0.0,
-            c: 0.0,
-            d: 1.0,
-            tx: 0.0,
-            ty: 0.0,
-        }
-    }
-
-    #[allow(deprecated)]
-    fn draw_page_number_core_graphics(
-        context: &CGContext,
-        page_number: usize,
-        media_box: CGRect,
-        font_name: &CString,
-    ) {
-        use objc2_core_graphics::CGTextEncoding;
-
-        let text = page_number.to_string();
-        let Ok(c_text) = CString::new(text.as_str()) else {
-            return;
-        };
-        let font_size = PDF_PAGE_NUMBER_FONT_PT as f64;
-        let approx_width = text.chars().count() as f64 * font_size * 0.55;
-        let x = media_box.origin.x + (media_box.size.width - approx_width) / 2.0;
-        let y = media_box.origin.y + PDF_PAGE_NUMBER_BOTTOM_MM as f64 * MM_TO_PT;
-
-        CGContext::set_rgb_fill_color(Some(context), 0.4, 0.4, 0.4, 1.0);
-        CGContext::set_text_matrix(Some(context), identity_transform());
-        unsafe {
-            CGContext::select_font(
-                Some(context),
-                font_name.as_ptr(),
-                font_size,
-                CGTextEncoding::EncodingMacRoman,
-            );
-            CGContext::show_text_at_point(Some(context), x, y, c_text.as_ptr(), text.len());
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn cf_file_url(
-    path: &str,
-) -> Result<objc2_core_foundation::CFRetained<objc2_core_foundation::CFURL>, String> {
-    let cf_path = objc2_core_foundation::CFString::from_str(path);
-    objc2_core_foundation::CFURL::with_file_system_path(
-        None,
-        Some(&cf_path),
-        objc2_core_foundation::CFURLPathStyle::CFURLPOSIXPathStyle,
-        false,
-    )
-    .ok_or_else(|| format!("file URL 생성 실패: {path}"))
 }
 
 #[cfg(target_os = "macos")]

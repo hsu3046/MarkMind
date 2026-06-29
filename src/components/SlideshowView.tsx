@@ -31,24 +31,10 @@ interface SlideshowViewProps {
     onClose: () => void;
 }
 
-const LEADING_ATX_HEADING_RE = /^\s{0,3}#{1,6}(?:\s+|$)/;
 const ATX_HEADING_LINE_RE = /^\s{0,3}(#{1,6})\s*(.*?)\s*#*\s*$/;
 const MIN_AUTO_FIT_SCALE = 0.72;
 const OVERFLOW_EPSILON_PX = 12;
 const AUTO_FIT_MARGIN = 0.96;
-
-function splitLeadingHeading(md: string): { heading: string; body: string } {
-    const lines = md.split('\n');
-    const firstContent = lines.findIndex((line) => line.trim() !== '');
-    if (firstContent < 0 || !LEADING_ATX_HEADING_RE.test(lines[firstContent])) {
-        return { heading: '', body: md };
-    }
-
-    const heading = lines.slice(0, firstContent + 1).join('\n');
-    let bodyStart = firstContent + 1;
-    while (bodyStart < lines.length && lines[bodyStart].trim() === '') bodyStart += 1;
-    return { heading, body: lines.slice(bodyStart).join('\n') };
-}
 
 function plainMarkdownText(text: string): string {
     return text
@@ -103,22 +89,7 @@ function MarkdownChunk({ md, docDir }: { md: string; docDir: string | null }) {
 
 /** 슬라이드 1장 — read-only 마크다운 렌더(Preview 의 플러그인/이미지 resolver 동일). */
 function SlideMarkdown({ md, docDir }: { md: string; docDir: string | null }) {
-    const { heading, body } = useMemo(() => splitLeadingHeading(md), [md]);
-
-    return (
-        <>
-            {heading && (
-                <div className="slideshow-heading">
-                    <MarkdownChunk md={heading} docDir={docDir} />
-                </div>
-            )}
-            {body && (
-                <div className="slideshow-body">
-                    <MarkdownChunk md={body} docDir={docDir} />
-                </div>
-            )}
-        </>
-    );
+    return <MarkdownChunk md={md} docDir={docDir} />;
 }
 
 function nextAutoFitScale(currentScale: number, scrollHeight: number, clientHeight: number): number {
