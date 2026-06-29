@@ -20,6 +20,8 @@ export interface SlideshowSettings {
     hideBlockquote: boolean;
     hideInlineCode: boolean;
     hideStrike: boolean;
+    // 긴 슬라이드 본문을 자동 2열로 표시(렌더러가 실제 overflow 기준으로 판정).
+    autoTwoColumn: boolean;
 }
 
 export const DEFAULT_SLIDESHOW_SETTINGS: SlideshowSettings = {
@@ -32,6 +34,7 @@ export const DEFAULT_SLIDESHOW_SETTINGS: SlideshowSettings = {
     hideBlockquote: false,
     hideInlineCode: false,
     hideStrike: false,
+    autoTwoColumn: true,
 };
 
 const STORAGE_KEY = 'markmind-slideshow-settings';

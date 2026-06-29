@@ -5,6 +5,8 @@
     position: fixed;
     inset: 0;
     z-index: 2000;
+    --slideshow-pad-y: clamp(1.5rem, 4vh, 3rem);
+    --slideshow-indicator-reserve: calc(4.25rem + env(safe-area-inset-bottom, 0px));
     /* 사용자 지정 배경 → 테마 프리뷰 배경 → 흰색 폴백 */
     background: var(--slideshow-bg, var(--preview-bg, #ffffff));
     overflow: hidden;
@@ -27,7 +29,8 @@
     overflow-y: auto;
     display: grid;
     place-items: center;
-    padding: clamp(1.5rem, 4vh, 3rem) clamp(1rem, 2.5vw, 2.5rem);
+    padding: var(--slideshow-pad-y) clamp(1rem, 2.5vw, 2.5rem);
+    padding-bottom: max(var(--slideshow-pad-y), var(--slideshow-indicator-reserve));
     -webkit-overflow-scrolling: touch;
 }
 
@@ -43,8 +46,60 @@
     /* 본문 색 = 테마 변수(라이트/다크 자동) — Rich Text(Preview) 와 동일 */
     color: var(--text-primary);
     /* 발표용 기본 크기(뷰포트 기반) × 사용자 배율. 내부 요소는 상대 단위로 따라옴. */
-    font-size: calc(clamp(0.95rem, 0.62rem + 0.7vw, 1.25rem) * var(--slideshow-scale, 1));
+    font-size: calc(clamp(0.95rem, 0.62rem + 0.7vw, 1.25rem) * var(--slideshow-scale, 1) * var(--slideshow-auto-scale, 1));
     line-height: var(--md-line-height, 1.7);
+}
+
+.slideshow-content.markdown-body > :first-child {
+    margin-top: 0;
+}
+
+.slideshow-content.markdown-body > :last-child {
+    margin-bottom: 0;
+}
+
+.slideshow-content.markdown-body > :is(h1, h2, h3, h4, h5, h6):first-child {
+    margin-bottom: 0.9em;
+}
+
+.slideshow-content.markdown-body.auto-columns {
+    max-width: min(1320px, 100%);
+    column-count: 2;
+    column-gap: clamp(2rem, 4vw, 4rem);
+    column-rule: 1px solid var(--border-secondary, rgba(0, 0, 0, 0.08));
+}
+
+.slideshow-content.markdown-body.auto-columns > :is(h1, h2, h3, h4, h5, h6):first-child {
+    column-span: all;
+}
+
+.slideshow-content.markdown-body.auto-columns > * {
+    break-inside: avoid;
+}
+
+.slideshow-content.markdown-body li {
+    margin-block: 0.12em;
+}
+
+.slideshow-content.markdown-body li > ul,
+.slideshow-content.markdown-body li > ol {
+    margin-block: 0.12em;
+}
+
+.slideshow-content.markdown-body table {
+    font-size: 1em;
+}
+
+.slideshow-content.markdown-body th,
+.slideshow-content.markdown-body td {
+    font-size: 1em;
+}
+
+@media (max-width: 760px) {
+    .slideshow-content.markdown-body.auto-columns {
+        column-count: 1;
+        column-rule: none;
+    }
 }
 
 /* 숨길 요소 — display:none 으로 비표시(공간도 제거). 인라인 코드(<code> 단독)는 유지. */
@@ -158,18 +213,99 @@
     pointer-events: none;
 }
 
-/* 페이지 인디케이터 — 배경 없이 텍스트만 */
+/* 페이지 인디케이터 — 클릭 시 목차 점프 */
 .slideshow-indicator {
     position: absolute;
-    bottom: 1.1rem;
+    bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px));
     left: 50%;
     transform: translateX(-50%);
+    border: none;
+    border-radius: 999px;
+    padding: 0.2rem 0.55rem;
+    background: transparent;
     color: var(--text-primary, #1a1a1a);
     font-size: 0.85rem;
     font-variant-numeric: tabular-nums;
     opacity: 0.4;
+    cursor: pointer;
     user-select: none;
-    pointer-events: none;
+    pointer-events: auto;
+    transition: opacity 0.18s ease, background 0.18s ease;
+}
+.slideshow-indicator:hover,
+.slideshow-indicator:focus-visible {
+    opacity: 0.85;
+    background: var(--bg-active, rgba(0, 0, 0, 0.06));
+    outline: none;
+}
+
+.slideshow-jump {
+    position: absolute;
+    bottom: calc(2.95rem + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: min(24rem, calc(100vw - 2rem));
+    padding: 0.5rem;
+    border: 1px solid var(--border-secondary, rgba(0, 0, 0, 0.1));
+    border-radius: 0.75rem;
+    background: var(--preview-bg, #ffffff);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+.slideshow-jump-list {
+    width: 100%;
+    max-height: min(18rem, 42vh);
+    overflow-y: auto;
+    padding: 0.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+.slideshow-jump-item {
+    width: 100%;
+    min-height: 2rem;
+    display: grid;
+    grid-template-columns: 2.1rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.45rem 0.25rem calc(0.45rem + var(--slide-heading-indent, 0rem));
+    border: none;
+    border-radius: 0.45rem;
+    background: transparent;
+    color: var(--text-primary, #1a1a1a);
+    cursor: pointer;
+    text-align: left;
+}
+.slideshow-jump-item:hover,
+.slideshow-jump-item:focus-visible {
+    background: var(--bg-active, rgba(0, 0, 0, 0.06));
+    outline: none;
+}
+.slideshow-jump-item.active {
+    background: var(--bg-active, rgba(0, 0, 0, 0.09));
+}
+.slideshow-jump-item-index {
+    color: var(--text-secondary, var(--text-primary, #1a1a1a));
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.62;
+    text-align: right;
+}
+.slideshow-jump-item-title {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-primary, #1a1a1a);
+    font-size: 0.82rem;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.slideshow-jump-item.fallback .slideshow-jump-item-title {
+    color: var(--text-secondary, var(--text-primary, #1a1a1a));
+    opacity: 0.78;
 }
 
 /* 본문 명조 — App 의 data-font-family 규칙과 동일 패밀리 적용(portal 이라 직접 지정). */
@@ -179,13 +315,13 @@
 
 /* ── 여백 3단계 (상하=padding-block, 좌우=콘텐츠 max-width) — data-pad ── */
 .slideshow-root[data-pad='small'] .slideshow-slide {
-    padding-block: clamp(0.6rem, 1.5vh, 1.2rem);
+    --slideshow-pad-y: clamp(0.6rem, 1.5vh, 1.2rem);
 }
 .slideshow-root[data-pad='small'] .slideshow-content.markdown-body {
     max-width: 1200px;
 }
 .slideshow-root[data-pad='large'] .slideshow-slide {
-    padding-block: clamp(3rem, 8vh, 6rem);
+    --slideshow-pad-y: clamp(3rem, 8vh, 6rem);
 }
 .slideshow-root[data-pad='large'] .slideshow-content.markdown-body {
     max-width: 960px;

@@ -1,6 +1,6 @@
 [package]
 name = "markmind"
-version = "1.0.0"
+version = "1.0.1"
 description = "Minimal Markdown Editor for macOS"
 authors = ["you"]
 edition = "2021"
@@ -107,6 +107,7 @@ objc2-app-kit = { version = "0.3", features = [
     "NSPrintInfo",
     "NSPrintOperation",
     "NSSharingService",
+    "objc2-core-foundation",
 ] }
 objc2-web-kit = { version = "0.3", features = [
     "WKWebView",

@@ -7,7 +7,7 @@
 //
 // document.body 로 portal — App 의 transform/배경 등 어떤 조상 CSS 도 영향 없게.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ChevronLeft, ChevronRight, AArrowDown, AArrowUp, Moon, Sun, Frame } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -31,8 +31,47 @@ interface SlideshowViewProps {
     onClose: () => void;
 }
 
-/** 슬라이드 1장 — read-only 마크다운 렌더(Preview 의 플러그인/이미지 resolver 동일). */
-function SlideMarkdown({ md, docDir }: { md: string; docDir: string | null }) {
+const ATX_HEADING_LINE_RE = /^\s{0,3}(#{1,6})\s*(.*?)\s*#*\s*$/;
+const MIN_AUTO_FIT_SCALE = 0.72;
+const OVERFLOW_EPSILON_PX = 12;
+const AUTO_FIT_MARGIN = 0.96;
+
+function plainMarkdownText(text: string): string {
+    return text
+        .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/[`*_~]/g, '')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function getSlideHeadingInfo(md: string, index: number): { title: string; level: number; fallback: boolean } {
+    const lines = md.split('\n');
+    for (const line of lines) {
+        if (!line.trim()) continue;
+        const heading = line.match(ATX_HEADING_LINE_RE);
+        if (heading) {
+            return {
+                title: plainMarkdownText(heading[2]) || `슬라이드 ${index + 1}`,
+                level: heading[1].length,
+                fallback: false,
+            };
+        }
+        const fallbackTitle = plainMarkdownText(line);
+        if (fallbackTitle) {
+            return {
+                title: fallbackTitle.length > 72 ? `${fallbackTitle.slice(0, 72)}...` : fallbackTitle,
+                level: 0,
+                fallback: true,
+            };
+        }
+    }
+    return { title: `슬라이드 ${index + 1}`, level: 0, fallback: true };
+}
+
+function MarkdownChunk({ md, docDir }: { md: string; docDir: string | null }) {
+    if (!md.trim()) return null;
     return (
         <ReactMarkdown
             remarkPlugins={[remarkFrontmatter, [remarkGfm, { singleTilde: false }], remarkSoftBreaks]}
@@ -48,6 +87,16 @@ function SlideMarkdown({ md, docDir }: { md: string; docDir: string | null }) {
     );
 }
 
+/** 슬라이드 1장 — read-only 마크다운 렌더(Preview 의 플러그인/이미지 resolver 동일). */
+function SlideMarkdown({ md, docDir }: { md: string; docDir: string | null }) {
+    return <MarkdownChunk md={md} docDir={docDir} />;
+}
+
+function nextAutoFitScale(currentScale: number, scrollHeight: number, clientHeight: number): number {
+    const ratio = Math.max(0.1, clientHeight / scrollHeight);
+    return Math.max(MIN_AUTO_FIT_SCALE, Math.floor(currentScale * ratio * AUTO_FIT_MARGIN * 100) / 100);
+}
+
 export function SlideshowView({
     content,
     filePath,
@@ -57,11 +106,21 @@ export function SlideshowView({
     onClose,
 }: SlideshowViewProps) {
     const slides = useMemo(() => splitIntoSlides(content, settings), [content, settings]);
+    const slideHeadings = useMemo(
+        () => slides.map((slide, index) => getSlideHeadingInfo(slide, index)),
+        [slides],
+    );
     const docDir = useMemo(
         () => (filePath ? filePath.slice(0, filePath.lastIndexOf('/')) : null),
         [filePath],
     );
     const [current, setCurrent] = useState(0);
+    const [resizeTick, setResizeTick] = useState(0);
+    const slideRefs = useRef<Array<HTMLDivElement | null>>([]);
+    const jumpItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+    const [autoColumnSlides, setAutoColumnSlides] = useState<Record<number, { key: string; isLong: boolean }>>({});
+    const [autoFitSlides, setAutoFitSlides] = useState<Record<number, { key: string; scale: number }>>({});
+    const [jumpOpen, setJumpOpen] = useState(false);
 
     // 폰트 배율(전체 확대/축소) — 0.6~2.0, localStorage 영속.
     const [scale, setScale] = useState(() => {
@@ -83,6 +142,57 @@ export function SlideshowView({
     useEffect(() => { localStorage.setItem('markmind-slideshow-pad', String(padLevel)); }, [padLevel]);
     const cyclePad = useCallback(() => setPadLevel((p) => (p + 1) % 3), []);
 
+    const autoColumnKey = useMemo(
+        () => [scale, padLevel, settings.autoTwoColumn ? 1 : 0, resizeTick, slides.join('\u0000')].join('|'),
+        [padLevel, resizeTick, scale, settings.autoTwoColumn, slides],
+    );
+
+    const measureCurrentSlide = useCallback(() => {
+        if (!settings.autoTwoColumn) return;
+        const slide = slideRefs.current[current];
+        if (!slide) return;
+        const isLong = slide.scrollHeight > slide.clientHeight + 24;
+        const isAutoColumn = autoColumnSlides[current]?.key === autoColumnKey && autoColumnSlides[current]?.isLong;
+        setAutoColumnSlides((prev) => {
+            const existing = prev[current];
+            if (existing?.key === autoColumnKey && existing.isLong) return prev;
+            if (existing?.key === autoColumnKey && existing.isLong === isLong) return prev;
+            return { ...prev, [current]: { key: autoColumnKey, isLong } };
+        });
+
+        if (!isAutoColumn) return;
+        if (slide.scrollHeight <= slide.clientHeight + OVERFLOW_EPSILON_PX) return;
+        const currentAutoScale = autoFitSlides[current]?.key === autoColumnKey ? autoFitSlides[current].scale : 1;
+        const nextScale = nextAutoFitScale(currentAutoScale, slide.scrollHeight, slide.clientHeight);
+        setAutoFitSlides((prev) => {
+            const existing = prev[current];
+            if (nextScale >= currentAutoScale) return prev;
+            if (existing?.key === autoColumnKey && existing.scale === nextScale) return prev;
+            return { ...prev, [current]: { key: autoColumnKey, scale: nextScale } };
+        });
+    }, [autoColumnKey, autoColumnSlides, autoFitSlides, current, settings.autoTwoColumn]);
+
+    useEffect(() => {
+        const onResize = () => setResizeTick((tick) => tick + 1);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
+
+    useLayoutEffect(() => {
+        if (!settings.autoTwoColumn) return;
+        let frame = 0;
+        let timeout = 0;
+        measureCurrentSlide();
+        frame = requestAnimationFrame(() => {
+            measureCurrentSlide();
+            timeout = window.setTimeout(measureCurrentSlide, 180);
+        });
+        return () => {
+            cancelAnimationFrame(frame);
+            window.clearTimeout(timeout);
+        };
+    }, [autoColumnKey, current, measureCurrentSlide, resizeTick, scale, padLevel, slides, settings.autoTwoColumn]);
+
     // 다크 모드(발표 배경 반전) — localStorage 영속.
     const [dark, setDark] = useState(() => localStorage.getItem('markmind-slideshow-dark') === '1');
     useEffect(() => { localStorage.setItem('markmind-slideshow-dark', dark ? '1' : '0'); }, [dark]);
@@ -102,16 +212,45 @@ export function SlideshowView({
         setCurrent((c) => Math.min(c, Math.max(0, slides.length - 1)));
     }, [slides.length]);
 
+    useEffect(() => {
+        if (!jumpOpen) return;
+        const frame = requestAnimationFrame(() => {
+            jumpItemRefs.current[current]?.scrollIntoView({ block: 'nearest' });
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [current, jumpOpen]);
+
     const go = useCallback(
         (delta: number) => {
+            setJumpOpen(false);
             setCurrent((c) => Math.max(0, Math.min(slides.length - 1, c + delta)));
         },
         [slides.length],
     );
 
+    const jumpToIndex = useCallback((index: number) => {
+        const next = Math.max(0, Math.min(slides.length - 1, index));
+        setCurrent(next);
+        setJumpOpen(false);
+    }, [slides.length]);
+
     // 키보드 네비 — 화살표/Space/PageUp·Down/Home·End/Esc.
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
+            const target = e.target;
+            const isEditing = target instanceof HTMLElement
+                && (target.tagName === 'INPUT'
+                    || target.tagName === 'TEXTAREA'
+                    || target.tagName === 'SELECT'
+                    || target.isContentEditable);
+            if (isEditing) {
+                if (e.key === 'Escape' && jumpOpen) {
+                    e.preventDefault();
+                    setJumpOpen(false);
+                }
+                return;
+            }
+
             switch (e.key) {
                 case 'ArrowRight':
                 case 'ArrowDown':
@@ -136,7 +275,11 @@ export function SlideshowView({
                     break;
                 case 'Escape':
                     e.preventDefault();
-                    onClose();
+                    if (jumpOpen) {
+                        setJumpOpen(false);
+                    } else {
+                        onClose();
+                    }
                     break;
                 case '+':
                 case '=':
@@ -152,7 +295,7 @@ export function SlideshowView({
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [go, onClose, slides.length, adjustScale]);
+    }, [go, jumpOpen, onClose, slides.length, adjustScale]);
 
     // 숨길 요소 → CSS 클래스(컨테이너에 부여, display:none 으로 비표시).
     const hideClasses = [
@@ -190,17 +333,34 @@ export function SlideshowView({
             } as React.CSSProperties}
         >
             <div className="slideshow-stage">
-                {slides.map((md, i) => (
-                    <div
-                        key={i}
-                        className={`slideshow-slide${i === current ? ' active' : ''}`}
-                        aria-hidden={i !== current}
-                    >
-                        <div className={`slideshow-content markdown-body ${hideClasses}`}>
-                            <SlideMarkdown md={md} docDir={docDir} />
+                {slides.map((md, i) => {
+                    const usesAutoColumns = settings.autoTwoColumn
+                        && autoColumnSlides[i]?.key === autoColumnKey
+                        && autoColumnSlides[i]?.isLong;
+                    const autoFitScale = autoFitSlides[i]?.key === autoColumnKey
+                        ? autoFitSlides[i].scale
+                        : 1;
+                    const contentStyle = autoFitScale < 1
+                        ? { '--slideshow-auto-scale': String(autoFitScale) } as React.CSSProperties
+                        : undefined;
+
+                    return (
+                        <div
+                            key={i}
+                            className={`slideshow-slide${i === current ? ' active' : ''}`}
+                            ref={(el) => { slideRefs.current[i] = el; }}
+                            aria-hidden={i !== current}
+                        >
+                            <div
+                                className={`slideshow-content markdown-body ${hideClasses}${usesAutoColumns ? ' auto-columns' : ''}`}
+                                style={contentStyle}
+                                onLoadCapture={i === current ? measureCurrentSlide : undefined}
+                            >
+                                <SlideMarkdown md={md} docDir={docDir} />
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
             <div className="slideshow-fontctl">
@@ -241,9 +401,39 @@ export function SlideshowView({
                 <ChevronRight size={28} strokeWidth={1.5} />
             </button>
 
-            <div className="slideshow-indicator">
+            {jumpOpen && (
+                <nav
+                    className="slideshow-jump"
+                    aria-label="슬라이드 목차"
+                >
+                    <div className="slideshow-jump-list" aria-label="슬라이드 목록">
+                        {slideHeadings.map((item, index) => (
+                            <button
+                                key={`${index}-${item.title}`}
+                                type="button"
+                                className={`slideshow-jump-item${index === current ? ' active' : ''}${item.fallback ? ' fallback' : ''}`}
+                                style={{ '--slide-heading-indent': `${Math.min(Math.max(0, item.level - 1), 3) * 0.55}rem` } as React.CSSProperties}
+                                ref={(el) => { jumpItemRefs.current[index] = el; }}
+                                onClick={() => jumpToIndex(index)}
+                                aria-current={index === current ? 'page' : undefined}
+                            >
+                                <span className="slideshow-jump-item-index">{index + 1}</span>
+                                <span className="slideshow-jump-item-title">{item.title}</span>
+                            </button>
+                        ))}
+                    </div>
+                </nav>
+            )}
+
+            <button
+                type="button"
+                className="slideshow-indicator"
+                onClick={() => setJumpOpen((open) => !open)}
+                title="슬라이드 이동"
+                aria-label={`슬라이드 이동, 현재 ${current + 1} / ${slides.length}`}
+            >
                 {current + 1} / {slides.length}
-            </div>
+            </button>
         </div>,
         document.body,
     );
