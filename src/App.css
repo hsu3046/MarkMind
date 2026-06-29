@@ -3309,6 +3309,16 @@ code.hljs {
     position: static !important;
     box-shadow: none !important;
     text-shadow: none !important;
+    caret-color: transparent !important;
+  }
+
+  *::selection {
+    background: transparent !important;
+    color: inherit !important;
+  }
+
+  .ProseMirror-selectednode {
+    outline: none !important;
   }
 
   /* 사용자 BackgroundPicker 의 !important 인라인 스타일 counter */

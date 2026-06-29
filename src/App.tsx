@@ -470,7 +470,7 @@ function App() {
       // 다이얼로그 확정 후부터 진행 오버레이 — 캡처/PDF 가 끝나야 Finder 에 파일이 보이므로.
       setPdfExporting(true);
       try {
-        const blob = await buildVisualViewPdf(viewMode);
+        const blob = await buildVisualViewPdf(viewMode, content);
         if (blob) await writePdfBlob(blob, path);
       } catch (err) {
         console.error('[export_pdf visual] failed:', err);
@@ -490,8 +490,10 @@ function App() {
       await new Promise<void>((r) => setTimeout(r, 80));
     }
 
+    let cleanupRichFlowchartsForPrint: (() => void) | null = null;
+    let activeElementBeforePrint: HTMLElement | null = null;
     try {
-      const [{ save }, { invoke }] = await Promise.all([
+      const [{ save, message }, { invoke }] = await Promise.all([
         import('@tauri-apps/plugin-dialog'),
         import('@tauri-apps/api/core'),
       ]);
@@ -504,16 +506,39 @@ function App() {
         // 사용자 취소
         return;
       }
+
+      activeElementBeforePrint = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+      activeElementBeforePrint?.blur();
+      window.getSelection()?.removeAllRanges();
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      try {
+        const { prepareRichFlowchartsForPrint } = await import('./lib/pdf/richFlowchartPrint');
+        cleanupRichFlowchartsForPrint = await prepareRichFlowchartsForPrint();
+      } catch (err) {
+        console.error('[export_pdf] rich flowchart snapshot failed:', err);
+        await message('플로우차트를 PDF용 이미지로 변환하지 못했습니다. 잠시 후 다시 시도해주세요.', {
+          title: 'PDF 내보내기',
+          kind: 'error',
+        });
+        return;
+      }
+
       await invoke('export_pdf', { path });
     } catch (err) {
       console.error('[export_pdf] failed:', err);
     } finally {
+      cleanupRichFlowchartsForPrint?.();
       if (prevViewModeRef.current) {
         setViewMode(prevViewModeRef.current);
         prevViewModeRef.current = null;
+      } else if (activeElementBeforePrint?.isConnected) {
+        activeElementBeforePrint.focus({ preventScroll: true });
       }
     }
-  }, [viewMode, fileName]);
+  }, [viewMode, fileName, content]);
 
   // ⌘P / Ctrl+P 단축키 (IME 합성 중 보호)
   useEffect(() => {

@@ -1,0 +1,109 @@
+.rich-flowchart-block {
+  position: relative;
+  margin: 1rem 0;
+  border: 1px solid var(--border-primary, #d8dee4);
+  border-radius: 8px;
+  background: var(--bg-secondary, #f8fafc);
+  overflow: hidden;
+}
+
+.rich-flowchart-block.ProseMirror-selectednode {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+}
+
+.rich-flowchart-block__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-secondary, #e2e8f0);
+  color: var(--text-secondary, #667085);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rich-flowchart-block__title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary, #1f2937);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rich-flowchart-block__canvas.flowchart-view {
+  height: clamp(260px, 38vh, 460px);
+  background: var(--bg-primary, #ffffff);
+}
+
+.rich-flowchart-block .react-flow {
+  --xy-edge-label-background-color: #ffffff;
+  --xy-edge-label-color: #475467;
+}
+
+.rich-flowchart-block .react-flow__edge-textbg {
+  fill: #ffffff;
+}
+
+.rich-flowchart-block .react-flow__edge-text {
+  fill: #475467;
+}
+
+.rich-flowchart-block__error {
+  padding: 18px;
+  color: var(--text-secondary, #667085);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.rich-code-block pre {
+  margin: 1rem 0;
+}
+
+.rich-code-block__content {
+  white-space: pre;
+}
+
+.rich-flowchart-block__content-host {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rich-flowchart-print-image {
+  display: none;
+  max-width: 100%;
+  height: auto;
+}
+
+@media print {
+  .rich-flowchart-block {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    border: none !important;
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  .rich-flowchart-block__content-host {
+    display: none !important;
+  }
+
+  .rich-flowchart-block.is-print-snapshot .rich-flowchart-block__header,
+  .rich-flowchart-block.is-print-snapshot .rich-flowchart-block__canvas {
+    display: none !important;
+  }
+
+  .rich-flowchart-block.is-print-snapshot .rich-flowchart-print-image {
+    display: block !important;
+    width: 88% !important;
+    max-width: 88% !important;
+    height: auto !important;
+    margin: 0 auto !important;
+  }
+}
