@@ -67,12 +67,14 @@
 }
 
 .rich-flowchart-block__content-host {
+  display: none;
   position: absolute;
   width: 1px;
   height: 1px;
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
+  user-select: none;
 }
 
 .rich-flowchart-print-image {

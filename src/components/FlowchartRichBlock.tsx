@@ -225,7 +225,13 @@ export function FlowchartCodeBlockNodeView({ node }: NodeViewProps) {
           </div>
         )}
       </div>
-      <NodeViewContent className="rich-flowchart-block__content-host" />
+      <NodeViewContent
+        className="rich-flowchart-block__content-host"
+        contentEditable={false}
+        aria-hidden="true"
+        tabIndex={-1}
+        spellCheck={false}
+      />
     </NodeViewWrapper>
   );
 }

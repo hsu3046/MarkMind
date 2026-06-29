@@ -247,6 +247,11 @@ fn add_page_numbers_to_pdf_with_core_graphics(path: &str) -> Result<(), String> 
     if page_count == 0 {
         return Err("CoreGraphics PDF 페이지가 없습니다.".to_string());
     }
+    if core_graphics_pdf_has_page_annotations(&document, page_count)? {
+        return Err(
+            "CoreGraphics fallback 건너뜀: source PDF annotations/link 보존 필요".to_string(),
+        );
+    }
 
     let tmp_path = numbered_tmp_path(path);
     let _ = std::fs::remove_file(&tmp_path);
@@ -292,6 +297,32 @@ fn add_page_numbers_to_pdf_with_core_graphics(path: &str) -> Result<(), String> 
         .map_err(|err| format!("CoreGraphics 번호 삽입 PDF 교체 실패: {err}"))?;
 
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn core_graphics_pdf_has_page_annotations(
+    document: &objc2_core_graphics::CGPDFDocument,
+    page_count: usize,
+) -> Result<bool, String> {
+    use objc2_core_graphics::{CGPDFArray, CGPDFArrayRef, CGPDFDictionary, CGPDFPage};
+    use std::{ffi::c_char, ptr::NonNull};
+
+    const ANNOTS_KEY: &[u8] = b"Annots\0";
+    let key = NonNull::new(ANNOTS_KEY.as_ptr() as *mut c_char)
+        .ok_or_else(|| "CoreGraphics Annots key 생성 실패".to_string())?;
+
+    for index in 1..=page_count {
+        let page = objc2_core_graphics::CGPDFDocument::page(Some(document), index)
+            .ok_or_else(|| format!("CoreGraphics PDF 페이지 {index} annotation 검사 실패"))?;
+        let dict = CGPDFPage::dictionary(Some(&page));
+        let mut annots: CGPDFArrayRef = std::ptr::null_mut();
+        let has_annots = unsafe { CGPDFDictionary::array(dict, key, &mut annots) };
+        if has_annots && !annots.is_null() && unsafe { CGPDFArray::count(annots) } > 0 {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 #[cfg(target_os = "macos")]
