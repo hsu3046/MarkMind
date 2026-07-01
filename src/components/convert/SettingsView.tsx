@@ -850,7 +850,7 @@ export function SettingsView({ onDone, viewer }: SettingsViewProps) {
                             </label>
                         </div>
                         <p className="convert-key-note">
-                            내용이 빈 슬라이드는 자동으로 건너뜁니다. 특정 슬라이드를 숨기려면 그 안에{' '}
+                            빈 슬라이드는 자동으로 건너뜁니다. 특정 슬라이드를 숨기려면 그 안에{' '}
                             <code>&lt;!-- skip --&gt;</code> 를 넣으세요.
                         </p>
                     </section>

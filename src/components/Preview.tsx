@@ -41,6 +41,7 @@ import { removeFlowchartBlock, hasFlowchartBlock } from '../lib/flowchartBlock';
 import { quoteLines } from '../lib/quoteMatch';
 import { markdownOffsetToVisibleOffset, visibleOffsetToMarkdownOffset } from '../lib/markdownCursor';
 import { normalizeSerializedMarkdown } from '../lib/markdownSerialization';
+import { fixEmphasis, isMarkdownDisplayHelper, stripDisplayHelpers } from '../lib/markdownDisplay';
 import { TableTools } from './TableTools';
 import {
     Bold, Italic, Strikethrough, Code,
@@ -150,16 +151,6 @@ function writePlainTextSelectionToClipboard(event: ClipboardEvent | ReactClipboa
     return true;
 }
 
-// CommonMark 의 emphasis right-flanking 규칙 때문에 닫는 `**` 다음에
-// 비공백/비구두점 글자 (CJK 포함) 가 바로 붙으면 bold 인식 실패.
-// 닫는 `**` 직후에 zero-width space (U+200B) 1개 삽입해 강제 분리.
-// 표시는 동일, 직렬화 (save) 시점에 stripDisplayHelpers 로 제거.
-//
-// 예: `**bold**한글`, `**ipsum**dolor` 모두 처리.
-function fixEmphasis(md: string): string {
-    return md.replace(/(\S)(\*{1,2})(?=[^\s*\p{P}])/gu, '$1$2​');
-}
-
 // GFM table row 는 한 줄에 시작·종료가 정상이지만, LLM 회의록 자동 생성
 // (Gemini/Claude) 이 긴 row 를 시각적 wrap 형태로 multi-line 으로 출력하면
 // GFM parser 가 첫 줄을 단일 셀 row 로, 다음 줄을 plain text 로 깨뜨림.
@@ -218,11 +209,6 @@ function joinBrokenTableRows(md: string): string {
     }
 
     return result.replace(/\x00MMF(\d+)\x00/g, (_, idx) => fenceParts[Number(idx)]);
-}
-
-/** save 시점에 fixEmphasis 가 삽입한 zero-width 제거 */
-function stripDisplayHelpers(md: string): string {
-    return md.replace(/​/g, '');
 }
 
 interface FrontmatterParts {
@@ -709,11 +695,11 @@ function RichToolbar({ editor }: { editor: Editor }) {
 
 // ─── TipTap WYSIWYG 편집기 ───
 // "인용" 하이라이트(Rich Text) — quotedTexts 의 각 줄을 doc text 노드에서 찾아 inline decoration.
-// fixEmphasis zero-width(U+200B) 보정: 정제 텍스트로 매칭하되 decoration pos 는 원본 기준(cleanToRaw).
+// fixEmphasis 표시 보정 문자는 정제 텍스트로 매칭하되 decoration pos 는 원본 기준(cleanToRaw).
 const quoteHLKey = new PluginKey('quoteHL');
 function cleanToRaw(raw: string, cleanOff: number): number {
     let r = 0, c = 0;
-    while (c < cleanOff && r < raw.length) { if (raw[r] !== '​') c++; r++; }
+    while (c < cleanOff && r < raw.length) { if (!isMarkdownDisplayHelper(raw[r])) c++; r++; }
     return r;
 }
 function buildQuoteDecos(doc: PMNode, texts: string[]): DecorationSet {
@@ -723,7 +709,7 @@ function buildQuoteDecos(doc: PMNode, texts: string[]): DecorationSet {
     doc.descendants((node, pos) => {
         if (!node.isText || !node.text) return;
         const raw = node.text;
-        const clean = raw.replace(/​/g, '');
+        const clean = stripDisplayHelpers(raw);
         for (const line of lines) {
             let idx = clean.indexOf(line);
             while (idx >= 0) {
@@ -967,10 +953,10 @@ function RichEditor({
             // 로컬 이미지 표시 — 원본 경로는 보존, 표시만 asset:// 변환 (#55)
             createImageInline(() => docDirRef.current),
         ],
-        content: fixEmphasis(joinBrokenTableRows(body)), // ** 인접 bold 인식되도록 zero-width 삽입 + LLM multi-line table row 정상화
+        content: fixEmphasis(joinBrokenTableRows(body)), // 기호 뒤 닫힘 ** 인식 보정 + LLM multi-line table row 정상화
         onUpdate: ({ editor }) => {
             const md: string = editor.storage.markdown?.getMarkdown() ?? '';
-            // zero-width 제거 + tiptap-markdown 과잉 escape/hardBreak 정규화
+            // 표시 보정 문자 제거 + tiptap-markdown 과잉 escape/hardBreak 정규화
             const outBody = normalizeSerializedMarkdown(stripDisplayHelpers(md));
             lastEmittedBodyRef.current = outBody; // 외부 변경 감지 기준(#56)
             onChange(rawFrontmatter + outBody);
@@ -1036,9 +1022,9 @@ function RichEditor({
         const emit = () => {
             const { from, to, empty } = editor.state.selection;
             if (empty) { onSelectionChange('', null); return; }
-            // fixEmphasis 가 삽입한 zero-width(U+200B) 제거 — 안 그러면 원본 마크다운과 안 맞아
+            // fixEmphasis 가 삽입한 표시 보정 문자 제거 — 안 그러면 원본 마크다운과 안 맞아
             // quoteRange/하이라이트 매칭이 실패한다(선택은 [Line] 대신 [Selection] 으로 빠짐).
-            const text = editor.state.doc.textBetween(from, to, "\n", (leaf) => (leaf.type.name === "hardBreak" ? "\n" : "")).replace(/\u200b/g, "").trim();
+            const text = stripDisplayHelpers(editor.state.doc.textBetween(from, to, "\n", (leaf) => (leaf.type.name === "hardBreak" ? "\n" : ""))).trim();
             if (text.length < 1) { onSelectionChange('', null); return; }
             const c = editor.view.coordsAtPos(from);
             onSelectionChange(text, { top: c.top, left: c.left });

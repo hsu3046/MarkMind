@@ -15,6 +15,7 @@ import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
 import rehypeHighlight from 'rehype-highlight';
 import { resolveImageSrc } from '../lib/imageSrc';
+import { fixEmphasis } from '../lib/markdownDisplay';
 import { remarkSoftBreaks } from '../lib/remarkSoftBreaks';
 import { splitIntoSlides, type SlideshowSettings } from '../lib/slideSplit';
 import './SlideshowView.css';
@@ -71,6 +72,7 @@ function getSlideHeadingInfo(md: string, index: number): { title: string; level:
 }
 
 function MarkdownChunk({ md, docDir }: { md: string; docDir: string | null }) {
+    const displayMd = useMemo(() => fixEmphasis(md), [md]);
     if (!md.trim()) return null;
     return (
         <ReactMarkdown
@@ -82,7 +84,7 @@ function MarkdownChunk({ md, docDir }: { md: string; docDir: string | null }) {
                 ),
             }}
         >
-            {md}
+            {displayMd}
         </ReactMarkdown>
     );
 }
